@@ -333,6 +333,42 @@ newtype_of_reg!(
     |reg| reg.class() == RegClass::Float
 );
 
+// =================================================================
+// YOLM FORK: Turin AVX-512 Extensions - Mask Register Support
+// =================================================================
+
+// Define a newtype of `Reg` for Mask (k-registers).
+// We use RegClass::Vector for k-registers (k1-k7, with k0 reserved).
+newtype_of_reg!(
+    Mask,
+    WritableMask,
+    OptionWritableMask,
+    reg_mem: (MaskMem),
+    reg_mem_imm: (MaskMemImm),
+    |reg| reg.class() == RegClass::Vector
+);
+
+/// Optional Mask register for AVX-512 masked operations.
+/// When `None`, no masking is applied (equivalent to k0).
+pub type OptionMaskReg = Option<Mask>;
+
+/// Returns `None` for optional mask register (no masking).
+pub fn option_mask_reg_none() -> OptionMaskReg {
+    None
+}
+
+/// Optional Reg for operations that may have an optional second operand (e.g., KNOT).
+pub type OptionReg = Option<Reg>;
+
+/// Returns `None` for optional register.
+pub fn option_reg_none() -> OptionReg {
+    None
+}
+
+// =================================================================
+// End YOLM FORK: Turin AVX-512 Extensions
+// =================================================================
+
 // N.B.: `Amode` is defined in `inst.isle`. We add some convenience
 // constructors here.
 

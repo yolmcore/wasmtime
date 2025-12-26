@@ -1822,6 +1822,83 @@ pub(crate) fn emit(
             // Nothing.
         }
 
+        Inst::TurinAvx512Alu {
+            op,
+            size,
+            dst,
+            src1,
+            src2,
+            mask,
+            merge,
+        } => {
+            turin::emit::emit_turin_inst(
+                *op, *size, *dst, *src1, src2, *mask, *merge, sink,
+            );
+        }
+
+        // YOLM FORK: Additional Turin AVX-512 instruction types
+        // Delegates to turin::emit module for EVEX encoding.
+        Inst::TurinAvx512Cmp {
+            size,
+            dst,
+            src1,
+            src2,
+            cond,
+            mask,
+        } => {
+            turin::emit::emit_avx512_cmp(*size, *dst, *src1, src2, *cond, *mask, sink);
+        }
+
+        Inst::TurinCompressStore {
+            size,
+            src,
+            addr,
+            mask,
+        } => {
+            turin::emit::emit_compress_store(*size, *src, addr, *mask, sink);
+        }
+
+        Inst::TurinExpandLoad {
+            size,
+            dst,
+            addr,
+            mask,
+            merge,
+        } => {
+            turin::emit::emit_expand_load(*size, *dst, addr, *mask, *merge, sink);
+        }
+
+        Inst::TurinMaskedLoad {
+            size,
+            dst,
+            addr,
+            mask,
+            merge,
+        } => {
+            turin::emit::emit_masked_load(*size, *dst, addr, *mask, *merge, sink);
+        }
+
+        Inst::TurinMaskedStore {
+            size,
+            src,
+            addr,
+            mask,
+        } => {
+            turin::emit::emit_masked_store(*size, *src, addr, *mask, sink);
+        }
+
+        Inst::TurinMaskLogic { op, dst, src1, src2 } => {
+            turin::emit::emit_mask_logic(*op, *dst, *src1, *src2, sink);
+        }
+
+        Inst::TurinKmov { dst, src, to_gpr } => {
+            turin::emit::emit_kmov(*dst, *src, *to_gpr, sink);
+        }
+
+        Inst::TurinKortest { src1, src2 } => {
+            turin::emit::emit_kortest(*src1, *src2, sink);
+        }
+
         Inst::External { inst } => {
             let frame = state.frame_layout();
             emit_maybe_shrink(

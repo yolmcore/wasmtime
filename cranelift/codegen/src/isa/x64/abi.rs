@@ -1206,6 +1206,14 @@ const fn windows_clobbers() -> PRegSet {
         .with(regs::fpr_preg(XMM3))
         .with(regs::fpr_preg(XMM4))
         .with(regs::fpr_preg(XMM5))
+        .with(regs::k_preg(0))
+        .with(regs::k_preg(1))
+        .with(regs::k_preg(2))
+        .with(regs::k_preg(3))
+        .with(regs::k_preg(4))
+        .with(regs::k_preg(5))
+        .with(regs::k_preg(6))
+        .with(regs::k_preg(7))
 }
 
 const fn sysv_clobbers() -> PRegSet {
@@ -1238,6 +1246,14 @@ const fn sysv_clobbers() -> PRegSet {
         .with(regs::fpr_preg(XMM13))
         .with(regs::fpr_preg(XMM14))
         .with(regs::fpr_preg(XMM15))
+        .with(regs::k_preg(0))
+        .with(regs::k_preg(1))
+        .with(regs::k_preg(2))
+        .with(regs::k_preg(3))
+        .with(regs::k_preg(4))
+        .with(regs::k_preg(5))
+        .with(regs::k_preg(6))
+        .with(regs::k_preg(7))
 }
 
 /// For calling conventions that clobber all registers.
@@ -1276,6 +1292,14 @@ const fn all_clobbers() -> PRegSet {
         .with(regs::fpr_preg(XMM13))
         .with(regs::fpr_preg(XMM14))
         .with(regs::fpr_preg(XMM15))
+        .with(regs::k_preg(0))
+        .with(regs::k_preg(1))
+        .with(regs::k_preg(2))
+        .with(regs::k_preg(3))
+        .with(regs::k_preg(4))
+        .with(regs::k_preg(5))
+        .with(regs::k_preg(6))
+        .with(regs::k_preg(7))
 }
 
 fn create_reg_env_systemv(enable_pinned_reg: bool) -> MachineEnv {
@@ -1309,8 +1333,16 @@ fn create_reg_env_systemv(enable_pinned_reg: bool) -> MachineEnv {
                 preg(regs::xmm6()),
                 preg(regs::xmm7()),
             ],
-            // The Vector Regclass is unused
-            vec![],
+            // k1-k7 are allocatable masks. k0 is reserved.
+            vec![
+                preg(regs::k1()),
+                preg(regs::k2()),
+                preg(regs::k3()),
+                preg(regs::k4()),
+                preg(regs::k5()),
+                preg(regs::k6()),
+                preg(regs::k7()),
+            ],
         ],
         non_preferred_regs_by_class: [
             // Non-preferred GPRs: callee-saved in the SysV ABI.

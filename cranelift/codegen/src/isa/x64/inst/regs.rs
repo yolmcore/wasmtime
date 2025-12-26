@@ -135,6 +135,40 @@ pub(crate) const fn xmm15() -> Reg {
     fpr(xmm::enc::XMM15)
 }
 
+pub(crate) const fn k_preg(enc: u8) -> PReg {
+    PReg::new(enc as usize, RegClass::Vector)
+}
+
+const fn k_reg(enc: u8) -> Reg {
+    let preg = k_preg(enc);
+    Reg::from_virtual_reg(VReg::new(preg.index(), RegClass::Vector))
+}
+
+pub(crate) const fn k0() -> Reg {
+    k_reg(0)
+}
+pub(crate) const fn k1() -> Reg {
+    k_reg(1)
+}
+pub(crate) const fn k2() -> Reg {
+    k_reg(2)
+}
+pub(crate) const fn k3() -> Reg {
+    k_reg(3)
+}
+pub(crate) const fn k4() -> Reg {
+    k_reg(4)
+}
+pub(crate) const fn k5() -> Reg {
+    k_reg(5)
+}
+pub(crate) const fn k6() -> Reg {
+    k_reg(6)
+}
+pub(crate) const fn k7() -> Reg {
+    k_reg(7)
+}
+
 // N.B.: this is not an `impl PrettyPrint for Reg` because it is
 // specific to x64; other backends have analogous functions. The
 // disambiguation happens statically by virtue of higher-level,
@@ -157,7 +191,7 @@ pub fn pretty_print_reg(reg: Reg, size: u8) -> String {
                 gpr::enc::to_string(enc, size)
             }
             RegClass::Float => xmm::enc::to_string(enc),
-            RegClass::Vector => unreachable!(),
+            RegClass::Vector => format!("k{enc}"),
         };
         name.to_string()
     } else {

@@ -29,6 +29,11 @@ pub mod regs;
 mod stack_switch;
 pub mod unwind;
 
+// =================================================================
+// YOLM FORK: Turin AVX-512 Extensions
+// =================================================================
+pub mod turin;
+
 use args::*;
 
 //=============================================================================
@@ -112,6 +117,17 @@ impl Inst {
             | Inst::SequencePoint => true,
 
             Inst::Atomic128RmwSeq { .. } | Inst::Atomic128XchgSeq { .. } => emit_info.cmpxchg16b(),
+
+            // YOLM FORK: Turin AVX-512 instructions require AVX-512F
+            Inst::TurinAvx512Alu { .. }
+            | Inst::TurinAvx512Cmp { .. }
+            | Inst::TurinCompressStore { .. }
+            | Inst::TurinExpandLoad { .. }
+            | Inst::TurinMaskedLoad { .. }
+            | Inst::TurinMaskedStore { .. }
+            | Inst::TurinMaskLogic { .. }
+            | Inst::TurinKmov { .. }
+            | Inst::TurinKortest { .. } => emit_info.avx512f(),
 
             Inst::External { inst } => inst.is_available(&emit_info),
         }
@@ -835,6 +851,93 @@ impl PrettyPrint for Inst {
                 format!("sequence_point")
             }
 
+            // YOLM FORK: Turin AVX-512 instruction pretty printing
+            Inst::TurinAvx512Alu {
+                op,
+                size,
+                dst,
+                src1,
+                src2,
+                mask,
+                merge,
+            } => {
+                let dst = pretty_print_reg(dst.to_reg(), 64);
+                let src1 = pretty_print_reg(*src1, 64);
+                let src2 = src2.pretty_print(64);
+                let op_name = op.name();
+                let mask_str = if let Some(m) = mask {
+                    let m_str = pretty_print_reg(m.to_reg(), 8);
+                    let merge_str = match merge {
+                        turin::MergeMode::Zeroing => "z",
+                        turin::MergeMode::Merging => "",
+                    };
+                    format!(" {{{m_str}}}{merge_str}")
+                } else {
+                    String::new()
+                };
+                format!("{op_name} {src1}, {src2}, {dst}{mask_str}")
+            }
+
+            Inst::TurinAvx512Cmp { dst, src1, src2, cond, mask, .. } => {
+                let dst = pretty_print_reg(dst.to_reg(), 8);
+                let src1 = pretty_print_reg(*src1, 64);
+                let src2 = src2.pretty_print(64);
+                format!("vpcmpd {src1}, {src2}, {dst}, {cond:?}")
+            }
+
+            Inst::TurinCompressStore { src, addr, mask, .. } => {
+                let src = pretty_print_reg(*src, 64);
+                let mask = pretty_print_reg(*mask, 8);
+                format!("vpcompressd {src}, [{addr:?}] {{{mask}}}")
+            }
+
+            Inst::TurinExpandLoad { dst, addr, mask, merge, .. } => {
+                let dst = pretty_print_reg(dst.to_reg(), 64);
+                let mask = pretty_print_reg(*mask, 8);
+                let z = if matches!(merge, turin::MergeMode::Zeroing) { "z" } else { "" };
+                format!("vpexpandd [{addr:?}], {dst} {{{mask}}}{z}")
+            }
+
+            Inst::TurinMaskedLoad { dst, addr, mask, merge, .. } => {
+                let dst = pretty_print_reg(dst.to_reg(), 64);
+                let mask = pretty_print_reg(*mask, 8);
+                let z = if matches!(merge, turin::MergeMode::Zeroing) { "z" } else { "" };
+                format!("vmovdqu32 [{addr:?}], {dst} {{{mask}}}{z}")
+            }
+
+            Inst::TurinMaskedStore { src, addr, mask, .. } => {
+                let src = pretty_print_reg(*src, 64);
+                let mask = pretty_print_reg(*mask, 8);
+                format!("vmovdqu32 {src}, [{addr:?}] {{{mask}}}")
+            }
+
+            Inst::TurinMaskLogic { op, dst, src1, src2 } => {
+                let dst = pretty_print_reg(dst.to_reg(), 8);
+                let src1 = pretty_print_reg(*src1, 8);
+                let src2_str = if let Some(s) = src2 {
+                    format!(", {}", pretty_print_reg(*s, 8))
+                } else {
+                    String::new()
+                };
+                format!("{op:?} {src1}{src2_str}, {dst}")
+            }
+
+            Inst::TurinKmov { dst, src, to_gpr } => {
+                let dst = pretty_print_reg(dst.to_reg(), 8);
+                let src = pretty_print_reg(*src, 8);
+                if *to_gpr {
+                    format!("kmovq {src}, {dst}")
+                } else {
+                    format!("kmovq {src}, {dst}")
+                }
+            }
+
+            Inst::TurinKortest { src1, src2 } => {
+                let src1 = pretty_print_reg(*src1, 8);
+                let src2 = pretty_print_reg(*src2, 8);
+                format!("kortestw {src1}, {src2}")
+            }
+
             Inst::External { inst } => {
                 format!("{inst}")
             }
@@ -1201,6 +1304,73 @@ fn x64_get_operands(inst: &mut Inst, collector: &mut impl OperandVisitor) {
         }
 
         Inst::SequencePoint { .. } => {}
+
+        // YOLM FORK: Turin AVX-512 register allocation
+        Inst::TurinAvx512Alu {
+            dst,
+            src1,
+            src2,
+            mask,
+            ..
+        } => {
+            collector.reg_use(src1);
+            collector.reg_def(dst);
+            src2.get_operands(collector);
+            if let Some(m) = mask {
+                collector.reg_use(&m.to_reg());
+            }
+        }
+
+        Inst::TurinAvx512Cmp { dst, src1, src2, mask, .. } => {
+            collector.reg_use(src1);
+            collector.reg_def(dst);
+            src2.get_operands(collector);
+            if let Some(m) = mask {
+                collector.reg_use(&m.to_reg());
+            }
+        }
+
+        Inst::TurinCompressStore { src, addr, mask, .. } => {
+            collector.reg_use(src);
+            collector.reg_use(mask);
+            addr.get_operands(collector);
+        }
+
+        Inst::TurinExpandLoad { dst, addr, mask, .. } => {
+            collector.reg_def(dst);
+            collector.reg_use(mask);
+            addr.get_operands(collector);
+        }
+
+        Inst::TurinMaskedLoad { dst, addr, mask, .. } => {
+            collector.reg_def(dst);
+            collector.reg_use(mask);
+            addr.get_operands(collector);
+        }
+
+        Inst::TurinMaskedStore { src, addr, mask, .. } => {
+            collector.reg_use(src);
+            collector.reg_use(mask);
+            addr.get_operands(collector);
+        }
+
+        Inst::TurinMaskLogic { dst, src1, src2, .. } => {
+            collector.reg_def(dst);
+            collector.reg_use(src1);
+            if let Some(s) = src2 {
+                collector.reg_use(s);
+            }
+        }
+
+        Inst::TurinKmov { dst, src, .. } => {
+            collector.reg_def(dst);
+            collector.reg_use(src);
+        }
+
+        Inst::TurinKortest { src1, src2, .. } => {
+            collector.reg_use(src1);
+            collector.reg_use(src2);
+        }
 
         Inst::External { inst } => {
             inst.visit(&mut external::RegallocVisitor { collector });

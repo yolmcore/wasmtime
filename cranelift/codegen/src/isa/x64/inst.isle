@@ -324,7 +324,70 @@
        (SequencePoint)
 
        ;; An instruction assembled outside of cranelift-codegen.
-       (External (inst AssemblerInst))))
+       (External (inst AssemblerInst))
+
+       ;; =================================================================
+       ;; YOLM FORK: Turin (Zen 5) AVX-512 instructions
+       ;; Implementation: isa/x64/inst/turin/
+       ;; =================================================================
+
+       ;; AVX-512 ALU operations (VPADDD, VPADDQ, VPSUBD, VPSUBQ, etc.)
+       (TurinAvx512Alu (op Avx512AluOp)
+                       (size OperandSize)
+                       (dst WritableReg)
+                       (src1 Reg)
+                       (src2 RegMem)
+                       (mask OptionMaskReg)
+                       (merge MergeMode))
+
+       ;; AVX-512 comparison operations (VPCMPD, VPCMPQ) - result goes to k-register
+       (TurinAvx512Cmp (size OperandSize)
+                       (dst WritableReg)
+                       (src1 Reg)
+                       (src2 RegMem)
+                       (cond Avx512Cond)
+                       (mask OptionMaskReg))
+
+       ;; VPCOMPRESSD/VPCOMPRESSQ - compress store for columnar output
+       (TurinCompressStore (size OperandSize)
+                           (src Reg)
+                           (addr SyntheticAmode)
+                           (mask Reg))
+
+       ;; VPEXPANDD/VPEXPANDQ - expand load for sparse access
+       (TurinExpandLoad (size OperandSize)
+                        (dst WritableReg)
+                        (addr SyntheticAmode)
+                        (mask Reg)
+                        (merge MergeMode))
+
+       ;; VMOVDQU32/VMOVDQU64 - masked load (fault-suppressing)
+       (TurinMaskedLoad (size OperandSize)
+                        (dst WritableReg)
+                        (addr SyntheticAmode)
+                        (mask Reg)
+                        (merge MergeMode))
+
+       ;; VMOVDQU32/VMOVDQU64 - masked store
+       (TurinMaskedStore (size OperandSize)
+                         (src Reg)
+                         (addr SyntheticAmode)
+                         (mask Reg))
+
+       ;; Mask register logic (KAND, KOR, KXOR, KNOT, KANDN)
+       (TurinMaskLogic (op MaskAluOp)
+                       (dst WritableReg)
+                       (src1 Reg)
+                       (src2 OptionReg))
+
+       ;; KMOVQ - move between k-register and GPR/memory
+       (TurinKmov (dst WritableReg)
+                  (src Reg)
+                  (to_gpr bool))
+
+       ;; KORTESTW/KORTESTQ - test mask and set flags
+       (TurinKortest (src1 Reg)
+                     (src2 Reg))))
 
 (type AssemblerInst extern (enum))
 
@@ -692,6 +755,19 @@
 (type XmmMemAligned extern (enum))
 (type XmmMemImm extern (enum))
 (type XmmMemAlignedImm extern (enum))
+
+(type Mask (primitive Mask))
+(type WritableMask (primitive WritableMask))
+(type MaskMem extern (enum))
+(type MaskMemImm extern (enum))
+
+;; YOLM FORK: Turin AVX-512 types
+(type Avx512AluOp extern (enum))
+(type Avx512Cond extern (enum))
+(type MaskAluOp extern (enum))
+(type MergeMode extern (enum))
+(type OptionMaskReg (primitive OptionMaskReg))
+(type OptionReg (primitive OptionReg))
 
 ;; Convert a `WritableGpr` to a `WritableReg`.
 (decl writable_gpr_to_reg (WritableGpr) WritableReg)

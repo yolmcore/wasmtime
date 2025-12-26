@@ -1,0 +1,19 @@
+;; YOLM FORK: Turin AVX-512 (Zen 5) lowering rules.
+;;
+;; This file contains ISLE lowering patterns for AVX-512 instructions
+;; optimized for AMD EPYC Turin (Zen 5) processors.
+
+;; For now, we use the existing instruction infrastructure.
+;; Turin-specific optimizations will be enabled via feature flags.
+
+;; Note: The TurinAvx512Alu MInst variant is defined in inst.isle.
+;; The actual emission logic is in inst/turin/emit.rs.
+
+;; We don't define any lowering rules here yet because:
+;; 1. The $I32X16 type (512-bit vectors) isn't natively supported in Cranelift IR
+;; 2. We'll need to expose these instructions through intrinsics or custom IR extensions
+;;
+;; When ready to lower, the pattern would be:
+;; (rule N (lower (has_type ty (iadd x y)))
+;;       (if-let true (use_avx512_for_type ty))
+;;       (turin_vpaddd ty x y))
