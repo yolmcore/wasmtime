@@ -7,12 +7,12 @@
 // Reference: Intel 64 and IA-32 Architectures Software Developer's Manual
 // Volume 2: Instruction Set Reference (EVEX Encoding)
 
-use super::super::args::{OperandSize, SyntheticAmode};
-use super::defs::*;
+use super::super::args::{Amode, OperandSize, SyntheticAmode, Xmm};
+use super::defs::{Avx512AluOp, Avx512AlignOp, Avx512Cond, Avx512CvtOp, Avx512ExtractOp, Avx512FmaOp, Avx512FpAluOp, Avx512FpSpecialOp, Avx512ImmShuffleOp, Avx512VnniOp, Vp2IntersectOp, MaskAluOp, MergeMode};
 use super::encoding::*;
-use crate::isa::x64::inst::args::OptionMaskReg;
+use crate::isa::x64::inst::args::{OptionMaskReg, RegMem};
 use crate::isa::x64::inst::Inst;
-use crate::machinst::{MachBuffer, Reg, RegMem, Writable};
+use crate::machinst::{MachBuffer, Reg, Writable};
 
 // =============================================================================
 // AVX-512 ALU Instruction Emission (VPADDD, VPADDQ, etc.)
@@ -34,29 +34,132 @@ pub fn emit_turin_inst(
         _ => op.evex_w(),
     };
 
+    let mask_enc = mask
+        .map(|m| m.to_reg().to_real_reg().unwrap().hw_enc())
+        .unwrap_or(0);
+
     let evex = EvexPrefix {
         map: op.evex_map(),
         w,
         pp: op.evex_pp(),
-        aaa: mask
-            .map(|m| m.to_reg().to_real_reg().unwrap().hw_enc())
-            .unwrap_or(0),
+        aaa: mask_enc,
         z: matches!(merge, MergeMode::Zeroing),
         b: false,
         ll: 0b10, // 512-bit
     };
 
-    let dst_enc = dst.to_reg().to_real_reg().unwrap().hw_enc() as u8;
-    let src1_enc = src1.to_real_reg().unwrap().hw_enc() as u8;
-
-    let (src2_enc, is_mem) = match src2 {
-        RegMem::Reg { reg } => (reg.to_real_reg().unwrap().hw_enc() as u8, false),
-        RegMem::Mem { .. } => (0, true),
+    let dst_enc = dst.to_reg().to_real_reg().unwrap().hw_enc();
+    // For unary ops, we pass 0 which after inversion in emit() becomes vvvv=1111 (unused)
+    let src1_enc = if op.is_unary() {
+        0
+    } else {
+        src1.to_real_reg().unwrap().hw_enc()
     };
 
-    evex.emit(dst_enc, src1_enc, src2_enc, is_mem, sink);
-    sink.put1(op.opcode());
-    emit_modrm_for_regmem(sink, dst_enc, src2);
+    match src2 {
+        RegMem::Reg { reg } => {
+            let src2_enc = reg.to_real_reg().unwrap().hw_enc();
+            evex.emit(dst_enc, src1_enc, src2_enc, false, sink);
+            sink.put1(op.opcode());
+            emit_modrm_for_regmem(sink, dst_enc, src2);
+        }
+        RegMem::Mem { addr } => {
+            // For memory operands, we need to properly encode the base/index register extensions
+            let amode = extract_real_amode(addr);
+            let (base_enc, index_enc) = extract_mem_reg_encodings(amode);
+            emit_evex_for_alu_mem(&evex, dst_enc, src1_enc, base_enc, index_enc, sink);
+            sink.put1(op.opcode());
+            emit_modrm_for_regmem(sink, dst_enc, src2);
+        }
+    }
+}
+
+// =============================================================================
+// AVX-512 Broadcast Instruction Emission (VPBROADCASTD, VPBROADCASTQ)
+// =============================================================================
+
+/// Emit VPBROADCASTD - broadcast 32-bit element to all 16 lanes of ZMM.
+///
+/// VPBROADCASTD zmm, xmm/m32: EVEX.512.66.0F38.W0 58 /r
+pub fn emit_vpbroadcastd(
+    dst: Writable<Xmm>,
+    src: &RegMem,
+    sink: &mut MachBuffer<Inst>,
+) {
+    let evex = EvexPrefix {
+        map: 0x02,  // 0F38 map
+        w: false,   // W=0 for 32-bit
+        pp: 0x01,   // 66 prefix
+        aaa: 0,     // No mask
+        z: false,
+        b: false,
+        ll: 0b10,   // 512-bit
+    };
+
+    let dst_enc = dst.to_reg().to_reg().to_real_reg().unwrap().hw_enc();
+
+    match src {
+        RegMem::Reg { reg } => {
+            let src_enc = reg.to_real_reg().unwrap().hw_enc();
+            // For unary ops, vvvv must be 1111b (no second source).
+            // Pass 0x00 so it inverts to 0x0F in the encoded field.
+            evex.emit(dst_enc, 0x00, src_enc, false, sink);
+            sink.put1(0x58); // VPBROADCASTD opcode
+            let modrm = 0xC0 | ((dst_enc & 0x07) << 3) | (src_enc & 0x07);
+            sink.put1(modrm);
+        }
+        RegMem::Mem { addr } => {
+            let amode = extract_real_amode(addr);
+            let (base_enc, index_enc) = extract_mem_reg_encodings(amode);
+            // For unary ops, vvvv must be 1111b (no second source).
+            // Pass 0x00 so it inverts to 0x0F in the encoded field.
+            evex.emit_for_alu_mem(dst_enc, 0x00, base_enc, index_enc, sink);
+            sink.put1(0x58);
+            emit_modrm_sib_disp(sink, dst_enc, amode);
+        }
+    }
+}
+
+/// Emit VPBROADCASTQ - broadcast 64-bit element to all 8 lanes of ZMM.
+///
+/// VPBROADCASTQ zmm, xmm/m64: EVEX.512.66.0F38.W1 59 /r
+pub fn emit_vpbroadcastq(
+    dst: Writable<Xmm>,
+    src: &RegMem,
+    sink: &mut MachBuffer<Inst>,
+) {
+    let evex = EvexPrefix {
+        map: 0x02,  // 0F38 map
+        w: true,    // W=1 for 64-bit
+        pp: 0x01,   // 66 prefix
+        aaa: 0,     // No mask
+        z: false,
+        b: false,
+        ll: 0b10,   // 512-bit
+    };
+
+    let dst_enc = dst.to_reg().to_reg().to_real_reg().unwrap().hw_enc();
+
+    match src {
+        RegMem::Reg { reg } => {
+            let src_enc = reg.to_real_reg().unwrap().hw_enc();
+            // For unary ops, vvvv must be 1111b (no second source).
+            // Pass 0x00 so it inverts to 0x0F in the encoded field.
+            evex.emit(dst_enc, 0x00, src_enc, false, sink);
+            sink.put1(0x59); // VPBROADCASTQ opcode
+            let modrm = 0xC0 | ((dst_enc & 0x07) << 3) | (src_enc & 0x07);
+            sink.put1(modrm);
+        }
+        RegMem::Mem { addr } => {
+            let amode = extract_real_amode(addr);
+            let (base_enc, index_enc) = extract_mem_reg_encodings(amode);
+            // For unary ops, vvvv must be 1111b (no second source).
+            // Pass 0x00 so it inverts to 0x0F in the encoded field.
+            evex.emit_for_alu_mem(dst_enc, 0x00, base_enc, index_enc, sink);
+            sink.put1(0x59);
+            emit_modrm_sib_disp(sink, dst_enc, amode);
+        }
+    }
 }
 
 // =============================================================================
@@ -78,30 +181,41 @@ pub fn emit_avx512_cmp(
     // VPCMPQ: EVEX.512.66.0F3A.W1 1F /r ib
     let w = matches!(size, OperandSize::Size64);
 
+    let mask_enc = mask
+        .map(|m| m.to_reg().to_real_reg().unwrap().hw_enc())
+        .unwrap_or(0);
+
     let evex = EvexPrefix {
         map: 0x03, // 0F3A map
         w,
         pp: 0x01, // 66 prefix
-        aaa: mask
-            .map(|m| m.to_reg().to_real_reg().unwrap().hw_enc())
-            .unwrap_or(0),
+        aaa: mask_enc,
         z: false, // Comparisons don't use zeroing
         b: false,
         ll: 0b10, // 512-bit
     };
 
-    let dst_enc = dst.to_reg().to_real_reg().unwrap().hw_enc() as u8;
-    let src1_enc = src1.to_real_reg().unwrap().hw_enc() as u8;
+    let dst_enc = dst.to_reg().to_real_reg().unwrap().hw_enc();
+    let src1_enc = src1.to_real_reg().unwrap().hw_enc();
 
-    let (src2_enc, is_mem) = match src2 {
-        RegMem::Reg { reg } => (reg.to_real_reg().unwrap().hw_enc() as u8, false),
-        RegMem::Mem { .. } => (0, true),
-    };
-
-    evex.emit(dst_enc, src1_enc, src2_enc, is_mem, sink);
-    sink.put1(0x1F); // VPCMPD/VPCMPQ opcode
-    emit_modrm_for_regmem(sink, dst_enc, src2);
-    sink.put1(cond as u8); // Immediate condition
+    match src2 {
+        RegMem::Reg { reg } => {
+            let src2_enc = reg.to_real_reg().unwrap().hw_enc();
+            evex.emit(dst_enc, src1_enc, src2_enc, false, sink);
+            sink.put1(0x1F); // VPCMPD/VPCMPQ opcode
+            emit_modrm_for_regmem(sink, dst_enc, src2);
+            sink.put1(cond as u8); // Immediate condition
+        }
+        RegMem::Mem { addr } => {
+            // For memory operands, properly encode the base/index register extensions
+            let amode = extract_real_amode(addr);
+            let (base_enc, index_enc) = extract_mem_reg_encodings(amode);
+            emit_evex_for_alu_mem(&evex, dst_enc, src1_enc, base_enc, index_enc, sink);
+            sink.put1(0x1F); // VPCMPD/VPCMPQ opcode
+            emit_modrm_for_regmem(sink, dst_enc, src2);
+            sink.put1(cond as u8); // Immediate condition
+        }
+    }
 }
 
 // =============================================================================
@@ -113,7 +227,7 @@ pub fn emit_avx512_cmp(
 pub fn emit_compress_store(
     size: OperandSize,
     src: Reg,
-    addr: &SyntheticAmode,
+    addr: &Amode,
     mask: Reg,
     sink: &mut MachBuffer<Inst>,
 ) {
@@ -132,11 +246,14 @@ pub fn emit_compress_store(
         ll: 0b10,
     };
 
-    let src_enc = src.to_real_reg().unwrap().hw_enc() as u8;
+    let src_enc = src.to_real_reg().unwrap().hw_enc();
+
+    // Extract base/index register encodings from the address mode
+    let (base_enc, index_enc) = extract_mem_reg_encodings(addr);
 
     // For store instructions, we need to use a different encoding
     // The src register goes in the reg field of ModRM
-    evex.emit(src_enc, 0, 0, true, sink);
+    evex.emit_for_mem(src_enc, base_enc, index_enc, sink);
     sink.put1(0x8B); // VPCOMPRESSD/Q opcode
     emit_modrm_sib_disp(sink, src_enc, addr);
 }
@@ -146,7 +263,7 @@ pub fn emit_compress_store(
 pub fn emit_expand_load(
     size: OperandSize,
     dst: Writable<Reg>,
-    addr: &SyntheticAmode,
+    addr: &Amode,
     mask: Reg,
     merge: MergeMode,
     sink: &mut MachBuffer<Inst>,
@@ -166,9 +283,12 @@ pub fn emit_expand_load(
         ll: 0b10,
     };
 
-    let dst_enc = dst.to_reg().to_real_reg().unwrap().hw_enc() as u8;
+    let dst_enc = dst.to_reg().to_real_reg().unwrap().hw_enc();
 
-    evex.emit(dst_enc, 0, 0, true, sink);
+    // Extract base/index register encodings from the address mode
+    let (base_enc, index_enc) = extract_mem_reg_encodings(addr);
+
+    evex.emit_for_mem(dst_enc, base_enc, index_enc, sink);
     sink.put1(0x89); // VPEXPANDD/Q opcode
     emit_modrm_sib_disp(sink, dst_enc, addr);
 }
@@ -181,7 +301,7 @@ pub fn emit_expand_load(
 pub fn emit_masked_load(
     size: OperandSize,
     dst: Writable<Reg>,
-    addr: &SyntheticAmode,
+    addr: &Amode,
     mask: Reg,
     merge: MergeMode,
     sink: &mut MachBuffer<Inst>,
@@ -201,9 +321,12 @@ pub fn emit_masked_load(
         ll: 0b10,
     };
 
-    let dst_enc = dst.to_reg().to_real_reg().unwrap().hw_enc() as u8;
+    let dst_enc = dst.to_reg().to_real_reg().unwrap().hw_enc();
 
-    evex.emit(dst_enc, 0, 0, true, sink);
+    // Extract base/index register encodings from the address mode
+    let (base_enc, index_enc) = extract_mem_reg_encodings(addr);
+
+    evex.emit_for_mem(dst_enc, base_enc, index_enc, sink);
     sink.put1(0x6F); // VMOVDQU32/64 load opcode
     emit_modrm_sib_disp(sink, dst_enc, addr);
 }
@@ -212,7 +335,7 @@ pub fn emit_masked_load(
 pub fn emit_masked_store(
     size: OperandSize,
     src: Reg,
-    addr: &SyntheticAmode,
+    addr: &Amode,
     mask: Reg,
     sink: &mut MachBuffer<Inst>,
 ) {
@@ -231,9 +354,78 @@ pub fn emit_masked_store(
         ll: 0b10,
     };
 
-    let src_enc = src.to_real_reg().unwrap().hw_enc() as u8;
+    let src_enc = src.to_real_reg().unwrap().hw_enc();
 
-    evex.emit(src_enc, 0, 0, true, sink);
+    // Extract base/index register encodings from the address mode
+    let (base_enc, index_enc) = extract_mem_reg_encodings(addr);
+
+    evex.emit_for_mem(src_enc, base_enc, index_enc, sink);
+    sink.put1(0x7F); // VMOVDQU32/64 store opcode
+    emit_modrm_sib_disp(sink, src_enc, addr);
+}
+
+/// Emit VMOVDQU32/VMOVDQU64 unmasked load (512-bit).
+/// This is for simple 512-bit vector loads without masking.
+pub fn emit_512bit_load(
+    size: OperandSize,
+    dst: Writable<Reg>,
+    addr: &Amode,
+    sink: &mut MachBuffer<Inst>,
+) {
+    // VMOVDQU32: EVEX.512.F3.0F.W0 6F /r (load)
+    // VMOVDQU64: EVEX.512.F3.0F.W1 6F /r (load)
+    // Use aaa=000 (k0) for unmasked operation
+    let w = matches!(size, OperandSize::Size64);
+
+    let evex = EvexPrefix {
+        map: 0x01, // 0F map
+        w,
+        pp: 0x02, // F3 prefix
+        aaa: 0,   // k0 = no masking
+        z: false, // No zeroing for unmasked
+        b: false,
+        ll: 0b10, // 512-bit
+    };
+
+    let dst_enc = dst.to_reg().to_real_reg().unwrap().hw_enc();
+
+    // Extract base/index register encodings from the address mode
+    let (base_enc, index_enc) = extract_mem_reg_encodings(addr);
+
+    evex.emit_for_mem(dst_enc, base_enc, index_enc, sink);
+    sink.put1(0x6F); // VMOVDQU32/64 load opcode
+    emit_modrm_sib_disp(sink, dst_enc, addr);
+}
+
+/// Emit VMOVDQU32/VMOVDQU64 unmasked store (512-bit).
+/// This is for simple 512-bit vector stores without masking.
+pub fn emit_512bit_store(
+    size: OperandSize,
+    src: Reg,
+    addr: &Amode,
+    sink: &mut MachBuffer<Inst>,
+) {
+    // VMOVDQU32: EVEX.512.F3.0F.W0 7F /r (store)
+    // VMOVDQU64: EVEX.512.F3.0F.W1 7F /r (store)
+    // Use aaa=000 (k0) for unmasked operation
+    let w = matches!(size, OperandSize::Size64);
+
+    let evex = EvexPrefix {
+        map: 0x01, // 0F map
+        w,
+        pp: 0x02, // F3 prefix
+        aaa: 0,   // k0 = no masking
+        z: false,
+        b: false,
+        ll: 0b10, // 512-bit
+    };
+
+    let src_enc = src.to_real_reg().unwrap().hw_enc();
+
+    // Extract base/index register encodings from the address mode
+    let (base_enc, index_enc) = extract_mem_reg_encodings(addr);
+
+    evex.emit_for_mem(src_enc, base_enc, index_enc, sink);
     sink.put1(0x7F); // VMOVDQU32/64 store opcode
     emit_modrm_sib_disp(sink, src_enc, addr);
 }
@@ -258,8 +450,8 @@ pub fn emit_mask_logic(
     // KNOTW:  VEX.L0.0F.W0 44 /r (unary)
     // KANDNW: VEX.L1.66.0F.W0 42 /r
 
-    let dst_enc = dst.to_reg().to_real_reg().unwrap().hw_enc() as u8;
-    let src1_enc = src1.to_real_reg().unwrap().hw_enc() as u8;
+    let dst_enc = dst.to_reg().to_real_reg().unwrap().hw_enc();
+    let src1_enc = src1.to_real_reg().unwrap().hw_enc();
 
     match op {
         MaskAluOp::Knot => {
@@ -277,12 +469,13 @@ pub fn emit_mask_logic(
         _ => {
             // Binary ops: KAND, KOR, KXOR, KANDN
             let src2 = src2.expect("Binary mask op requires src2");
-            let src2_enc = src2.to_real_reg().unwrap().hw_enc() as u8;
+            let src2_enc = src2.to_real_reg().unwrap().hw_enc();
 
             let opcode = match op {
                 MaskAluOp::Kand => 0x41,
                 MaskAluOp::Kor => 0x45,
                 MaskAluOp::Kxor => 0x47,
+                MaskAluOp::Kxnor => 0x46,
                 MaskAluOp::Kandn => 0x42,
                 MaskAluOp::Knot => unreachable!(),
             };
@@ -314,8 +507,8 @@ pub fn emit_kmov(
     to_gpr: bool,
     sink: &mut MachBuffer<Inst>,
 ) {
-    let dst_enc = dst.to_reg().to_real_reg().unwrap().hw_enc() as u8;
-    let src_enc = src.to_real_reg().unwrap().hw_enc() as u8;
+    let dst_enc = dst.to_reg().to_real_reg().unwrap().hw_enc();
+    let src_enc = src.to_real_reg().unwrap().hw_enc();
 
     if to_gpr {
         // KMOVQ r64, k: VEX.L0.F2.0F.W1 93 /r
@@ -357,8 +550,8 @@ pub fn emit_kortest(
     sink: &mut MachBuffer<Inst>,
 ) {
     // KORTESTW: VEX.L0.0F.W0 98 /r
-    let src1_enc = src1.to_real_reg().unwrap().hw_enc() as u8;
-    let src2_enc = src2.to_real_reg().unwrap().hw_enc() as u8;
+    let src1_enc = src1.to_real_reg().unwrap().hw_enc();
+    let src2_enc = src2.to_real_reg().unwrap().hw_enc();
 
     // 2-byte VEX
     let r = if src1_enc >= 8 { 0 } else { 1 };
@@ -379,11 +572,11 @@ pub fn emit_kortest(
 /// Uses the two-tier strategy: prefer GPR, fall back to stack.
 pub fn emit_kmov_store(
     src: Reg,
-    addr: &SyntheticAmode,
+    addr: &Amode,
     sink: &mut MachBuffer<Inst>,
 ) {
     // KMOVQ m64, k: VEX.L0.0F.W1 91 /r
-    let src_enc = src.to_real_reg().unwrap().hw_enc() as u8;
+    let src_enc = src.to_real_reg().unwrap().hw_enc();
 
     // 3-byte VEX for memory operand
     sink.put1(0xC4);
@@ -396,11 +589,11 @@ pub fn emit_kmov_store(
 /// Emit KMOVQ to fill a k-register from memory.
 pub fn emit_kmov_load(
     dst: Writable<Reg>,
-    addr: &SyntheticAmode,
+    addr: &Amode,
     sink: &mut MachBuffer<Inst>,
 ) {
     // KMOVQ k, m64: VEX.L0.0F.W1 90 /r
-    let dst_enc = dst.to_reg().to_real_reg().unwrap().hw_enc() as u8;
+    let dst_enc = dst.to_reg().to_real_reg().unwrap().hw_enc();
 
     // 3-byte VEX for memory operand
     sink.put1(0xC4);
@@ -411,115 +604,1204 @@ pub fn emit_kmov_load(
 }
 
 // =============================================================================
+// Gather/Scatter Instruction Emission (VPGATHERD/Q, VPSCATTERD/Q)
+// =============================================================================
+
+/// Emit a VPGATHER instruction (load non-contiguous elements by indices).
+///
+/// Gathers dword/qword elements from memory using indices in a vector register.
+/// The mask register indicates which elements to gather - after each gather,
+/// the corresponding mask bit is cleared.
+///
+/// Memory addressing: base + index_reg * scale + offset
+pub fn emit_gather(
+    op: super::defs::GatherOp,
+    dst: Writable<Reg>,
+    base: Reg,
+    index: Reg,
+    scale: u8,       // 1, 2, 4, or 8
+    disp: i32,
+    mask: Reg,       // Must be k1-k7 (k0 not allowed for gather/scatter)
+    sink: &mut MachBuffer<Inst>,
+) {
+    // VPGATHERDD/DQ/QD/QQ: EVEX.512.66.0F38.W0/W1 90/91 /r
+    let evex = EvexPrefix {
+        map: 0x02,  // 0F38 map
+        w: op.evex_w(),
+        pp: 0x01,   // 66 prefix
+        aaa: mask.to_real_reg().unwrap().hw_enc(),
+        z: false,   // Gather doesn't use zeroing (mask bits are cleared during operation)
+        b: false,
+        ll: 0b10,   // 512-bit
+    };
+
+    let dst_enc = dst.to_reg().to_real_reg().unwrap().hw_enc();
+    let base_enc = base.to_real_reg().unwrap().hw_enc();
+    let index_enc = index.to_real_reg().unwrap().hw_enc();
+
+    // Emit EVEX prefix with VSIB addressing
+    evex.emit_vsib(dst_enc, index_enc, base_enc, sink);
+    sink.put1(op.opcode());
+
+    // Emit ModRM + SIB for VSIB addressing
+    // ModRM: mod=00/01/10 (depending on displacement), reg=dst, rm=100 (SIB follows)
+    let scale_bits = match scale {
+        1 => 0b00,
+        2 => 0b01,
+        4 => 0b10,
+        8 => 0b11,
+        _ => panic!("Invalid scale for gather: {scale}"),
+    };
+
+    if disp == 0 && (base_enc & 0x07) != 5 {
+        // mod=00: no displacement (unless base is RBP/R13)
+        let modrm = 0x04 | ((dst_enc & 0x07) << 3);
+        sink.put1(modrm);
+        let sib = (scale_bits << 6) | ((index_enc & 0x07) << 3) | (base_enc & 0x07);
+        sink.put1(sib);
+    } else if disp >= -128 && disp <= 127 {
+        // mod=01: 8-bit displacement
+        let modrm = 0x44 | ((dst_enc & 0x07) << 3);
+        sink.put1(modrm);
+        let sib = (scale_bits << 6) | ((index_enc & 0x07) << 3) | (base_enc & 0x07);
+        sink.put1(sib);
+        sink.put1(disp as u8);
+    } else {
+        // mod=10: 32-bit displacement
+        let modrm = 0x84 | ((dst_enc & 0x07) << 3);
+        sink.put1(modrm);
+        let sib = (scale_bits << 6) | ((index_enc & 0x07) << 3) | (base_enc & 0x07);
+        sink.put1(sib);
+        sink.put4(disp as u32);
+    }
+}
+
+/// Emit a VPSCATTER instruction (store elements to non-contiguous memory by indices).
+///
+/// Scatters dword/qword elements to memory using indices in a vector register.
+/// The mask register indicates which elements to scatter - after each scatter,
+/// the corresponding mask bit is cleared.
+///
+/// Memory addressing: base + index_reg * scale + offset
+pub fn emit_scatter(
+    op: super::defs::ScatterOp,
+    src: Reg,
+    base: Reg,
+    index: Reg,
+    scale: u8,       // 1, 2, 4, or 8
+    disp: i32,
+    mask: Reg,       // Must be k1-k7 (k0 not allowed for gather/scatter)
+    sink: &mut MachBuffer<Inst>,
+) {
+    // VPSCATTERDD/DQ/QD/QQ: EVEX.512.66.0F38.W0/W1 A0/A1 /r
+    let evex = EvexPrefix {
+        map: 0x02,  // 0F38 map
+        w: op.evex_w(),
+        pp: 0x01,   // 66 prefix
+        aaa: mask.to_real_reg().unwrap().hw_enc(),
+        z: false,   // Scatter doesn't use zeroing
+        b: false,
+        ll: 0b10,   // 512-bit
+    };
+
+    let src_enc = src.to_real_reg().unwrap().hw_enc();
+    let base_enc = base.to_real_reg().unwrap().hw_enc();
+    let index_enc = index.to_real_reg().unwrap().hw_enc();
+
+    // Emit EVEX prefix with VSIB addressing
+    evex.emit_vsib(src_enc, index_enc, base_enc, sink);
+    sink.put1(op.opcode());
+
+    // Emit ModRM + SIB for VSIB addressing
+    let scale_bits = match scale {
+        1 => 0b00,
+        2 => 0b01,
+        4 => 0b10,
+        8 => 0b11,
+        _ => panic!("Invalid scale for scatter: {scale}"),
+    };
+
+    if disp == 0 && (base_enc & 0x07) != 5 {
+        let modrm = 0x04 | ((src_enc & 0x07) << 3);
+        sink.put1(modrm);
+        let sib = (scale_bits << 6) | ((index_enc & 0x07) << 3) | (base_enc & 0x07);
+        sink.put1(sib);
+    } else if disp >= -128 && disp <= 127 {
+        let modrm = 0x44 | ((src_enc & 0x07) << 3);
+        sink.put1(modrm);
+        let sib = (scale_bits << 6) | ((index_enc & 0x07) << 3) | (base_enc & 0x07);
+        sink.put1(sib);
+        sink.put1(disp as u8);
+    } else {
+        let modrm = 0x84 | ((src_enc & 0x07) << 3);
+        sink.put1(modrm);
+        let sib = (scale_bits << 6) | ((index_enc & 0x07) << 3) | (base_enc & 0x07);
+        sink.put1(sib);
+        sink.put4(disp as u32);
+    }
+}
+
+// =============================================================================
+// Compress/Expand Register Instructions
+// =============================================================================
+
+/// Emit VPCOMPRESSD/Q to register (compress and write to register).
+///
+/// VPCOMPRESSD/Q compresses elements from src where mask bits are 1,
+/// packing them contiguously into dst starting from the lowest position.
+pub fn emit_compress_reg(
+    size: OperandSize,
+    dst: Writable<Reg>,
+    src: Reg,
+    mask: Reg,
+    sink: &mut MachBuffer<Inst>,
+) {
+    // VPCOMPRESSD: EVEX.512.66.0F38.W0 8B /r
+    // VPCOMPRESSQ: EVEX.512.66.0F38.W1 8B /r
+    let evex = EvexPrefix {
+        map: 0x02,  // 0F38 map
+        w: matches!(size, OperandSize::Size64),
+        pp: 0x01,   // 66 prefix
+        aaa: mask.to_real_reg().unwrap().hw_enc(),
+        z: false,   // Register form doesn't use zeroing
+        b: false,
+        ll: 0b10,   // 512-bit
+    };
+
+    let dst_enc = dst.to_reg().to_real_reg().unwrap().hw_enc();
+    let src_enc = src.to_real_reg().unwrap().hw_enc();
+
+    evex.emit(dst_enc, 0, src_enc, false, sink);
+    sink.put1(0x8B);
+
+    let modrm = 0xC0 | ((dst_enc & 0x07) << 3) | (src_enc & 0x07);
+    sink.put1(modrm);
+}
+
+/// Emit VPEXPANDD/Q from register (expand from register).
+///
+/// VPEXPANDD/Q expands contiguous elements from src into dst,
+/// placing them at positions where mask bits are 1.
+pub fn emit_expand_reg(
+    size: OperandSize,
+    dst: Writable<Reg>,
+    src: Reg,
+    mask: Reg,
+    merge: MergeMode,
+    sink: &mut MachBuffer<Inst>,
+) {
+    // VPEXPANDD: EVEX.512.66.0F38.W0 89 /r
+    // VPEXPANDQ: EVEX.512.66.0F38.W1 89 /r
+    let evex = EvexPrefix {
+        map: 0x02,  // 0F38 map
+        w: matches!(size, OperandSize::Size64),
+        pp: 0x01,   // 66 prefix
+        aaa: mask.to_real_reg().unwrap().hw_enc(),
+        z: matches!(merge, MergeMode::Zeroing),
+        b: false,
+        ll: 0b10,   // 512-bit
+    };
+
+    let dst_enc = dst.to_reg().to_real_reg().unwrap().hw_enc();
+    let src_enc = src.to_real_reg().unwrap().hw_enc();
+
+    evex.emit(dst_enc, 0, src_enc, false, sink);
+    sink.put1(0x89);
+
+    let modrm = 0xC0 | ((dst_enc & 0x07) << 3) | (src_enc & 0x07);
+    sink.put1(modrm);
+}
+
+/// Emit VPMOVD2M - extract high bits from 32-bit elements to mask register.
+///
+/// This instruction extracts the sign bit (bit 31) of each 32-bit element
+/// in the source vector and places them into the destination mask register.
+/// Extract k-register hardware encoding from PReg hw_enc.
+/// K-registers use indices 32-39 to distinguish from XMM registers (0-31),
+/// so we subtract 32 to get the actual hardware encoding (0-7).
+fn k_enc(hw_enc: u8) -> u8 {
+    debug_assert!(hw_enc >= 32 && hw_enc < 40, "invalid k-register hw_enc: {}", hw_enc);
+    hw_enc - 32
+}
+
+pub fn emit_vmovmsk32(
+    dst: Writable<Reg>,
+    src: Reg,
+    sink: &mut MachBuffer<Inst>,
+) {
+    // VPMOVD2M: EVEX.512.F3.0F38.W0 39 /r
+    let evex = EvexPrefix {
+        map: 0x02,  // 0F38 map
+        w: false,   // W=0 for 32-bit elements
+        pp: 0x02,   // F3 prefix
+        aaa: 0,     // No mask
+        z: false,
+        b: false,
+        ll: 0b10,   // 512-bit
+    };
+
+    let dst_hw = dst.to_reg().to_real_reg().unwrap().hw_enc();
+    let src_enc = src.to_real_reg().unwrap().hw_enc();
+    // dst is a k-register (indices 128+), extract actual encoding
+    let dst_enc = k_enc(dst_hw);
+
+    evex.emit(dst_enc as u8, 0, src_enc, false, sink);
+    sink.put1(0x39);
+
+    let modrm = 0xC0 | ((dst_enc & 0x07) << 3) | (src_enc & 0x07);
+    sink.put1(modrm);
+}
+
+/// Emit VPMOVM2D - expand mask register to 32-bit vector elements.
+///
+/// This instruction broadcasts each mask bit to a full 32-bit element (0 or -1).
+/// Used to convert k-register comparison results to vector masks.
+pub fn emit_movm2d(
+    dst: Writable<Xmm>,
+    src: Reg,
+    sink: &mut MachBuffer<Inst>,
+) {
+    // VPMOVM2D: EVEX.512.F3.0F38.W0 38 /r
+    let evex = EvexPrefix {
+        map: 0x02,  // 0F38 map
+        w: false,   // W=0 for 32-bit elements
+        pp: 0x02,   // F3 prefix
+        aaa: 0,     // No mask
+        z: false,
+        b: false,
+        ll: 0b10,   // 512-bit
+    };
+
+    let dst_enc = dst.to_reg().to_reg().to_real_reg().unwrap().hw_enc();
+    let src_hw = src.to_real_reg().unwrap().hw_enc();
+    // src is a k-register (indices 128+), extract actual encoding
+    let src_enc = k_enc(src_hw);
+
+    evex.emit(dst_enc, 0, src_enc as u8, false, sink);
+    sink.put1(0x38);
+
+    let modrm = 0xC0 | ((dst_enc & 0x07) << 3) | (src_enc & 0x07);
+    sink.put1(modrm);
+}
+
+/// Emit VPMOVM2Q - expand mask register to 64-bit vector elements.
+///
+/// This instruction broadcasts each mask bit to a full 64-bit element (0 or -1).
+/// Used to convert k-register comparison results to vector masks.
+pub fn emit_movm2q(
+    dst: Writable<Xmm>,
+    src: Reg,
+    sink: &mut MachBuffer<Inst>,
+) {
+    // VPMOVM2Q: EVEX.512.F3.0F38.W1 38 /r
+    let evex = EvexPrefix {
+        map: 0x02,  // 0F38 map
+        w: true,    // W=1 for 64-bit elements
+        pp: 0x02,   // F3 prefix
+        aaa: 0,     // No mask
+        z: false,
+        b: false,
+        ll: 0b10,   // 512-bit
+    };
+
+    let dst_enc = dst.to_reg().to_reg().to_real_reg().unwrap().hw_enc();
+    let src_hw = src.to_real_reg().unwrap().hw_enc();
+    // src is a k-register (indices 128+), extract actual encoding
+    let src_enc = k_enc(src_hw);
+
+    evex.emit(dst_enc, 0, src_enc as u8, false, sink);
+    sink.put1(0x38);
+
+    let modrm = 0xC0 | ((dst_enc & 0x07) << 3) | (src_enc & 0x07);
+    sink.put1(modrm);
+}
+
+/// Emit VPMOVQ2M - extract high bits from 64-bit elements to mask register.
+///
+/// This instruction extracts the sign bit (bit 63) of each 64-bit element
+/// in the source vector and places them into the destination mask register.
+pub fn emit_vmovmsk64(
+    dst: Writable<Reg>,
+    src: Reg,
+    sink: &mut MachBuffer<Inst>,
+) {
+    // VPMOVQ2M: EVEX.512.F3.0F38.W1 39 /r
+    let evex = EvexPrefix {
+        map: 0x02,  // 0F38 map
+        w: true,    // W=1 for 64-bit elements
+        pp: 0x02,   // F3 prefix
+        aaa: 0,     // No mask
+        z: false,
+        b: false,
+        ll: 0b10,   // 512-bit
+    };
+
+    let dst_hw = dst.to_reg().to_real_reg().unwrap().hw_enc();
+    let src_enc = src.to_real_reg().unwrap().hw_enc();
+    // dst is a k-register (indices 128+), extract actual encoding
+    let dst_enc = k_enc(dst_hw);
+
+    evex.emit(dst_enc as u8, 0, src_enc, false, sink);
+    sink.put1(0x39);
+
+    let modrm = 0xC0 | ((dst_enc & 0x07) << 3) | (src_enc & 0x07);
+    sink.put1(modrm);
+}
+
+// =============================================================================
+// AVX-512 Floating-Point ALU Instruction Emission
+// =============================================================================
+
+/// Emit an AVX-512 floating-point ALU instruction (3-operand form: dst = src1 op src2).
+///
+/// This handles VADDPS/PD, VSUBPS/PD, VMULPS/PD, VDIVPS/PD, VMINPS/PD, VMAXPS/PD.
+pub fn emit_turin_fp_inst(
+    op: Avx512FpAluOp,
+    dst: Writable<Reg>,
+    src1: Reg,
+    src2: &RegMem,
+    mask: OptionMaskReg,
+    merge: MergeMode,
+    sink: &mut MachBuffer<Inst>,
+) {
+    let mask_enc = mask
+        .map(|m| m.to_reg().to_real_reg().unwrap().hw_enc())
+        .unwrap_or(0);
+
+    let evex = EvexPrefix {
+        map: op.evex_map(),
+        w: op.evex_w(),
+        pp: op.evex_pp(),
+        aaa: mask_enc,
+        z: matches!(merge, MergeMode::Zeroing),
+        b: false,
+        ll: 0b10, // 512-bit
+    };
+
+    let dst_enc = dst.to_reg().to_real_reg().unwrap().hw_enc();
+    let src1_enc = src1.to_real_reg().unwrap().hw_enc();
+
+    match src2 {
+        RegMem::Reg { reg } => {
+            let src2_enc = reg.to_real_reg().unwrap().hw_enc();
+            evex.emit(dst_enc, src1_enc, src2_enc, false, sink);
+            sink.put1(op.opcode());
+            emit_modrm_for_regmem(sink, dst_enc, src2);
+        }
+        RegMem::Mem { addr } => {
+            let amode = extract_real_amode(addr);
+            let (base_enc, index_enc) = extract_mem_reg_encodings(amode);
+            emit_evex_for_alu_mem(&evex, dst_enc, src1_enc, base_enc, index_enc, sink);
+            sink.put1(op.opcode());
+            emit_modrm_for_regmem(sink, dst_enc, src2);
+        }
+    }
+}
+
+/// Emit an AVX-512 floating-point unary instruction (VSQRTPS/PD).
+///
+/// dst = sqrt(src)
+pub fn emit_turin_fp_unary(
+    op: Avx512FpAluOp,
+    dst: Writable<Reg>,
+    src: &RegMem,
+    mask: OptionMaskReg,
+    merge: MergeMode,
+    sink: &mut MachBuffer<Inst>,
+) {
+    let mask_enc = mask
+        .map(|m| m.to_reg().to_real_reg().unwrap().hw_enc())
+        .unwrap_or(0);
+
+    let evex = EvexPrefix {
+        map: op.evex_map(),
+        w: op.evex_w(),
+        pp: op.evex_pp(),
+        aaa: mask_enc,
+        z: matches!(merge, MergeMode::Zeroing),
+        b: false,
+        ll: 0b10, // 512-bit
+    };
+
+    let dst_enc = dst.to_reg().to_real_reg().unwrap().hw_enc();
+
+    match src {
+        RegMem::Reg { reg } => {
+            let src_enc = reg.to_real_reg().unwrap().hw_enc();
+            // For unary ops, vvvv must be 1111b (no second source).
+            // Pass 0x00 so it inverts to 0x0F in the encoded field.
+            evex.emit(dst_enc, 0x00, src_enc, false, sink);
+            sink.put1(op.opcode());
+            let modrm = 0xC0 | ((dst_enc & 0x07) << 3) | (src_enc & 0x07);
+            sink.put1(modrm);
+        }
+        RegMem::Mem { addr } => {
+            let amode = extract_real_amode(addr);
+            let (base_enc, index_enc) = extract_mem_reg_encodings(amode);
+            // For unary ops, vvvv must be 1111b (no second source).
+            // Pass 0x00 so it inverts to 0x0F in the encoded field.
+            evex.emit_for_alu_mem(dst_enc, 0x00, base_enc, index_enc, sink);
+            sink.put1(op.opcode());
+            emit_modrm_sib_disp(sink, dst_enc, amode);
+        }
+    }
+}
+
+// =============================================================================
+// AVX-512 FMA (Fused Multiply-Add) Instruction Emission
+// =============================================================================
+
+/// Emit an AVX-512 FMA instruction (VFMADD213PS/PD, etc.).
+///
+/// FMA computes `(a * b) + c` (or subtract/negate variants) in a single instruction.
+/// The 213 form is: dst = src2 * src1 + src3
+///
+/// For Cranelift's `fma(x, y, z)` = x * y + z:
+/// - Use VFMADD213: dst/src1=x, src2=y, src3=z → result = y * x + z = x * y + z ✓
+pub fn emit_turin_fma_inst(
+    op: Avx512FmaOp,
+    dst: Writable<Reg>,
+    src1: Reg,      // First multiplicand (becomes dst)
+    src2: Reg,      // Second multiplicand
+    src3: &RegMem,  // Addend
+    mask: OptionMaskReg,
+    merge: MergeMode,
+    sink: &mut MachBuffer<Inst>,
+) {
+    let mask_enc = mask
+        .map(|m| m.to_reg().to_real_reg().unwrap().hw_enc())
+        .unwrap_or(0);
+
+    let evex = EvexPrefix {
+        map: op.evex_map(),
+        w: op.evex_w(),
+        pp: op.evex_pp(),
+        aaa: mask_enc,
+        z: matches!(merge, MergeMode::Zeroing),
+        b: false,
+        ll: 0b10, // 512-bit
+    };
+
+    let dst_enc = dst.to_reg().to_real_reg().unwrap().hw_enc();
+    let src2_enc = src2.to_real_reg().unwrap().hw_enc();
+
+    // For FMA with 213 encoding, src1 must equal dst (they're tied)
+    // Verify the constraint and use src1 to suppress unused warning in release.
+    #[cfg(debug_assertions)]
+    {
+        debug_assert_eq!(
+            dst.to_reg().to_real_reg().unwrap().hw_enc(),
+            src1.to_real_reg().unwrap().hw_enc(),
+            "FMA 213: src1 must be tied to dst"
+        );
+    }
+    #[cfg(not(debug_assertions))]
+    {
+        let _ = src1;
+    }
+
+    // For FMA, the encoding is:
+    // - dst (reg field in ModRM) = first source and destination
+    // - src2 (vvvv field in EVEX) = second multiplicand
+    // - src3 (r/m field in ModRM) = addend/subtrahend
+
+    match src3 {
+        RegMem::Reg { reg } => {
+            let src3_enc = reg.to_real_reg().unwrap().hw_enc();
+            // The destination (src1) goes in the reg field
+            // src2 goes in vvvv
+            // src3 goes in r/m
+            evex.emit(dst_enc, src2_enc, src3_enc, false, sink);
+            sink.put1(op.opcode());
+            let modrm = 0xC0 | ((dst_enc & 0x07) << 3) | (src3_enc & 0x07);
+            sink.put1(modrm);
+        }
+        RegMem::Mem { addr } => {
+            let amode = extract_real_amode(addr);
+            let (base_enc, index_enc) = extract_mem_reg_encodings(amode);
+            emit_evex_for_alu_mem(&evex, dst_enc, src2_enc, base_enc, index_enc, sink);
+            sink.put1(op.opcode());
+            emit_modrm_sib_disp(sink, dst_enc, amode);
+        }
+    }
+}
+
+/// Emit VPDPBUSD/VPDPBUSDS/VPDPWSSD/VPDPWSSDS - VNNI dot product instructions.
+///
+/// These are accumulating instructions: dst = dst + dot(src1, src2)
+/// The accumulator (dst/acc) is tied to the destination.
+///
+/// Encoding (all use 0F38 map, 66 prefix, W=0):
+///   VPDPBUSD:  EVEX.NDS.512.66.0F38.W0 50 /r
+///   VPDPBUSDS: EVEX.NDS.512.66.0F38.W0 51 /r
+///   VPDPWSSD:  EVEX.NDS.512.66.0F38.W0 52 /r
+///   VPDPWSSDS: EVEX.NDS.512.66.0F38.W0 53 /r
+pub fn emit_turin_vnni_inst(
+    op: Avx512VnniOp,
+    dst: Writable<Reg>,
+    acc: Reg,       // Accumulator (tied to dst)
+    src1: Reg,      // First multiplicand
+    src2: &RegMem,  // Second multiplicand
+    mask: OptionMaskReg,
+    merge: MergeMode,
+    sink: &mut MachBuffer<Inst>,
+) {
+    let mask_enc = mask
+        .map(|m| m.to_reg().to_real_reg().unwrap().hw_enc())
+        .unwrap_or(0);
+
+    let evex = EvexPrefix {
+        map: op.evex_map(),
+        w: op.evex_w(),
+        pp: op.evex_pp(),
+        aaa: mask_enc,
+        z: matches!(merge, MergeMode::Zeroing),
+        b: false,
+        ll: 0b10, // 512-bit
+    };
+
+    let dst_enc = dst.to_reg().to_real_reg().unwrap().hw_enc();
+    let src1_enc = src1.to_real_reg().unwrap().hw_enc();
+
+    // Verify the accumulator is tied to dst
+    #[cfg(debug_assertions)]
+    {
+        debug_assert_eq!(
+            dst.to_reg().to_real_reg().unwrap().hw_enc(),
+            acc.to_real_reg().unwrap().hw_enc(),
+            "VNNI: acc must be tied to dst"
+        );
+    }
+    #[cfg(not(debug_assertions))]
+    {
+        let _ = acc;
+    }
+
+    // For VNNI, the encoding is:
+    // - dst (reg field) = accumulator/destination
+    // - vvvv = src1 (first multiplicand)
+    // - r/m = src2 (second multiplicand)
+
+    match src2 {
+        RegMem::Reg { reg } => {
+            let src2_enc = reg.to_real_reg().unwrap().hw_enc();
+            evex.emit(dst_enc, src1_enc, src2_enc, false, sink);
+            sink.put1(op.opcode());
+            let modrm = 0xC0 | ((dst_enc & 0x07) << 3) | (src2_enc & 0x07);
+            sink.put1(modrm);
+        }
+        RegMem::Mem { addr } => {
+            let amode = extract_real_amode(addr);
+            let (base_enc, index_enc) = extract_mem_reg_encodings(amode);
+            emit_evex_for_alu_mem(&evex, dst_enc, src1_enc, base_enc, index_enc, sink);
+            sink.put1(op.opcode());
+            emit_modrm_sib_disp(sink, dst_enc, amode);
+        }
+    }
+}
+
+// =============================================================================
+// VP2INTERSECT Instruction Emission (Hash Join Acceleration)
+// =============================================================================
+
+/// Emit a VP2INTERSECT instruction for hash join acceleration.
+///
+/// VP2INTERSECT compares two vectors and outputs TWO mask registers:
+/// - dst_k: For each element in src1, set bit if it matches ANY element in src2
+/// - dst_k+1: For each element in src2, set bit if it matches ANY element in src1
+///
+/// The dst_k register MUST be an even k-register (k0, k2, k4, k6).
+///
+/// Encoding:
+///   VP2INTERSECTD: EVEX.NDS.512.F2.0F38.W0 68 /r
+///   VP2INTERSECTQ: EVEX.NDS.512.F2.0F38.W1 68 /r
+///
+/// Note: Unlike most instructions, the reg field in ModR/M encodes a k-register,
+/// not a ZMM register. The vvvv field holds src1 (ZMM), r/m holds src2 (ZMM/mem).
+pub fn emit_turin_vp2intersect_inst(
+    op: Vp2IntersectOp,
+    dst_k: Writable<Reg>,
+    src1: Reg,
+    src2: &RegMem,
+    sink: &mut MachBuffer<Inst>,
+) {
+    let evex = EvexPrefix {
+        map: op.evex_map(),   // 0x02 = 0F38 map
+        w: op.evex_w(),       // W=0 for D, W=1 for Q
+        pp: op.evex_pp(),     // 0x03 = F2 prefix
+        aaa: 0,               // No write mask for output (we're writing to k-regs)
+        z: false,             // No zeroing
+        b: false,             // No broadcast
+        ll: 0b10,             // 512-bit
+    };
+
+    // VP2INTERSECT uses k-register in the reg field
+    // The dst_k must be an even k-register (k0, k2, k4, k6)
+    let dst_enc = dst_k.to_reg().to_real_reg().unwrap().hw_enc();
+
+    // Debug check: ensure dst is an even k-register
+    #[cfg(debug_assertions)]
+    {
+        debug_assert!(
+            dst_enc % 2 == 0,
+            "VP2INTERSECT dst_k must be an even k-register (k0, k2, k4, k6), got k{}",
+            dst_enc
+        );
+    }
+
+    let src1_enc = src1.to_real_reg().unwrap().hw_enc();
+
+    match src2 {
+        RegMem::Reg { reg } => {
+            let src2_enc = reg.to_real_reg().unwrap().hw_enc();
+            // For VP2INTERSECT:
+            // - EVEX.R/R' controls reg field extension (but k-regs only need 3 bits: k0-k7)
+            // - EVEX.vvvv = src1 (inverted, ZMM register)
+            // - ModR/M.reg = dst_k (k-register, 3 bits)
+            // - ModR/M.r/m = src2 (ZMM register)
+            evex.emit(dst_enc, src1_enc, src2_enc, false, sink);
+            sink.put1(op.opcode()); // 0x68
+            let modrm = 0xC0 | ((dst_enc & 0x07) << 3) | (src2_enc & 0x07);
+            sink.put1(modrm);
+        }
+        RegMem::Mem { addr } => {
+            let amode = extract_real_amode(addr);
+            let (base_enc, index_enc) = extract_mem_reg_encodings(amode);
+            emit_evex_for_alu_mem(&evex, dst_enc, src1_enc, base_enc, index_enc, sink);
+            sink.put1(op.opcode()); // 0x68
+            emit_modrm_sib_disp(sink, dst_enc, amode);
+        }
+    }
+}
+
+// =============================================================================
+// AVX-512 Type Conversion Instruction Emission
+// =============================================================================
+
+/// Emit an AVX-512 type conversion instruction (unary: dst = convert(src)).
+///
+/// This handles VCVTDQ2PS, VCVTPS2DQ, VCVTTPS2DQ, VCVTQQ2PD, VCVTPD2QQ, etc.
+pub fn emit_turin_cvt_inst(
+    op: Avx512CvtOp,
+    dst: Writable<Reg>,
+    src: &RegMem,
+    mask: OptionMaskReg,
+    merge: MergeMode,
+    sink: &mut MachBuffer<Inst>,
+) {
+    let mask_enc = mask
+        .map(|m| m.to_reg().to_real_reg().unwrap().hw_enc())
+        .unwrap_or(0);
+
+    let evex = EvexPrefix {
+        map: op.evex_map(),
+        w: op.evex_w(),
+        pp: op.evex_pp(),
+        aaa: mask_enc,
+        z: matches!(merge, MergeMode::Zeroing),
+        b: false,
+        ll: 0b10, // 512-bit
+    };
+
+    let dst_enc = dst.to_reg().to_real_reg().unwrap().hw_enc();
+
+    match src {
+        RegMem::Reg { reg } => {
+            let src_enc = reg.to_real_reg().unwrap().hw_enc();
+            // For unary ops, vvvv must be 1111b (no second source).
+            // Pass 0x00 so it inverts to 0x0F in the encoded field.
+            evex.emit(dst_enc, 0x00, src_enc, false, sink);
+            sink.put1(op.opcode());
+            let modrm = 0xC0 | ((dst_enc & 0x07) << 3) | (src_enc & 0x07);
+            sink.put1(modrm);
+        }
+        RegMem::Mem { addr } => {
+            let amode = extract_real_amode(addr);
+            let (base_enc, index_enc) = extract_mem_reg_encodings(amode);
+            // For unary ops, vvvv must be 1111b (no second source).
+            // Pass 0x00 so it inverts to 0x0F in the encoded field.
+            evex.emit_for_alu_mem(dst_enc, 0x00, base_enc, index_enc, sink);
+            sink.put1(op.opcode());
+            emit_modrm_sib_disp(sink, dst_enc, amode);
+        }
+    }
+}
+
+// =============================================================================
+// AVX-512 Vector Alignment Instruction Emission
+// =============================================================================
+
+/// Emit an AVX-512 vector alignment instruction (VALIGND/VALIGNQ).
+///
+/// Format: op dst, src1, src2, imm8
+/// Concatenates src1:src2 and extracts 512 bits starting at imm8 elements.
+pub fn emit_turin_align_inst(
+    op: Avx512AlignOp,
+    dst: Writable<Reg>,
+    src1: Reg,
+    src2: &RegMem,
+    imm8: u8,
+    mask: OptionMaskReg,
+    merge: MergeMode,
+    sink: &mut MachBuffer<Inst>,
+) {
+    let mask_enc = mask
+        .map(|m| m.to_reg().to_real_reg().unwrap().hw_enc())
+        .unwrap_or(0);
+
+    let evex = EvexPrefix {
+        map: op.evex_map(),
+        w: op.evex_w(),
+        pp: op.evex_pp(),
+        aaa: mask_enc,
+        z: matches!(merge, MergeMode::Zeroing),
+        b: false,
+        ll: 0b10, // 512-bit
+    };
+
+    let dst_enc = dst.to_reg().to_real_reg().unwrap().hw_enc();
+    let src1_enc = src1.to_real_reg().unwrap().hw_enc();
+
+    match src2 {
+        RegMem::Reg { reg } => {
+            let src2_enc = reg.to_real_reg().unwrap().hw_enc();
+            evex.emit(dst_enc, src1_enc, src2_enc, false, sink);
+            sink.put1(op.opcode());
+            let modrm = 0xC0 | ((dst_enc & 0x07) << 3) | (src2_enc & 0x07);
+            sink.put1(modrm);
+            sink.put1(imm8);
+        }
+        RegMem::Mem { addr } => {
+            let amode = extract_real_amode(addr);
+            let (base_enc, index_enc) = extract_mem_reg_encodings(amode);
+            evex.emit_for_alu_mem(dst_enc, src1_enc, base_enc, index_enc, sink);
+            sink.put1(op.opcode());
+            emit_modrm_sib_disp(sink, dst_enc, amode);
+            sink.put1(imm8);
+        }
+    }
+}
+
+// =============================================================================
+// AVX-512 Ternary Logic Instruction Emission (VPTERNLOGD, VPTERNLOGQ)
+// =============================================================================
+
+/// Emit an AVX-512 ternary logic instruction (VPTERNLOGD/VPTERNLOGQ).
+///
+/// These instructions compute arbitrary 3-input boolean functions based on
+/// an 8-bit immediate that encodes the truth table.
+///
+/// For each bit position i in the output:
+///   bit index = (src1[i] << 2) | (src2[i] << 1) | src3[i]
+///   result[i] = imm8[bit index]
+///
+/// Common imm8 values:
+///   0x00 = zero
+///   0xFF = all ones
+///   0x80 = AND(a, b, c)
+///   0xFE = OR(a, b, c)
+///   0x96 = XOR(a, XOR(b, c))
+///   0xCA = (a & b) | (~a & c) = blend/select
+pub fn emit_turin_ternlog_inst(
+    size: OperandSize,
+    dst: Writable<Reg>,
+    src1: Reg,
+    src2: Reg,
+    src3: &RegMem,
+    imm8: u8,
+    mask: OptionMaskReg,
+    merge: MergeMode,
+    sink: &mut MachBuffer<Inst>,
+) {
+    // VPTERNLOGD: EVEX.512.66.0F3A.W0 25 /r ib
+    // VPTERNLOGQ: EVEX.512.66.0F3A.W1 25 /r ib
+    let w = matches!(size, OperandSize::Size64);
+
+    let mask_enc = mask
+        .map(|m| m.to_reg().to_real_reg().unwrap().hw_enc())
+        .unwrap_or(0);
+
+    let evex = EvexPrefix {
+        map: 0x03, // 0F3A map
+        w,
+        pp: 0x01, // 66 prefix
+        aaa: mask_enc,
+        z: matches!(merge, MergeMode::Zeroing),
+        b: false,
+        ll: 0b10, // 512-bit
+    };
+
+    let dst_enc = dst.to_reg().to_real_reg().unwrap().hw_enc();
+    let src1_enc = src1.to_real_reg().unwrap().hw_enc();
+    // Note: src2 goes in the vvvv field of EVEX
+    let src2_enc = src2.to_real_reg().unwrap().hw_enc();
+
+    match src3 {
+        RegMem::Reg { reg } => {
+            let src3_enc = reg.to_real_reg().unwrap().hw_enc();
+            // For ternlog: dst=reg field, src2=vvvv, src3=r/m
+            // src1 is implicit as the destination (it's a 4-operand instruction with dst=src1)
+            evex.emit(dst_enc, src2_enc, src3_enc, false, sink);
+            sink.put1(0x25); // VPTERNLOGD/Q opcode
+            let modrm = 0xC0 | ((dst_enc & 0x07) << 3) | (src3_enc & 0x07);
+            sink.put1(modrm);
+            sink.put1(imm8);
+        }
+        RegMem::Mem { addr } => {
+            let amode = extract_real_amode(addr);
+            let (base_enc, index_enc) = extract_mem_reg_encodings(amode);
+            emit_evex_for_alu_mem(&evex, dst_enc, src2_enc, base_enc, index_enc, sink);
+            sink.put1(0x25); // VPTERNLOGD/Q opcode
+            emit_modrm_sib_disp(sink, dst_enc, amode);
+            sink.put1(imm8);
+        }
+    }
+
+    // Verify src1 is tied to dst (it should be the same register)
+    #[cfg(debug_assertions)]
+    {
+        debug_assert_eq!(
+            dst.to_reg().to_real_reg().unwrap().hw_enc(),
+            src1_enc,
+            "VPTERNLOG: src1 must be tied to dst"
+        );
+    }
+}
+
+/// Emit VPROLD/VPROLQ/VPRORD/VPRORQ - immediate rotate left/right.
+///
+/// These instructions rotate each element by an immediate value.
+/// Encoding:
+///   VPROLD/VPRORD: EVEX.512.66.0F.W0 72 /1 ib (left) or /0 ib (right)
+///   VPROLQ/VPRORQ: EVEX.512.66.0F.W1 72 /1 ib (left) or /0 ib (right)
+///
+/// The ModRM reg field encodes the operation:
+///   /0 = rotate right
+///   /1 = rotate left
+pub fn emit_turin_imm_rotate_inst(
+    size: OperandSize,
+    dst: Writable<Reg>,
+    src: &RegMem,
+    imm8: u8,
+    is_left: bool,
+    mask: OptionMaskReg,
+    merge: MergeMode,
+    sink: &mut MachBuffer<Inst>,
+) {
+    // VPROLD/VPROLQ/VPRORD/VPRORQ: EVEX.512.66.0F.W0/W1 72 /0 or /1 ib
+    let w = matches!(size, OperandSize::Size64);
+
+    let mask_enc = mask
+        .map(|m| m.to_reg().to_real_reg().unwrap().hw_enc())
+        .unwrap_or(0);
+
+    let evex = EvexPrefix {
+        map: 0x01, // 0F map
+        w,
+        pp: 0x01, // 66 prefix
+        aaa: mask_enc,
+        z: matches!(merge, MergeMode::Zeroing),
+        b: false,
+        ll: 0b10, // 512-bit
+    };
+
+    let dst_enc = dst.to_reg().to_real_reg().unwrap().hw_enc();
+    // ModRM reg field: /1 for left rotate, /0 for right rotate
+    let modrm_reg = if is_left { 1 } else { 0 };
+
+    match src {
+        RegMem::Reg { reg } => {
+            let src_enc = reg.to_real_reg().unwrap().hw_enc();
+            // For immediate rotate: vvvv = dst (the result destination)
+            // r/m = src (the source to rotate)
+            // reg = operation (0=right, 1=left)
+            evex.emit(modrm_reg, dst_enc, src_enc, false, sink);
+            sink.put1(0x72); // Opcode for VPROL/VPROR
+            // ModRM: mod=11 (reg-reg), reg=modrm_reg (0/1), r/m=src
+            let modrm = 0xC0 | (modrm_reg << 3) | (src_enc & 0x07);
+            sink.put1(modrm);
+            sink.put1(imm8);
+        }
+        RegMem::Mem { addr } => {
+            let amode = extract_real_amode(addr);
+            let (base_enc, index_enc) = extract_mem_reg_encodings(amode);
+            evex.emit_for_alu_mem(modrm_reg, dst_enc, base_enc, index_enc, sink);
+            sink.put1(0x72);
+            emit_modrm_sib_disp(sink, modrm_reg, amode);
+            sink.put1(imm8);
+        }
+    }
+}
+
+/// Emit VCMPPS/VCMPPD - FP compare to k-register.
+///
+/// These instructions compare floating-point vectors and produce a k-mask result.
+/// Encoding:
+///   VCMPPS: EVEX.NDS.512.0F.W0 C2 /r ib
+///   VCMPPD: EVEX.NDS.512.66.0F.W1 C2 /r ib
+///
+/// The immediate specifies the comparison predicate:
+///   0=EQ_OQ, 1=LT_OS, 2=LE_OS, 3=UNORD_Q, 4=NEQ_UQ, 5=NLT_US, 6=NLE_US, 7=ORD_Q, etc.
+pub fn emit_turin_fp_cmp_inst(
+    size: OperandSize,
+    dst: Writable<Reg>,
+    src1: Reg,
+    src2: &RegMem,
+    imm8: u8,
+    mask: OptionMaskReg,
+    sink: &mut MachBuffer<Inst>,
+) {
+    // VCMPPS: EVEX.NDS.512.0F.W0 C2 /r ib (pp=0, no 66 prefix)
+    // VCMPPD: EVEX.NDS.512.66.0F.W1 C2 /r ib (pp=1, 66 prefix)
+    let (w, pp) = match size {
+        OperandSize::Size32 => (false, 0x00), // VCMPPS: W=0, no prefix
+        OperandSize::Size64 => (true, 0x01),  // VCMPPD: W=1, 66 prefix
+        _ => panic!("Invalid size for VCMPPS/PD"),
+    };
+
+    let mask_enc = mask
+        .map(|m| m.to_reg().to_real_reg().unwrap().hw_enc())
+        .unwrap_or(0);
+
+    let evex = EvexPrefix {
+        map: 0x01, // 0F map
+        w,
+        pp,
+        aaa: mask_enc,
+        z: false, // No zeroing for compare instructions (output is k-register)
+        b: false,
+        ll: 0b10, // 512-bit
+    };
+
+    let dst_enc = dst.to_reg().to_real_reg().unwrap().hw_enc();
+    let src1_enc = src1.to_real_reg().unwrap().hw_enc();
+
+    match src2 {
+        RegMem::Reg { reg } => {
+            let src2_enc = reg.to_real_reg().unwrap().hw_enc();
+            // For VCMPPS/PD: dst is k-register (reg field), vvvv=src1, r/m=src2
+            evex.emit(dst_enc, src1_enc, src2_enc, false, sink);
+            sink.put1(0xC2); // VCMPPS/PD opcode
+            let modrm = 0xC0 | ((dst_enc & 0x07) << 3) | (src2_enc & 0x07);
+            sink.put1(modrm);
+            sink.put1(imm8);
+        }
+        RegMem::Mem { addr } => {
+            let amode = extract_real_amode(addr);
+            let (base_enc, index_enc) = extract_mem_reg_encodings(amode);
+            evex.emit_for_alu_mem(dst_enc, src1_enc, base_enc, index_enc, sink);
+            sink.put1(0xC2);
+            emit_modrm_sib_disp(sink, dst_enc, amode);
+            sink.put1(imm8);
+        }
+    }
+}
+
+/// Emit VPSHUFD/VPSHUFHW/VPSHUFLW - immediate shuffle operations.
+///
+/// These instructions shuffle elements according to an 8-bit immediate value.
+/// Encoding:
+///   VPSHUFD:  EVEX.512.66.0F.W0 70 /r ib
+///   VPSHUFHW: EVEX.512.F3.0F.W0 70 /r ib
+///   VPSHUFLW: EVEX.512.F2.0F.W0 70 /r ib
+///
+/// All use opcode 0x70, differentiated by the mandatory prefix (pp field).
+pub fn emit_turin_imm_shuffle_inst(
+    op: Avx512ImmShuffleOp,
+    dst: Writable<Reg>,
+    src: &RegMem,
+    imm8: u8,
+    mask: OptionMaskReg,
+    merge: MergeMode,
+    sink: &mut MachBuffer<Inst>,
+) {
+    let mask_enc = mask
+        .map(|m| m.to_reg().to_real_reg().unwrap().hw_enc())
+        .unwrap_or(0);
+
+    let evex = EvexPrefix {
+        map: op.evex_map(),
+        w: op.evex_w(),
+        pp: op.evex_pp(),
+        aaa: mask_enc,
+        z: matches!(merge, MergeMode::Zeroing),
+        b: false,
+        ll: 0b10, // 512-bit
+    };
+
+    let dst_enc = dst.to_reg().to_real_reg().unwrap().hw_enc();
+
+    match src {
+        RegMem::Reg { reg } => {
+            let src_enc = reg.to_real_reg().unwrap().hw_enc();
+            // For shuffle: vvvv is not used (set to 0xF), dst is reg field, src is r/m field
+            // But EVEX requires vvvv for NDS/NDD encoding - for VPSHUFD etc, vvvv should be 0 (no source 2)
+            evex.emit(dst_enc, 0, src_enc, false, sink);
+            sink.put1(op.opcode());
+            let modrm = 0xC0 | ((dst_enc & 0x07) << 3) | (src_enc & 0x07);
+            sink.put1(modrm);
+            sink.put1(imm8);
+        }
+        RegMem::Mem { addr } => {
+            let amode = extract_real_amode(addr);
+            let (base_enc, index_enc) = extract_mem_reg_encodings(amode);
+            evex.emit_for_alu_mem(dst_enc, 0, base_enc, index_enc, sink);
+            sink.put1(op.opcode());
+            emit_modrm_sib_disp(sink, dst_enc, amode);
+            sink.put1(imm8);
+        }
+    }
+}
+
+// =============================================================================
 // Helper Functions
 // =============================================================================
 
+/// Emit EVEX prefix for ALU instruction with memory operand.
+/// This is a wrapper that combines the EvexPrefix with memory operand register encodings.
+fn emit_evex_for_alu_mem(
+    evex: &EvexPrefix,
+    dst_enc: u8,
+    src1_enc: u8,
+    base_enc: u8,
+    index_enc: Option<u8>,
+    sink: &mut MachBuffer<Inst>,
+) {
+    evex.emit_for_alu_mem(dst_enc, src1_enc, base_enc, index_enc, sink);
+}
+
+/// Extract the Amode from a SyntheticAmode::Real variant.
+/// Panics if the SyntheticAmode is not Real (e.g., SlotOffset, IncomingArg).
+fn extract_real_amode(addr: &SyntheticAmode) -> &Amode {
+    match addr {
+        SyntheticAmode::Real(amode) => amode,
+        _ => panic!("extract_real_amode: expected Real amode, got {addr:?}"),
+    }
+}
+
+/// Extract base and index register encodings from an Amode.
+/// Returns (base_enc, Option<index_enc>).
+/// Note: This function expects a finalized Amode (not SyntheticAmode).
+fn extract_mem_reg_encodings(addr: &Amode) -> (u8, Option<u8>) {
+    match addr {
+        Amode::ImmReg { base, .. } => {
+            let base_enc = base.to_real_reg().unwrap().hw_enc();
+            (base_enc, None)
+        }
+        Amode::ImmRegRegShift { base, index, .. } => {
+            let base_enc = base.to_reg().to_real_reg().unwrap().hw_enc();
+            let index_enc = index.to_reg().to_real_reg().unwrap().hw_enc();
+            (base_enc, Some(index_enc))
+        }
+        Amode::RipRelative { .. } => {
+            // RIP-relative addressing: use RBP encoding (5) with no index
+            // The B bit should be 1 (inverted) since we're not extending
+            (5, None)
+        }
+    }
+}
+
 /// Emit ModRM byte for a RegMem operand.
+/// Note: For memory operands, this handles SyntheticAmode::Real only.
+/// All SyntheticAmode variants other than Real should be finalized before
+/// calling the instruction emit functions.
 fn emit_modrm_for_regmem(sink: &mut MachBuffer<Inst>, reg: u8, rm: &RegMem) {
     match rm {
         RegMem::Reg { reg: rm_reg } => {
-            let rm_enc = rm_reg.to_real_reg().unwrap().hw_enc() as u8;
+            let rm_enc = rm_reg.to_real_reg().unwrap().hw_enc();
             let modrm = 0xC0 | ((reg & 0x07) << 3) | (rm_enc & 0x07);
             sink.put1(modrm);
         }
         RegMem::Mem { addr } => {
-            emit_modrm_sib_disp(sink, reg, addr);
+            // For RegMem in ALU instructions, the address should be Real
+            // (synthetic addresses like SlotOffset should be finalized before lowering)
+            match addr {
+                SyntheticAmode::Real(amode) => {
+                    emit_modrm_sib_disp(sink, reg, amode);
+                }
+                _ => panic!("emit_modrm_for_regmem: expected Real amode, got {addr:?}"),
+            }
         }
     }
 }
 
 /// Emit ModRM, SIB, and displacement for a memory operand.
-fn emit_modrm_sib_disp(sink: &mut MachBuffer<Inst>, reg: u8, addr: &SyntheticAmode) {
+/// Note: This function expects a finalized Amode (not SyntheticAmode).
+/// This function uses EVEX compressed displacement (disp8*N) where N=64 for 512-bit vectors.
+fn emit_modrm_sib_disp(sink: &mut MachBuffer<Inst>, reg: u8, addr: &Amode) {
+    // EVEX compressed displacement factor for 512-bit vectors is 64 bytes
+    const EVEX_DISP_FACTOR: i32 = 64;
+
     match addr {
-        SyntheticAmode::Real(amode) => {
-            use crate::isa::x64::lower::isle::generated_code::Amode;
-            match amode {
-                Amode::ImmReg { simm32, base, .. } => {
-                    let base_enc = base.to_real_reg().unwrap().hw_enc() as u8;
-                    let needs_sib = (base_enc & 0x07) == 4;
+        Amode::ImmReg { simm32, base, .. } => {
+            let base_enc = base.to_real_reg().unwrap().hw_enc();
+            let needs_sib = (base_enc & 0x07) == 4;
 
-                    if *simm32 == 0 && (base_enc & 0x07) != 5 {
-                        let modrm = 0x00 | ((reg & 0x07) << 3) | (base_enc & 0x07);
-                        sink.put1(modrm);
-                        if needs_sib {
-                            sink.put1(0x24);
-                        }
-                    } else if *simm32 >= -128 && *simm32 <= 127 {
-                        let modrm = 0x40 | ((reg & 0x07) << 3) | (base_enc & 0x07);
-                        sink.put1(modrm);
-                        if needs_sib {
-                            sink.put1(0x24);
-                        }
-                        sink.put1(*simm32 as u8);
-                    } else {
-                        let modrm = 0x80 | ((reg & 0x07) << 3) | (base_enc & 0x07);
-                        sink.put1(modrm);
-                        if needs_sib {
-                            sink.put1(0x24);
-                        }
-                        sink.put4(*simm32 as u32);
-                    }
+            if *simm32 == 0 && (base_enc & 0x07) != 5 {
+                let modrm = 0x00 | ((reg & 0x07) << 3) | (base_enc & 0x07);
+                sink.put1(modrm);
+                if needs_sib {
+                    sink.put1(0x24);
                 }
-                Amode::ImmRegRegShift {
-                    simm32,
-                    base,
-                    index,
-                    shift,
-                    ..
-                } => {
-                    let base_enc = base.to_reg().to_real_reg().unwrap().hw_enc() as u8;
-                    let index_enc = index.to_reg().to_real_reg().unwrap().hw_enc() as u8;
-                    let sib = (*shift << 6) | ((index_enc & 0x07) << 3) | (base_enc & 0x07);
+            } else {
+                // Try EVEX compressed displacement first (disp8*N where N=64)
+                // The displacement must be divisible by 64 and fit in signed 8-bit after division
+                let can_use_compressed = *simm32 % EVEX_DISP_FACTOR == 0;
+                let compressed_disp = *simm32 / EVEX_DISP_FACTOR;
 
-                    if *simm32 == 0 && (base_enc & 0x07) != 5 {
-                        let modrm = 0x04 | ((reg & 0x07) << 3);
-                        sink.put1(modrm);
-                        sink.put1(sib);
-                    } else if *simm32 >= -128 && *simm32 <= 127 {
-                        let modrm = 0x44 | ((reg & 0x07) << 3);
-                        sink.put1(modrm);
-                        sink.put1(sib);
-                        sink.put1(*simm32 as u8);
-                    } else {
-                        let modrm = 0x84 | ((reg & 0x07) << 3);
-                        sink.put1(modrm);
-                        sink.put1(sib);
-                        sink.put4(*simm32 as u32);
-                    }
-                }
-                Amode::RipRelative { .. } => {
-                    let modrm = 0x05 | ((reg & 0x07) << 3);
+                if can_use_compressed && compressed_disp >= -128 && compressed_disp <= 127 {
+                    // Use mod=01 with compressed 8-bit displacement
+                    let modrm = 0x40 | ((reg & 0x07) << 3) | (base_enc & 0x07);
                     sink.put1(modrm);
-                    sink.put4(0);
+                    if needs_sib {
+                        sink.put1(0x24);
+                    }
+                    sink.put1(compressed_disp as u8);
+                } else {
+                    // Fall back to full 32-bit displacement
+                    let modrm = 0x80 | ((reg & 0x07) << 3) | (base_enc & 0x07);
+                    sink.put1(modrm);
+                    if needs_sib {
+                        sink.put1(0x24);
+                    }
+                    sink.put4(*simm32 as u32);
                 }
             }
         }
-        SyntheticAmode::SlotOffset { simm32 } => {
-            if *simm32 >= -128 && *simm32 <= 127 {
-                let modrm = 0x44 | ((reg & 0x07) << 3);
+        Amode::ImmRegRegShift {
+            simm32,
+            base,
+            index,
+            shift,
+            ..
+        } => {
+            let base_enc = base.to_reg().to_real_reg().unwrap().hw_enc();
+            let index_enc = index.to_reg().to_real_reg().unwrap().hw_enc();
+            let sib = (*shift << 6) | ((index_enc & 0x07) << 3) | (base_enc & 0x07);
+
+            if *simm32 == 0 && (base_enc & 0x07) != 5 {
+                let modrm = 0x04 | ((reg & 0x07) << 3);
                 sink.put1(modrm);
-                sink.put1(0x24);
-                sink.put1(*simm32 as u8);
+                sink.put1(sib);
             } else {
-                let modrm = 0x84 | ((reg & 0x07) << 3);
-                sink.put1(modrm);
-                sink.put1(0x24);
-                sink.put4(*simm32 as u32);
+                // Try EVEX compressed displacement (disp8*N where N=64)
+                let can_use_compressed = *simm32 % EVEX_DISP_FACTOR == 0;
+                let compressed_disp = *simm32 / EVEX_DISP_FACTOR;
+
+                if can_use_compressed && compressed_disp >= -128 && compressed_disp <= 127 {
+                    let modrm = 0x44 | ((reg & 0x07) << 3);
+                    sink.put1(modrm);
+                    sink.put1(sib);
+                    sink.put1(compressed_disp as u8);
+                } else {
+                    let modrm = 0x84 | ((reg & 0x07) << 3);
+                    sink.put1(modrm);
+                    sink.put1(sib);
+                    sink.put4(*simm32 as u32);
+                }
             }
         }
-        SyntheticAmode::IncomingArg { offset } => {
-            let disp = -(*offset as i32);
-            if disp >= -128 && disp <= 127 {
-                let modrm = 0x45 | ((reg & 0x07) << 3);
-                sink.put1(modrm);
-                sink.put1(disp as u8);
-            } else {
-                let modrm = 0x85 | ((reg & 0x07) << 3);
-                sink.put1(modrm);
-                sink.put4(disp as u32);
-            }
-        }
-        SyntheticAmode::ConstantOffset(_) => {
+        Amode::RipRelative { .. } => {
             let modrm = 0x05 | ((reg & 0x07) << 3);
             sink.put1(modrm);
             sink.put4(0);
@@ -528,28 +1810,115 @@ fn emit_modrm_sib_disp(sink: &mut MachBuffer<Inst>, reg: u8, addr: &SyntheticAmo
 }
 
 // =============================================================================
-// Debug Assertions for Emission Functions
+// AVX-512 Extract Instruction Emission (VEXTRACTI32X4, etc.)
 // =============================================================================
 
-/// Validate that a register encoding is within valid range (0-31 for EVEX).
-#[inline]
-fn debug_validate_reg_enc(enc: u8, name: &str) {
-    debug_assert!(
-        enc < 32,
-        "{} register encoding {} exceeds maximum of 31",
-        name,
-        enc
-    );
+/// Emit an AVX-512 extract instruction (dst = extract_lane(src, imm))
+/// Extracts a 128-bit or 256-bit lane from a 512-bit ZMM register.
+pub fn emit_avx512_extract(
+    op: Avx512ExtractOp,
+    dst: Writable<Reg>,
+    src: Reg,
+    lane: u8,
+    sink: &mut MachBuffer<Inst>,
+) {
+    // EVEX.512.66.0F3A.W0/W1 39/3B /r imm8
+    let evex = EvexPrefix {
+        map: op.evex_map(),
+        w: op.evex_w(),
+        pp: op.evex_pp(),
+        aaa: 0,    // No masking
+        z: false,
+        b: false,
+        ll: 0b10,  // 512-bit source
+    };
+
+    let dst_enc = dst.to_reg().to_real_reg().unwrap().hw_enc();
+    let src_enc = src.to_real_reg().unwrap().hw_enc();
+
+    // Note: For extract instructions, the encoding is reversed:
+    // - The ZMM source is encoded in the R field (like a destination normally would be)
+    // - The XMM/YMM destination is encoded in the RM field
+    evex.emit(src_enc, 0, dst_enc, false, sink);
+    sink.put1(op.opcode());
+    let modrm = 0xC0 | ((src_enc & 0x07) << 3) | (dst_enc & 0x07);
+    sink.put1(modrm);
+    sink.put1(lane);
 }
 
-/// Validate that a mask register encoding is valid (0-7).
-#[inline]
-fn debug_validate_mask_enc(enc: u8) {
-    debug_assert!(
-        enc < 8,
-        "Mask register encoding {} exceeds maximum of 7",
-        enc
-    );
+// =============================================================================
+// AVX-512 FP Special Instruction Emission (VRCP14PS, VRSQRT14PS, etc.)
+// =============================================================================
+
+/// Emit an AVX-512 FP special instruction (dst = op(src))
+/// These are unary operations for reciprocal/rsqrt approximations.
+pub fn emit_avx512_fp_special(
+    op: Avx512FpSpecialOp,
+    dst: Writable<Reg>,
+    src: &RegMem,
+    mask: OptionMaskReg,
+    merge: MergeMode,
+    sink: &mut MachBuffer<Inst>,
+) {
+    let mask_enc = mask
+        .map(|m| m.to_reg().to_real_reg().unwrap().hw_enc())
+        .unwrap_or(0);
+
+    let evex = EvexPrefix {
+        map: op.evex_map(),
+        w: op.evex_w(),
+        pp: op.evex_pp(),
+        aaa: mask_enc,
+        z: matches!(merge, MergeMode::Zeroing),
+        b: false,
+        ll: 0b10, // 512-bit
+    };
+
+    let dst_enc = dst.to_reg().to_real_reg().unwrap().hw_enc();
+
+    match src {
+        RegMem::Reg { reg } => {
+            let src_enc = reg.to_real_reg().unwrap().hw_enc();
+            // Unary ops: vvvv field is not used (encoded as 1111 = 0 after inversion)
+            evex.emit(dst_enc, 0, src_enc, false, sink);
+            sink.put1(op.opcode());
+            let modrm = 0xC0 | ((dst_enc & 0x07) << 3) | (src_enc & 0x07);
+            sink.put1(modrm);
+        }
+        RegMem::Mem { addr } => {
+            match addr {
+                SyntheticAmode::Real(amode) => {
+                    match amode {
+                        Amode::ImmReg { base, simm32, .. } => {
+                            let base_enc = base.to_real_reg().unwrap().hw_enc();
+                            evex.emit(dst_enc, 0, base_enc, true, sink);
+                            sink.put1(op.opcode());
+                            let modrm = if *simm32 == 0 && (base_enc & 0x07) != 5 {
+                                0x00 | ((dst_enc & 0x07) << 3) | (base_enc & 0x07)
+                            } else if *simm32 >= -128 && *simm32 <= 127 {
+                                0x40 | ((dst_enc & 0x07) << 3) | (base_enc & 0x07)
+                            } else {
+                                0x80 | ((dst_enc & 0x07) << 3) | (base_enc & 0x07)
+                            };
+                            sink.put1(modrm);
+                            if (base_enc & 0x07) == 4 {
+                                sink.put1(0x24); // SIB for RSP
+                            }
+                            if *simm32 != 0 || (base_enc & 0x07) == 5 {
+                                if *simm32 >= -128 && *simm32 <= 127 {
+                                    sink.put1(*simm32 as u8);
+                                } else {
+                                    sink.put4(*simm32 as u32);
+                                }
+                            }
+                        }
+                        _ => unimplemented!("Unsupported amode for FP special op: {:?}", amode),
+                    }
+                }
+                _ => unimplemented!("Unsupported synthetic amode for FP special op"),
+            }
+        }
+    }
 }
 
 // =============================================================================
@@ -598,8 +1967,9 @@ mod tests {
         assert_eq!(MaskAluOp::Kand as u8, 0);
         assert_eq!(MaskAluOp::Kor as u8, 1);
         assert_eq!(MaskAluOp::Kxor as u8, 2);
-        assert_eq!(MaskAluOp::Knot as u8, 3);
-        assert_eq!(MaskAluOp::Kandn as u8, 4);
+        assert_eq!(MaskAluOp::Kxnor as u8, 3);
+        assert_eq!(MaskAluOp::Knot as u8, 4);
+        assert_eq!(MaskAluOp::Kandn as u8, 5);
     }
 
     #[test]
@@ -609,6 +1979,7 @@ mod tests {
         assert_eq!(MaskAluOp::Kandn.vex_opcode(), 0x42);
         assert_eq!(MaskAluOp::Knot.vex_opcode(), 0x44);
         assert_eq!(MaskAluOp::Kor.vex_opcode(), 0x45);
+        assert_eq!(MaskAluOp::Kxnor.vex_opcode(), 0x46);
         assert_eq!(MaskAluOp::Kxor.vex_opcode(), 0x47);
     }
 
@@ -699,40 +2070,6 @@ mod tests {
         assert!(Avx512AluOp::Vpaddq.evex_w());
         assert!(Avx512AluOp::Vpsubq.evex_w());
         assert!(Avx512AluOp::Vpandq.evex_w());
-    }
-
-    // =========================================================================
-    // Validation Helper Tests
-    // =========================================================================
-
-    #[test]
-    fn test_debug_validate_reg_enc_valid() {
-        // Should not panic for valid encodings
-        for enc in 0..32 {
-            debug_validate_reg_enc(enc, "test");
-        }
-    }
-
-    #[test]
-    fn test_debug_validate_mask_enc_valid() {
-        // Should not panic for valid mask encodings
-        for enc in 0..8 {
-            debug_validate_mask_enc(enc);
-        }
-    }
-
-    #[test]
-    #[should_panic(expected = "register encoding")]
-    #[cfg(debug_assertions)]
-    fn test_debug_validate_reg_enc_invalid() {
-        debug_validate_reg_enc(32, "test");
-    }
-
-    #[test]
-    #[should_panic(expected = "Mask register encoding")]
-    #[cfg(debug_assertions)]
-    fn test_debug_validate_mask_enc_invalid() {
-        debug_validate_mask_enc(8);
     }
 
     // =========================================================================

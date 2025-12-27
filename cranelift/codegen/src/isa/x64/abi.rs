@@ -1333,9 +1333,9 @@ fn create_reg_env_systemv(enable_pinned_reg: bool) -> MachineEnv {
                 preg(regs::xmm6()),
                 preg(regs::xmm7()),
             ],
-            // k1-k7 are allocatable masks. k0 is reserved.
+            // k2-k7 are allocatable masks. k0 is reserved, k1 is used as a
+            // pinned register for AVX-512 masked operations.
             vec![
-                preg(regs::k1()),
                 preg(regs::k2()),
                 preg(regs::k3()),
                 preg(regs::k4()),

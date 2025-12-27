@@ -213,6 +213,43 @@ pub(crate) fn check(
 
         Inst::SequencePoint { .. } => Ok(()),
 
+        // YOLM FORK: Turin AVX-512 instructions
+        // For now, we don't perform PCC verification on SIMD operations
+        Inst::TurinAvx512Alu { .. }
+        | Inst::TurinAvx512Cmp { .. }
+        | Inst::TurinCompressStore { .. }
+        | Inst::TurinExpandLoad { .. }
+        | Inst::TurinMaskedLoad { .. }
+        | Inst::TurinMaskedStore { .. }
+        | Inst::Turin512Load { .. }
+        | Inst::Turin512Store { .. }
+        | Inst::TurinMaskLogic { .. }
+        | Inst::TurinKmov { .. }
+        | Inst::TurinKortest { .. }
+        | Inst::TurinGather { .. }
+        | Inst::TurinScatter { .. }
+        | Inst::TurinCompressReg { .. }
+        | Inst::TurinExpandReg { .. }
+        | Inst::TurinVmovmsk32 { .. }
+        | Inst::TurinVmovmsk64 { .. }
+        | Inst::TurinMovm2d { .. }
+        | Inst::TurinMovm2q { .. }
+        | Inst::TurinBroadcastd { .. }
+        | Inst::TurinBroadcastq { .. }
+        | Inst::TurinAvx512FpAlu { .. }
+        | Inst::TurinAvx512FpSqrt { .. }
+        | Inst::TurinAvx512Fma { .. }
+        | Inst::TurinAvx512Cvt { .. }
+        | Inst::TurinAvx512Align { .. }
+        | Inst::TurinAvx512Ternlog { .. }
+        | Inst::TurinAvx512ImmRotate { .. }
+        | Inst::TurinAvx512ImmShuffle { .. }
+        | Inst::TurinAvx512Vnni { .. }
+        | Inst::TurinVp2Intersect { .. }
+        | Inst::TurinAvx512FpCmp { .. }
+        | Inst::TurinAvx512Extract { .. }
+        | Inst::TurinAvx512FpSpecial { .. } => Ok(()),
+
         Inst::External { .. } => Ok(()), // TODO: unsure what to do about this!
     }
 }

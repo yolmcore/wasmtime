@@ -15,7 +15,9 @@ use crate::ir::{
     BlockCall, Inst, InstructionData, LibCall, MemFlags, Opcode, TrapCode, Value, ValueList,
 };
 use crate::isa::x64::X64Backend;
-use crate::isa::x64::inst::{ReturnCallInfo, args::*, regs};
+use crate::isa::x64::inst::{ReturnCallInfo, args::*, args::OptionReg, regs, turin};
+// Re-export Turin types for ISLE generated code
+pub(crate) use turin::{Avx512AluOp, Avx512AlignOp, Avx512Cond, Avx512CvtOp, Avx512ExtractOp, Avx512FmaOp, Avx512FpAluOp, Avx512FpSpecialOp, Avx512ImmShuffleOp, Avx512VnniOp, Vp2IntersectOp, GatherOp, MaskAluOp, MergeMode, ScatterOp};
 use crate::isa::x64::lower::{InsnInput, emit_vm_call};
 use crate::machinst::isle::*;
 use crate::machinst::{
@@ -277,6 +279,72 @@ impl Context for IsleContext<'_, '_, MInst, X64Backend> {
     #[inline]
     fn has_avx512vbmi(&mut self) -> bool {
         self.backend.x64_flags.has_avx512vbmi()
+    }
+
+    #[inline]
+    fn has_avx512_vpopcntdq(&mut self) -> bool {
+        self.backend.x64_flags.has_avx512_vpopcntdq()
+    }
+
+    // =========================================================================
+    // YOLM FORK: Turin AVX-512 Helpers
+    // =========================================================================
+
+    /// Constructor for OptionMaskReg::None (no masking)
+    #[inline]
+    fn option_mask_reg_none(&mut self) -> OptionMaskReg {
+        None
+    }
+
+    /// Convert Xmm to RegMem for Turin instructions
+    #[inline]
+    fn turin_xmm_to_reg_mem(&mut self, xmm: Xmm) -> RegMem {
+        RegMem::reg(xmm.to_reg())
+    }
+
+    /// Convert XmmMem to RegMem for Turin instructions
+    #[inline]
+    fn turin_xmm_mem_to_reg_mem(&mut self, xmm_mem: &XmmMem) -> RegMem {
+        xmm_mem.clone().into()
+    }
+
+    /// Convert a Reg to an OptionMaskReg for Turin masked operations.
+    /// The reg should be a k-register (k1-k7).
+    #[inline]
+    fn turin_mask_reg(&mut self, reg: Reg) -> OptionMaskReg {
+        Mask::new(reg)
+    }
+
+    /// Convert Offset32 to i32 for gather/scatter displacement
+    #[inline]
+    fn i32_from_offset32(&mut self, offset: Offset32) -> i32 {
+        offset.into()
+    }
+
+    /// Convert Uimm8 to u8 for scale factors
+    #[inline]
+    fn uimm8_value(&mut self, imm: Uimm8) -> u8 {
+        imm
+    }
+
+    /// Convert a Reg to Some(Reg) for OptionReg
+    #[inline]
+    fn some_reg(&mut self, reg: Reg) -> OptionReg {
+        Some(reg)
+    }
+
+    /// Get the k1 register as a Reg for AVX-512 mask operations.
+    /// k1 is used as a pinned mask register for gather/scatter operations.
+    #[inline]
+    fn k1_reg(&mut self) -> Reg {
+        crate::isa::x64::inst::regs::k1()
+    }
+
+    /// Convert a Reg to a WritableReg.
+    /// This is used for pinned registers like k1 that are modified in place.
+    #[inline]
+    fn reg_to_writable_reg(&mut self, reg: Reg) -> Writable<Reg> {
+        Writable::from_reg(reg)
     }
 
     #[inline]

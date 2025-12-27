@@ -763,7 +763,10 @@ impl<'a> Verifier<'a> {
             | Store { .. }
             | Trap { .. }
             | CondTrap { .. }
-            | NullAry { .. } => {}
+            | NullAry { .. }
+            | SimdGather { .. }
+            | SimdMaskedMem { .. }
+            | SimdScatter { .. } => {}
         }
 
         Ok(())

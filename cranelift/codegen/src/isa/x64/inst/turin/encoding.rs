@@ -97,7 +97,191 @@ impl EvexPrefix {
         let l_prime = (self.ll >> 1) & 1;
         let l = self.ll & 1;
         let v_prime = if src1_enc & 0x10 != 0 { 0 } else { 1 };
-        let p2 = ((self.z as u8) << 7)
+        // IMPORTANT: Zeroing mode (z=1) is only valid with a mask register (aaa != 0)
+        // Without a mask, z must be 0 even if self.z is true
+        let z = if self.aaa == 0 { 0 } else { self.z as u8 };
+        let p2 = (z << 7)
+            | (l_prime << 6)
+            | (l << 5)
+            | ((self.b as u8) << 4)
+            | (v_prime << 3)
+            | (self.aaa & 0x07);
+        sink.put1(p2);
+    }
+
+    /// Emit the EVEX prefix for a memory operand with explicit base/index register encodings.
+    ///
+    /// This is used for load/store instructions where we need to encode the
+    /// base register extension bits (B) and index register extension bits (X)
+    /// correctly in the EVEX prefix.
+    ///
+    /// # Arguments
+    /// * `reg_enc` - The vector register encoding (destination for loads, source for stores)
+    /// * `base_enc` - The base GPR register encoding (0-15)
+    /// * `index_enc` - The index GPR register encoding (0-15), or None if no index
+    /// * `sink` - The code buffer to emit into
+    pub fn emit_for_mem(
+        &self,
+        reg_enc: u8,
+        base_enc: u8,
+        index_enc: Option<u8>,
+        sink: &mut MachBuffer<Inst>,
+    ) {
+        // Byte 0: EVEX escape byte
+        sink.put1(0x62);
+
+        // Byte 1 (P0): R X B R' 0 0 mm
+        // R extends reg_enc bit 3, R' extends reg_enc bit 4
+        // B extends base_enc bit 3
+        // X extends index_enc bit 3 (or 1 if no index)
+        let r = if reg_enc & 0x08 != 0 { 0 } else { 1 };
+        let r_prime = if reg_enc & 0x10 != 0 { 0 } else { 1 };
+        let b = if base_enc & 0x08 != 0 { 0 } else { 1 };
+        let x = match index_enc {
+            Some(idx) => if idx & 0x08 != 0 { 0 } else { 1 },
+            None => 1, // No index register, X bit is 1 (inverted 0)
+        };
+
+        let p0 = (r << 7) | (x << 6) | (b << 5) | (r_prime << 4) | (self.map & 0x07);
+        sink.put1(p0);
+
+        // Byte 2 (P1): W vvvv 1 pp
+        // For loads/stores, vvvv is typically unused (set to 1111 = no register)
+        let vvvv = 0x0F; // All ones = no second source register
+        let p1 = ((self.w as u8) << 7) | (vvvv << 3) | 0x04 | (self.pp & 0x03);
+        sink.put1(p1);
+
+        // Byte 3 (P2): z L'L b V' aaa
+        let l_prime = (self.ll >> 1) & 1;
+        let l = self.ll & 1;
+        let v_prime = 1; // No second source register extension
+        // IMPORTANT: Zeroing mode (z=1) is only valid with a mask register (aaa != 0)
+        // Without a mask, z must be 0 even if self.z is true
+        let z = if self.aaa == 0 { 0 } else { self.z as u8 };
+        let p2 = (z << 7)
+            | (l_prime << 6)
+            | (l << 5)
+            | ((self.b as u8) << 4)
+            | (v_prime << 3)
+            | (self.aaa & 0x07);
+        sink.put1(p2);
+    }
+
+    /// Emit the EVEX prefix for ALU instructions with memory operands.
+    ///
+    /// This is used for 3-operand ALU instructions (dst = src1 op mem) where we need to
+    /// encode the src1 register in the vvvv field while also correctly encoding the
+    /// base/index register extension bits for the memory operand.
+    ///
+    /// # Arguments
+    /// * `dst_enc` - Destination vector register encoding (0-31)
+    /// * `src1_enc` - First source vector register encoding (0-31), encoded in vvvv
+    /// * `base_enc` - Base GPR register encoding for memory operand (0-15)
+    /// * `index_enc` - Index GPR register encoding (0-15), or None if no index
+    /// * `sink` - The code buffer to emit into
+    pub fn emit_for_alu_mem(
+        &self,
+        dst_enc: u8,
+        src1_enc: u8,
+        base_enc: u8,
+        index_enc: Option<u8>,
+        sink: &mut MachBuffer<Inst>,
+    ) {
+        // Byte 0: EVEX escape byte
+        sink.put1(0x62);
+
+        // Byte 1 (P0): R X B R' 0 0 mm
+        // R extends dst_enc bit 3, R' extends dst_enc bit 4
+        // B extends base_enc bit 3
+        // X extends index_enc bit 3 (or 1 if no index)
+        let r = if dst_enc & 0x08 != 0 { 0 } else { 1 };
+        let r_prime = if dst_enc & 0x10 != 0 { 0 } else { 1 };
+        let b = if base_enc & 0x08 != 0 { 0 } else { 1 };
+        let x = match index_enc {
+            Some(idx) => if idx & 0x08 != 0 { 0 } else { 1 },
+            None => 1, // No index register, X bit is 1 (inverted 0)
+        };
+
+        let p0 = (r << 7) | (x << 6) | (b << 5) | (r_prime << 4) | (self.map & 0x07);
+        sink.put1(p0);
+
+        // Byte 2 (P1): W vvvv 1 pp
+        // vvvv encodes src1 (inverted)
+        let vvvv = !src1_enc & 0x0F;
+        let p1 = ((self.w as u8) << 7) | (vvvv << 3) | 0x04 | (self.pp & 0x03);
+        sink.put1(p1);
+
+        // Byte 3 (P2): z L'L b V' aaa
+        let l_prime = (self.ll >> 1) & 1;
+        let l = self.ll & 1;
+        // V' extends src1_enc bit 4 (inverted)
+        let v_prime = if src1_enc & 0x10 != 0 { 0 } else { 1 };
+        // IMPORTANT: Zeroing mode (z=1) is only valid with a mask register (aaa != 0)
+        // Without a mask, z must be 0 even if self.z is true
+        let z = if self.aaa == 0 { 0 } else { self.z as u8 };
+        let p2 = (z << 7)
+            | (l_prime << 6)
+            | (l << 5)
+            | ((self.b as u8) << 4)
+            | (v_prime << 3)
+            | (self.aaa & 0x07);
+        sink.put1(p2);
+    }
+}
+
+impl EvexPrefix {
+    /// Emit the EVEX prefix for VSIB (Vector SIB) addressing used in gather/scatter.
+    ///
+    /// In VSIB addressing:
+    /// - The index register is a vector register (XMM/YMM/ZMM)
+    /// - R and R' extend the destination/source vector register
+    /// - X extends the vector index register (bits 3-4)
+    /// - B extends the base GPR register
+    ///
+    /// # Arguments
+    /// * `reg_enc` - Destination (gather) or source (scatter) vector register encoding (0-31)
+    /// * `index_enc` - Index vector register encoding (0-31)
+    /// * `base_enc` - Base GPR register encoding (0-15)
+    /// * `sink` - The code buffer to emit into
+    pub fn emit_vsib(
+        &self,
+        reg_enc: u8,
+        index_enc: u8,
+        base_enc: u8,
+        sink: &mut MachBuffer<Inst>,
+    ) {
+        // Byte 0: EVEX escape byte
+        sink.put1(0x62);
+
+        // Byte 1 (P0): R X B R' 0 0 mm
+        // R extends reg_enc bit 3, R' extends reg_enc bit 4
+        // X extends index_enc bit 3 (vector index register)
+        // B extends base_enc bit 3 (GPR base register)
+        let r = if reg_enc & 0x08 != 0 { 0 } else { 1 };
+        let r_prime = if reg_enc & 0x10 != 0 { 0 } else { 1 };
+        let x = if index_enc & 0x08 != 0 { 0 } else { 1 };
+        let b = if base_enc & 0x08 != 0 { 0 } else { 1 };
+
+        let p0 = (r << 7) | (x << 6) | (b << 5) | (r_prime << 4) | (self.map & 0x07);
+        sink.put1(p0);
+
+        // Byte 2 (P1): W vvvv 1 pp
+        // For gather/scatter, vvvv encodes the index register extension (bits 0-3 inverted)
+        // Note: In AVX-512 gather/scatter, the index register uses both X (bit 3) in P0
+        // and V' (bit 4) in P2 for full 5-bit encoding
+        let vvvv = !index_enc & 0x0F;
+        let p1 = ((self.w as u8) << 7) | (vvvv << 3) | 0x04 | (self.pp & 0x03);
+        sink.put1(p1);
+
+        // Byte 3 (P2): z L'L b V' aaa
+        // V' extends the index register (bit 4)
+        let l_prime = (self.ll >> 1) & 1;
+        let l = self.ll & 1;
+        let v_prime = if index_enc & 0x10 != 0 { 0 } else { 1 };
+        // IMPORTANT: Zeroing mode (z=1) is only valid with a mask register (aaa != 0)
+        // Without a mask, z must be 0 even if self.z is true
+        let z = if self.aaa == 0 { 0 } else { self.z as u8 };
+        let p2 = (z << 7)
             | (l_prime << 6)
             | (l << 5)
             | ((self.b as u8) << 4)

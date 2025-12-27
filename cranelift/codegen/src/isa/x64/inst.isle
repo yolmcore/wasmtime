@@ -348,6 +348,16 @@
                        (cond Avx512Cond)
                        (mask OptionMaskReg))
 
+       ;; AVX-512 FP comparison operations (VCMPPS, VCMPPD) - result goes to k-register
+       ;; imm8 specifies the comparison predicate:
+       ;;   0=EQ_OQ, 1=LT_OS, 2=LE_OS, 3=UNORD_Q, 4=NEQ_UQ, 5=NLT_US, 6=NLE_US, 7=ORD_Q, etc.
+       (TurinAvx512FpCmp (size OperandSize)  ;; Size32=PS (single), Size64=PD (double)
+                         (dst WritableReg)   ;; k-register destination
+                         (src1 Reg)          ;; first XMM source
+                         (src2 RegMem)       ;; second XMM source or memory
+                         (imm8 u8)           ;; comparison predicate
+                         (mask OptionMaskReg))  ;; optional input mask
+
        ;; VPCOMPRESSD/VPCOMPRESSQ - compress store for columnar output
        (TurinCompressStore (size OperandSize)
                            (src Reg)
@@ -374,6 +384,16 @@
                          (addr SyntheticAmode)
                          (mask Reg))
 
+       ;; VMOVDQU32/VMOVDQU64 - unmasked 512-bit load
+       (Turin512Load (size OperandSize)
+                     (dst WritableXmm)
+                     (addr SyntheticAmode))
+
+       ;; VMOVDQU32/VMOVDQU64 - unmasked 512-bit store
+       (Turin512Store (size OperandSize)
+                      (src Xmm)
+                      (addr SyntheticAmode))
+
        ;; Mask register logic (KAND, KOR, KXOR, KNOT, KANDN)
        (TurinMaskLogic (op MaskAluOp)
                        (dst WritableReg)
@@ -387,7 +407,175 @@
 
        ;; KORTESTW/KORTESTQ - test mask and set flags
        (TurinKortest (src1 Reg)
-                     (src2 Reg))))
+                     (src2 Reg))
+
+       ;; VPGATHERDD/DQ/QD/QQ - gather load from non-contiguous memory
+       ;; dst = gather(base + index*scale + disp) using mask
+       (TurinGather (op GatherOp)
+                    (dst WritableReg)
+                    (base Reg)
+                    (index Reg)
+                    (scale u8)
+                    (disp i32)
+                    (mask Reg))
+
+       ;; VPSCATTERDD/DQ/QD/QQ - scatter store to non-contiguous memory
+       ;; scatter(base + index*scale + disp) = src using mask
+       (TurinScatter (op ScatterOp)
+                     (src Reg)
+                     (base Reg)
+                     (index Reg)
+                     (scale u8)
+                     (disp i32)
+                     (mask Reg))
+
+       ;; VPCOMPRESSD/Q register form - compress and write to register
+       (TurinCompressReg (size OperandSize)
+                         (dst WritableXmm)
+                         (src Xmm)
+                         (mask Reg))
+
+       ;; VPEXPANDD/Q register form - expand from register
+       (TurinExpandReg (size OperandSize)
+                       (dst WritableXmm)
+                       (src Xmm)
+                       (mask Reg)
+                       (merge MergeMode))
+
+       ;; VPMOVD2M - extract high bits from 32-bit vector elements to mask register
+       (TurinVmovmsk32 (dst WritableReg)
+                       (src Xmm))
+
+       ;; VPMOVQ2M - extract high bits from 64-bit vector elements to mask register
+       (TurinVmovmsk64 (dst WritableReg)
+                       (src Xmm))
+
+       ;; VPMOVM2D - expand mask register to 32-bit vector elements
+       (TurinMovm2d (dst WritableXmm)
+                    (src Reg))
+
+       ;; VPMOVM2Q - expand mask register to 64-bit vector elements
+       (TurinMovm2q (dst WritableXmm)
+                    (src Reg))
+
+       ;; VPBROADCASTD - broadcast 32-bit element to all 16 lanes
+       (TurinBroadcastd (dst WritableXmm)
+                        (src RegMem))
+
+       ;; VPBROADCASTQ - broadcast 64-bit element to all 8 lanes
+       (TurinBroadcastq (dst WritableXmm)
+                        (src RegMem))
+
+       ;; AVX-512 FP ALU operations (VADDPS/PD, VSUBPS/PD, VMULPS/PD, VDIVPS/PD, etc.)
+       (TurinAvx512FpAlu (op Avx512FpAluOp)
+                         (dst WritableReg)
+                         (src1 Reg)
+                         (src2 RegMem)
+                         (mask OptionMaskReg)
+                         (merge MergeMode))
+
+       ;; AVX-512 FP square root (VSQRTPS/PD)
+       (TurinAvx512FpSqrt (op Avx512FpAluOp)
+                          (dst WritableReg)
+                          (src RegMem)
+                          (mask OptionMaskReg)
+                          (merge MergeMode))
+
+       ;; AVX-512 FMA (Fused Multiply-Add): VFMADD213PS/PD, etc.
+       ;; For fma(x, y, z) = x * y + z:
+       ;; VFMADD213: dst = src2 * src1 + src3 where src1 is tied to dst
+       (TurinAvx512Fma (op Avx512FmaOp)
+                       (dst WritableReg)
+                       (src1 Reg)
+                       (src2 Reg)
+                       (src3 RegMem)
+                       (mask OptionMaskReg)
+                       (merge MergeMode))
+
+       ;; AVX-512 VNNI (Vector Neural Network Instructions)
+       ;; These are accumulating dot-product operations: dst = dst + dot(src1, src2)
+       ;; dst/acc is the accumulator, src1 and src2 are the multiplicands
+       (TurinAvx512Vnni (op Avx512VnniOp)
+                        (dst WritableReg)
+                        (acc Reg)  ;; Tied to dst - the accumulator
+                        (src1 Reg)
+                        (src2 RegMem)
+                        (mask OptionMaskReg)
+                        (merge MergeMode))
+
+       ;; VP2INTERSECT - Hash join acceleration
+       ;; Compares two vectors and outputs TWO consecutive mask registers:
+       ;; - dst_k: For each element in src1, set bit if matches ANY element in src2
+       ;; - dst_k+1: For each element in src2, set bit if matches ANY element in src1
+       ;; The dst register MUST be an even k-register (k0, k2, k4, k6) and both
+       ;; dst and dst+1 are written.
+       (TurinVp2Intersect (op Vp2IntersectOp)
+                          (dst_k WritableReg)    ;; First output k-register (even)
+                          (src1 Reg)             ;; First ZMM source
+                          (src2 RegMem))         ;; Second ZMM source (can be memory)
+
+       ;; AVX-512 Type Conversion operations (VCVTDQ2PS, VCVTPS2DQ, etc.)
+       (TurinAvx512Cvt (op Avx512CvtOp)
+                       (dst WritableReg)
+                       (src RegMem)
+                       (mask OptionMaskReg)
+                       (merge MergeMode))
+
+       ;; AVX-512 Vector Alignment operations (VALIGND, VALIGNQ)
+       ;; These require an immediate byte operand
+       (TurinAvx512Align (op Avx512AlignOp)
+                         (dst WritableReg)
+                         (src1 Reg)
+                         (src2 RegMem)
+                         (imm8 u8)
+                         (mask OptionMaskReg)
+                         (merge MergeMode))
+
+       ;; AVX-512 Ternary Logic operations (VPTERNLOGD, VPTERNLOGQ)
+       ;; These compute arbitrary 3-input boolean functions based on an 8-bit truth table
+       ;; For each bit position: result[i] = truth_table[(src1[i] << 2) | (src2[i] << 1) | src3[i]]
+       (TurinAvx512Ternlog (size OperandSize)
+                           (dst WritableReg)
+                           (src1 Reg)
+                           (src2 Reg)
+                           (src3 RegMem)
+                           (imm8 u8)
+                           (mask OptionMaskReg)
+                           (merge MergeMode))
+
+       ;; AVX-512 Immediate Rotate operations (VPROLD, VPROLQ, VPRORD, VPRORQ)
+       ;; Rotate each element left or right by an immediate value
+       (TurinAvx512ImmRotate (size OperandSize)
+                             (dst WritableReg)
+                             (src RegMem)
+                             (imm8 u8)
+                             (is_left bool)  ;; true = rotate left, false = rotate right
+                             (mask OptionMaskReg)
+                             (merge MergeMode))
+
+       ;; AVX-512 Immediate Shuffle operations (VPSHUFD, VPSHUFHW, VPSHUFLW)
+       ;; Shuffle elements according to an 8-bit immediate
+       (TurinAvx512ImmShuffle (op Avx512ImmShuffleOp)
+                              (dst WritableReg)
+                              (src RegMem)
+                              (imm8 u8)
+                              (mask OptionMaskReg)
+                              (merge MergeMode))
+
+       ;; AVX-512 Extract operations (VEXTRACTI32X4, VEXTRACTI64X2, etc.)
+       ;; Extract 128-bit or 256-bit lanes from a 512-bit vector
+       (TurinAvx512Extract (op Avx512ExtractOp)
+                           (dst WritableReg)
+                           (src Reg)
+                           (lane u8))
+
+       ;; AVX-512 FP Special operations (VRCP14PS/PD, VRSQRT14PS/PD)
+       ;; Reciprocal and reciprocal sqrt approximations (~14 bits precision)
+       (TurinAvx512FpSpecial (op Avx512FpSpecialOp)
+                             (dst WritableReg)
+                             (src RegMem)
+                             (mask OptionMaskReg)
+                             (merge MergeMode))))
 
 (type AssemblerInst extern (enum))
 
@@ -762,12 +950,265 @@
 (type MaskMemImm extern (enum))
 
 ;; YOLM FORK: Turin AVX-512 types
-(type Avx512AluOp extern (enum))
-(type Avx512Cond extern (enum))
-(type MaskAluOp extern (enum))
-(type MergeMode extern (enum))
+(type Avx512AluOp extern
+      (enum Vpaddd
+            Vpaddq
+            Vpsubd
+            Vpsubq
+            Vpmulld
+            Vpmullq
+            Vpmuludq
+            Vpmuldq
+            Vpandd
+            Vpandq
+            Vpord
+            Vporq
+            Vpxord
+            Vpxorq
+            Vpandnd
+            Vpandnq
+            Vpslld
+            Vpsllq
+            Vpsrld
+            Vpsrlq
+            Vpsrad
+            Vpsraq
+            Vpsllvd
+            Vpsllvq
+            Vpsrlvd
+            Vpsrlvq
+            Vpsravd
+            Vpsravq
+            Vprolvd
+            Vprolvq
+            Vpopcntd
+            Vpopcntq
+            Vpminsd
+            Vpminsq
+            Vpmaxsd
+            Vpmaxsq
+            Vpminud
+            Vpminuq
+            Vpmaxud
+            Vpmaxuq
+            Vpabsd
+            Vpabsq
+            Vpbroadcastd
+            Vpbroadcastq
+            Vpblendmd
+            Vpblendmq
+            Vpermd
+            Vpermq
+            Vpermi2d
+            Vpermi2q
+            Vpermt2d
+            Vpermt2q
+            Vpconflictd
+            Vpconflictq
+            Vplzcntd
+            Vplzcntq
+            Vpternlogd
+            Vpternlogq
+            ;; Pack operations
+            Vpackssdw
+            Vpackusdw
+            Vpacksswb
+            Vpackuswb
+            ;; Unpack operations
+            Vpunpcklbw
+            Vpunpckhbw
+            Vpunpcklwd
+            Vpunpckhwd
+            Vpunpckldq
+            Vpunpckhdq
+            Vpunpcklqdq
+            Vpunpckhqdq
+            ;; Shuffle operations
+            Vpshufb
+            Vpshufd
+            Vpshufhw
+            Vpshuflw
+            ;; Multiply-add operations
+            Vpmaddwd
+            Vpmaddubsw))
+
+;; YOLM FORK: Turin AVX-512 floating-point types
+(type Avx512FpAluOp extern
+      (enum Vaddps
+            Vaddpd
+            Vsubps
+            Vsubpd
+            Vmulps
+            Vmulpd
+            Vdivps
+            Vdivpd
+            Vminps
+            Vminpd
+            Vmaxps
+            Vmaxpd
+            Vsqrtps
+            Vsqrtpd
+            Vandps
+            Vandpd
+            Vxorps
+            Vxorpd
+            Vorps
+            Vorpd
+            Vandnps
+            Vandnpd))
+
+;; YOLM FORK: Turin AVX-512 FMA (Fused Multiply-Add) operations
+(type Avx512FmaOp extern
+      (enum Vfmadd132ps
+            Vfmadd132pd
+            Vfmadd213ps
+            Vfmadd213pd
+            Vfmadd231ps
+            Vfmadd231pd
+            Vfmsub132ps
+            Vfmsub132pd
+            Vfmsub213ps
+            Vfmsub213pd
+            Vfmsub231ps
+            Vfmsub231pd
+            Vfnmadd132ps
+            Vfnmadd132pd
+            Vfnmadd213ps
+            Vfnmadd213pd
+            Vfnmadd231ps
+            Vfnmadd231pd
+            Vfnmsub132ps
+            Vfnmsub132pd
+            Vfnmsub213ps
+            Vfnmsub213pd
+            Vfnmsub231ps
+            Vfnmsub231pd))
+
+;; YOLM FORK: Turin AVX-512 VNNI (Vector Neural Network Instructions)
+(type Avx512VnniOp extern
+      (enum Vpdpbusd
+            Vpdpbusds
+            Vpdpwssd
+            Vpdpwssds))
+
+;; YOLM FORK: Turin VP2INTERSECT operations for hash join acceleration
+(type Vp2IntersectOp extern
+      (enum Vp2intersectd
+            Vp2intersectq))
+
+;; YOLM FORK: Turin AVX-512 Type Conversion operations
+(type Avx512CvtOp extern
+      (enum Vcvtdq2ps
+            Vcvtqq2pd
+            Vcvtqq2ps
+            Vcvtps2dq
+            Vcvtpd2qq
+            Vcvtps2qq
+            Vcvttps2dq
+            Vcvttpd2qq
+            Vcvttps2qq
+            Vcvtps2pd
+            Vcvtpd2ps
+            ;; Integer-Double conversions
+            Vcvtdq2pd
+            Vcvtpd2dq
+            Vcvttpd2dq
+            ;; Zero-extend
+            Vpmovzxbd
+            Vpmovzxbq
+            Vpmovzxwd
+            Vpmovzxwq
+            Vpmovzxdq
+            ;; Sign-extend
+            Vpmovsxbd
+            Vpmovsxbq
+            Vpmovsxwd
+            Vpmovsxwq
+            Vpmovsxdq
+            ;; Truncation (no saturation)
+            Vpmovdb
+            Vpmovdw
+            Vpmovqb
+            Vpmovqd
+            Vpmovqw
+            Vpmovwb
+            ;; Truncation with signed saturation
+            Vpmovsdb
+            Vpmovsdw
+            Vpmovsqb
+            Vpmovsqd
+            Vpmovsqw
+            Vpmovswb
+            ;; Truncation with unsigned saturation
+            Vpmovusdb
+            Vpmovusdw
+            Vpmovusqb
+            Vpmovusqd
+            Vpmovusqw
+            Vpmovuswb))
+
+;; YOLM FORK: Turin AVX-512 Vector Alignment operations
+(type Avx512AlignOp extern
+      (enum Valignd
+            Valignq))
+
+(type Avx512Cond extern
+      (enum Eq
+            Lt
+            Le
+            Neq
+            Ge
+            Gt))
+
+(type Avx512ImmShuffleOp extern
+      (enum Vpshufd
+            Vpshufhw
+            Vpshuflw))
+
+(type MaskAluOp extern
+      (enum Kand
+            Kor
+            Kxor
+            Kxnor
+            Knot
+            Kandn))
+
+(type MergeMode extern
+      (enum Merging
+            Zeroing))
+
+(type GatherOp extern
+      (enum Vpgatherdd
+            Vpgatherdq
+            Vpgatherqd
+            Vpgatherqq))
+
+(type ScatterOp extern
+      (enum Vpscatterdd
+            Vpscatterdq
+            Vpscatterqd
+            Vpscatterqq))
+
+;; YOLM FORK: AVX-512 Extract operations for lane extraction
+(type Avx512ExtractOp extern
+      (enum Vextracti32x4
+            Vextracti64x2
+            Vextracti32x8
+            Vextracti64x4))
+
+;; YOLM FORK: AVX-512 FP Special operations (reciprocal, rsqrt approximations)
+(type Avx512FpSpecialOp extern
+      (enum Vrcp14ps
+            Vrcp14pd
+            Vrsqrt14ps
+            Vrsqrt14pd))
+
 (type OptionMaskReg (primitive OptionMaskReg))
 (type OptionReg (primitive OptionReg))
+
+;; Constructor for no mask (OptionMaskReg::None)
+(decl pure option_mask_reg_none () OptionMaskReg)
+(extern constructor option_mask_reg_none option_mask_reg_none)
 
 ;; Convert a `WritableGpr` to a `WritableReg`.
 (decl writable_gpr_to_reg (WritableGpr) WritableReg)
@@ -1066,6 +1507,9 @@
 
 (decl pure has_avx512vbmi () bool)
 (extern constructor has_avx512vbmi has_avx512vbmi)
+
+(decl pure has_avx512_vpopcntdq () bool)
+(extern constructor has_avx512_vpopcntdq has_avx512_vpopcntdq)
 
 (decl pure has_lzcnt () bool)
 (extern constructor has_lzcnt has_lzcnt)
@@ -4180,3 +4624,2549 @@
 (decl x64_sequence_point () SideEffectNoResult)
 (rule (x64_sequence_point)
       (SideEffectNoResult.Inst (MInst.SequencePoint)))
+
+;; =============================================================================
+;; YOLM FORK: Turin AVX-512 Helpers
+;; =============================================================================
+
+;; Helper to convert Xmm to RegMem for Turin instructions
+(decl turin_xmm_to_reg_mem (Xmm) RegMem)
+(extern constructor turin_xmm_to_reg_mem turin_xmm_to_reg_mem)
+
+;; Helper to convert XmmMem to RegMem for Turin instructions
+(decl turin_xmm_mem_to_reg_mem (XmmMem) RegMem)
+(extern constructor turin_xmm_mem_to_reg_mem turin_xmm_mem_to_reg_mem)
+
+;; Helper for creating Turin AVX-512 ALU instructions (unmasked, 32-bit elements)
+;; Returns an Xmm register with the result
+(decl turin_alu_d (Avx512AluOp Xmm XmmMem) Xmm)
+(rule (turin_alu_d op src1 src2)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (src2_rm RegMem (turin_xmm_mem_to_reg_mem src2))
+            (_ Unit (emit (MInst.TurinAvx512Alu op
+                                                (OperandSize.Size32)
+                                                dst
+                                                src1
+                                                src2_rm
+                                                (option_mask_reg_none)
+                                                (MergeMode.Zeroing)))))
+        dst))
+
+;; Helper for creating Turin AVX-512 ALU instructions (unmasked, 64-bit elements)
+(decl turin_alu_q (Avx512AluOp Xmm XmmMem) Xmm)
+(rule (turin_alu_q op src1 src2)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (src2_rm RegMem (turin_xmm_mem_to_reg_mem src2))
+            (_ Unit (emit (MInst.TurinAvx512Alu op
+                                                (OperandSize.Size64)
+                                                dst
+                                                src1
+                                                src2_rm
+                                                (option_mask_reg_none)
+                                                (MergeMode.Zeroing)))))
+        dst))
+
+;; Specific 512-bit ALU operations (32-bit elements - I32X16)
+
+(decl turin_vpaddd (Xmm XmmMem) Xmm)
+(rule (turin_vpaddd src1 src2) (turin_alu_d (Avx512AluOp.Vpaddd) src1 src2))
+
+(decl turin_vpsubd (Xmm XmmMem) Xmm)
+(rule (turin_vpsubd src1 src2) (turin_alu_d (Avx512AluOp.Vpsubd) src1 src2))
+
+(decl turin_vpmulld (Xmm XmmMem) Xmm)
+(rule (turin_vpmulld src1 src2) (turin_alu_d (Avx512AluOp.Vpmulld) src1 src2))
+
+(decl turin_vpandd (Xmm XmmMem) Xmm)
+(rule (turin_vpandd src1 src2) (turin_alu_d (Avx512AluOp.Vpandd) src1 src2))
+
+(decl turin_vpord (Xmm XmmMem) Xmm)
+(rule (turin_vpord src1 src2) (turin_alu_d (Avx512AluOp.Vpord) src1 src2))
+
+(decl turin_vpxord (Xmm XmmMem) Xmm)
+(rule (turin_vpxord src1 src2) (turin_alu_d (Avx512AluOp.Vpxord) src1 src2))
+
+(decl turin_vpminsd (Xmm XmmMem) Xmm)
+(rule (turin_vpminsd src1 src2) (turin_alu_d (Avx512AluOp.Vpminsd) src1 src2))
+
+(decl turin_vpmaxsd (Xmm XmmMem) Xmm)
+(rule (turin_vpmaxsd src1 src2) (turin_alu_d (Avx512AluOp.Vpmaxsd) src1 src2))
+
+(decl turin_vpminud (Xmm XmmMem) Xmm)
+(rule (turin_vpminud src1 src2) (turin_alu_d (Avx512AluOp.Vpminud) src1 src2))
+
+(decl turin_vpmaxud (Xmm XmmMem) Xmm)
+(rule (turin_vpmaxud src1 src2) (turin_alu_d (Avx512AluOp.Vpmaxud) src1 src2))
+
+;; Specific 512-bit ALU operations (64-bit elements - I64X8)
+
+(decl turin_vpaddq (Xmm XmmMem) Xmm)
+(rule (turin_vpaddq src1 src2) (turin_alu_q (Avx512AluOp.Vpaddq) src1 src2))
+
+(decl turin_vpsubq (Xmm XmmMem) Xmm)
+(rule (turin_vpsubq src1 src2) (turin_alu_q (Avx512AluOp.Vpsubq) src1 src2))
+
+(decl turin_vpmullq (Xmm XmmMem) Xmm)
+(rule (turin_vpmullq src1 src2) (turin_alu_q (Avx512AluOp.Vpmullq) src1 src2))
+
+;; VPMULUDQ - 32x32→64 unsigned multiply
+;; Takes low 32-bits of each 64-bit element and produces 64-bit result
+(decl turin_vpmuludq (Xmm XmmMem) Xmm)
+(rule (turin_vpmuludq src1 src2) (turin_alu_q (Avx512AluOp.Vpmuludq) src1 src2))
+
+;; VPMULDQ - 32x32→64 signed multiply
+;; Takes low 32-bits of each 64-bit element and produces 64-bit result
+(decl turin_vpmuldq (Xmm XmmMem) Xmm)
+(rule (turin_vpmuldq src1 src2) (turin_alu_q (Avx512AluOp.Vpmuldq) src1 src2))
+
+(decl turin_vpandq (Xmm XmmMem) Xmm)
+(rule (turin_vpandq src1 src2) (turin_alu_q (Avx512AluOp.Vpandq) src1 src2))
+
+(decl turin_vporq (Xmm XmmMem) Xmm)
+(rule (turin_vporq src1 src2) (turin_alu_q (Avx512AluOp.Vporq) src1 src2))
+
+(decl turin_vpxorq (Xmm XmmMem) Xmm)
+(rule (turin_vpxorq src1 src2) (turin_alu_q (Avx512AluOp.Vpxorq) src1 src2))
+
+(decl turin_vpminsq (Xmm XmmMem) Xmm)
+(rule (turin_vpminsq src1 src2) (turin_alu_q (Avx512AluOp.Vpminsq) src1 src2))
+
+(decl turin_vpmaxsq (Xmm XmmMem) Xmm)
+(rule (turin_vpmaxsq src1 src2) (turin_alu_q (Avx512AluOp.Vpmaxsq) src1 src2))
+
+(decl turin_vpminuq (Xmm XmmMem) Xmm)
+(rule (turin_vpminuq src1 src2) (turin_alu_q (Avx512AluOp.Vpminuq) src1 src2))
+
+(decl turin_vpmaxuq (Xmm XmmMem) Xmm)
+(rule (turin_vpmaxuq src1 src2) (turin_alu_q (Avx512AluOp.Vpmaxuq) src1 src2))
+
+;; =============================================================================
+;; YOLM FORK: Turin AVX-512 Masked Operations
+;; =============================================================================
+;;
+;; These helpers support masked AVX-512 operations using k-registers.
+;; The mask determines which lanes are updated:
+;; - Merging mode: lanes where mask bit is 0 keep their value from passthrough
+;; - Zeroing mode: lanes where mask bit is 0 are set to zero
+;;
+;; Usage:
+;;   (turin_masked_vpaddq mask src1 src2 passthrough) ; merging mode
+;;   (turin_zeroing_vpaddq mask src1 src2)            ; zeroing mode
+
+;; Helper type for mask registers (k1-k7)
+;; The mask is passed as a Reg which should be allocated to a k-register
+(decl turin_mask_reg (Reg) OptionMaskReg)
+(extern constructor turin_mask_reg turin_mask_reg)
+
+;; Generic masked ALU (32-bit elements)
+;; Strategy: Execute with zeroing mask, then blend with passthrough
+;; This works around merge mode requiring dst to be pre-initialized
+(decl turin_masked_alu_d (Avx512AluOp Reg Xmm XmmMem Xmm) Xmm)
+(rule (turin_masked_alu_d op mask src1 src2 passthrough)
+      ;; Execute operation with zeroing mode - masked-off lanes become 0
+      (let ((raw_result Xmm (turin_zeroing_alu_d op mask src1 src2)))
+        ;; Blend: where mask=1 take raw_result, where mask=0 take passthrough
+        (turin_vpblendmd mask passthrough (xmm_to_xmm_mem raw_result))))
+
+;; Generic masked ALU (64-bit elements)
+;; Strategy: Execute with zeroing mask, then blend with passthrough
+(decl turin_masked_alu_q (Avx512AluOp Reg Xmm XmmMem Xmm) Xmm)
+(rule (turin_masked_alu_q op mask src1 src2 passthrough)
+      ;; Execute operation with zeroing mode - masked-off lanes become 0
+      (let ((raw_result Xmm (turin_zeroing_alu_q op mask src1 src2)))
+        ;; Blend: where mask=1 take raw_result, where mask=0 take passthrough
+        (turin_vpblendmq mask passthrough (xmm_to_xmm_mem raw_result))))
+
+;; Generic zeroing ALU (32-bit elements, zeroing mode)
+(decl turin_zeroing_alu_d (Avx512AluOp Reg Xmm XmmMem) Xmm)
+(rule (turin_zeroing_alu_d op mask src1 src2)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (src2_rm RegMem (turin_xmm_mem_to_reg_mem src2))
+            (mask_reg OptionMaskReg (turin_mask_reg mask))
+            (_ Unit (emit (MInst.TurinAvx512Alu op
+                                                (OperandSize.Size32)
+                                                dst
+                                                src1
+                                                src2_rm
+                                                mask_reg
+                                                (MergeMode.Zeroing)))))
+        dst))
+
+;; Generic zeroing ALU (64-bit elements, zeroing mode)
+(decl turin_zeroing_alu_q (Avx512AluOp Reg Xmm XmmMem) Xmm)
+(rule (turin_zeroing_alu_q op mask src1 src2)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (src2_rm RegMem (turin_xmm_mem_to_reg_mem src2))
+            (mask_reg OptionMaskReg (turin_mask_reg mask))
+            (_ Unit (emit (MInst.TurinAvx512Alu op
+                                                (OperandSize.Size64)
+                                                dst
+                                                src1
+                                                src2_rm
+                                                mask_reg
+                                                (MergeMode.Zeroing)))))
+        dst))
+
+;; Masked add operations (I32X16)
+(decl turin_masked_vpaddd (Reg Xmm XmmMem Xmm) Xmm)
+(rule (turin_masked_vpaddd mask src1 src2 passthrough)
+      (turin_masked_alu_d (Avx512AluOp.Vpaddd) mask src1 src2 passthrough))
+
+(decl turin_zeroing_vpaddd (Reg Xmm XmmMem) Xmm)
+(rule (turin_zeroing_vpaddd mask src1 src2)
+      (turin_zeroing_alu_d (Avx512AluOp.Vpaddd) mask src1 src2))
+
+;; Masked add operations (I64X8)
+(decl turin_masked_vpaddq (Reg Xmm XmmMem Xmm) Xmm)
+(rule (turin_masked_vpaddq mask src1 src2 passthrough)
+      (turin_masked_alu_q (Avx512AluOp.Vpaddq) mask src1 src2 passthrough))
+
+(decl turin_zeroing_vpaddq (Reg Xmm XmmMem) Xmm)
+(rule (turin_zeroing_vpaddq mask src1 src2)
+      (turin_zeroing_alu_q (Avx512AluOp.Vpaddq) mask src1 src2))
+
+;; Masked subtract operations (I32X16)
+(decl turin_masked_vpsubd (Reg Xmm XmmMem Xmm) Xmm)
+(rule (turin_masked_vpsubd mask src1 src2 passthrough)
+      (turin_masked_alu_d (Avx512AluOp.Vpsubd) mask src1 src2 passthrough))
+
+(decl turin_zeroing_vpsubd (Reg Xmm XmmMem) Xmm)
+(rule (turin_zeroing_vpsubd mask src1 src2)
+      (turin_zeroing_alu_d (Avx512AluOp.Vpsubd) mask src1 src2))
+
+;; Masked subtract operations (I64X8)
+(decl turin_masked_vpsubq (Reg Xmm XmmMem Xmm) Xmm)
+(rule (turin_masked_vpsubq mask src1 src2 passthrough)
+      (turin_masked_alu_q (Avx512AluOp.Vpsubq) mask src1 src2 passthrough))
+
+(decl turin_zeroing_vpsubq (Reg Xmm XmmMem) Xmm)
+(rule (turin_zeroing_vpsubq mask src1 src2)
+      (turin_zeroing_alu_q (Avx512AluOp.Vpsubq) mask src1 src2))
+
+;; Masked multiply operations (I32X16)
+(decl turin_masked_vpmulld (Reg Xmm XmmMem Xmm) Xmm)
+(rule (turin_masked_vpmulld mask src1 src2 passthrough)
+      (turin_masked_alu_d (Avx512AluOp.Vpmulld) mask src1 src2 passthrough))
+
+(decl turin_zeroing_vpmulld (Reg Xmm XmmMem) Xmm)
+(rule (turin_zeroing_vpmulld mask src1 src2)
+      (turin_zeroing_alu_d (Avx512AluOp.Vpmulld) mask src1 src2))
+
+;; Masked multiply operations (I64X8)
+(decl turin_masked_vpmullq (Reg Xmm XmmMem Xmm) Xmm)
+(rule (turin_masked_vpmullq mask src1 src2 passthrough)
+      (turin_masked_alu_q (Avx512AluOp.Vpmullq) mask src1 src2 passthrough))
+
+(decl turin_zeroing_vpmullq (Reg Xmm XmmMem) Xmm)
+(rule (turin_zeroing_vpmullq mask src1 src2)
+      (turin_zeroing_alu_q (Avx512AluOp.Vpmullq) mask src1 src2))
+
+;; Masked AND operations (I32X16 / I64X8)
+(decl turin_masked_vpandd (Reg Xmm XmmMem Xmm) Xmm)
+(rule (turin_masked_vpandd mask src1 src2 passthrough)
+      (turin_masked_alu_d (Avx512AluOp.Vpandd) mask src1 src2 passthrough))
+
+(decl turin_masked_vpandq (Reg Xmm XmmMem Xmm) Xmm)
+(rule (turin_masked_vpandq mask src1 src2 passthrough)
+      (turin_masked_alu_q (Avx512AluOp.Vpandq) mask src1 src2 passthrough))
+
+;; Masked OR operations (I32X16 / I64X8)
+(decl turin_masked_vpord (Reg Xmm XmmMem Xmm) Xmm)
+(rule (turin_masked_vpord mask src1 src2 passthrough)
+      (turin_masked_alu_d (Avx512AluOp.Vpord) mask src1 src2 passthrough))
+
+(decl turin_masked_vporq (Reg Xmm XmmMem Xmm) Xmm)
+(rule (turin_masked_vporq mask src1 src2 passthrough)
+      (turin_masked_alu_q (Avx512AluOp.Vporq) mask src1 src2 passthrough))
+
+;; Masked XOR operations (I32X16 / I64X8)
+(decl turin_masked_vpxord (Reg Xmm XmmMem Xmm) Xmm)
+(rule (turin_masked_vpxord mask src1 src2 passthrough)
+      (turin_masked_alu_d (Avx512AluOp.Vpxord) mask src1 src2 passthrough))
+
+(decl turin_masked_vpxorq (Reg Xmm XmmMem Xmm) Xmm)
+(rule (turin_masked_vpxorq mask src1 src2 passthrough)
+      (turin_masked_alu_q (Avx512AluOp.Vpxorq) mask src1 src2 passthrough))
+
+;; Masked min/max operations (I32X16)
+(decl turin_masked_vpminsd (Reg Xmm XmmMem Xmm) Xmm)
+(rule (turin_masked_vpminsd mask src1 src2 passthrough)
+      (turin_masked_alu_d (Avx512AluOp.Vpminsd) mask src1 src2 passthrough))
+
+(decl turin_masked_vpmaxsd (Reg Xmm XmmMem Xmm) Xmm)
+(rule (turin_masked_vpmaxsd mask src1 src2 passthrough)
+      (turin_masked_alu_d (Avx512AluOp.Vpmaxsd) mask src1 src2 passthrough))
+
+;; Masked min/max operations (I64X8)
+(decl turin_masked_vpminsq (Reg Xmm XmmMem Xmm) Xmm)
+(rule (turin_masked_vpminsq mask src1 src2 passthrough)
+      (turin_masked_alu_q (Avx512AluOp.Vpminsq) mask src1 src2 passthrough))
+
+(decl turin_masked_vpmaxsq (Reg Xmm XmmMem Xmm) Xmm)
+(rule (turin_masked_vpmaxsq mask src1 src2 passthrough)
+      (turin_masked_alu_q (Avx512AluOp.Vpmaxsq) mask src1 src2 passthrough))
+
+;; =============================================================================
+;; Turin AVX-512 Blend Operations (VPBLENDMD/VPBLENDMQ)
+;; =============================================================================
+;;
+;; These implement the blend pattern: select lanes based on mask bits.
+;; blend(mask, if_true, if_false) -> for each lane, select if_true if mask=1, else if_false
+
+;; VPBLENDMD: Blend src1 and src2 based on mask.
+;; - When k[i]=1: select src2 (if_false)
+;; - When k[i]=0: select src1 (if_true)
+;; Note: Merging mode is used so unmasked lanes take from src1, not zeroed.
+(decl turin_vpblendmd (Reg Xmm XmmMem) Xmm)
+(rule (turin_vpblendmd mask if_true if_false)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (if_false_rm RegMem (turin_xmm_mem_to_reg_mem if_false))
+            (mask_reg OptionMaskReg (turin_mask_reg mask))
+            (_ Unit (emit (MInst.TurinAvx512Alu (Avx512AluOp.Vpblendmd)
+                                                (OperandSize.Size32)
+                                                dst
+                                                if_true
+                                                if_false_rm
+                                                mask_reg
+                                                (MergeMode.Merging)))))
+        dst))
+
+;; VPBLENDMQ: Blend src1 and src2 based on mask.
+;; - When k[i]=1: select src2 (if_false)
+;; - When k[i]=0: select src1 (if_true)
+;; Note: Merging mode is used so unmasked lanes take from src1, not zeroed.
+(decl turin_vpblendmq (Reg Xmm XmmMem) Xmm)
+(rule (turin_vpblendmq mask if_true if_false)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (if_false_rm RegMem (turin_xmm_mem_to_reg_mem if_false))
+            (mask_reg OptionMaskReg (turin_mask_reg mask))
+            (_ Unit (emit (MInst.TurinAvx512Alu (Avx512AluOp.Vpblendmq)
+                                                (OperandSize.Size64)
+                                                dst
+                                                if_true
+                                                if_false_rm
+                                                mask_reg
+                                                (MergeMode.Merging)))))
+        dst))
+
+;; =============================================================================
+;; Turin AVX-512 Compare Operations (VPCMPD/VPCMPQ)
+;; =============================================================================
+;;
+;; These compare 512-bit vectors and produce a mask in a k-register.
+;; The result is a Reg that should be allocated to k1-k7.
+;;
+;; Conditions (Avx512Cond):
+;;   Eq = 0, Lt = 1, Le = 2, Neq = 4, Ge = 5, Gt = 6
+
+(decl turin_vpcmpd (Avx512Cond Xmm XmmMem) Reg)
+(rule (turin_vpcmpd cond src1 src2)
+      (let ((dst WritableReg (temp_writable_reg $I64))
+            (src2_rm RegMem (turin_xmm_mem_to_reg_mem src2))
+            (_ Unit (emit (MInst.TurinAvx512Cmp (OperandSize.Size32)
+                                                 dst
+                                                 src1
+                                                 src2_rm
+                                                 cond
+                                                 (option_mask_reg_none)))))
+        dst))
+
+(decl turin_vpcmpq (Avx512Cond Xmm XmmMem) Reg)
+(rule (turin_vpcmpq cond src1 src2)
+      (let ((dst WritableReg (temp_writable_reg $I64))
+            (src2_rm RegMem (turin_xmm_mem_to_reg_mem src2))
+            (_ Unit (emit (MInst.TurinAvx512Cmp (OperandSize.Size64)
+                                                 dst
+                                                 src1
+                                                 src2_rm
+                                                 cond
+                                                 (option_mask_reg_none)))))
+        dst))
+
+;; Specific comparison helpers for common conditions (I32X16)
+(decl turin_vpcmpeqd (Xmm XmmMem) Reg)
+(rule (turin_vpcmpeqd src1 src2) (turin_vpcmpd (Avx512Cond.Eq) src1 src2))
+
+(decl turin_vpcmpltd (Xmm XmmMem) Reg)
+(rule (turin_vpcmpltd src1 src2) (turin_vpcmpd (Avx512Cond.Lt) src1 src2))
+
+(decl turin_vpcmpled (Xmm XmmMem) Reg)
+(rule (turin_vpcmpled src1 src2) (turin_vpcmpd (Avx512Cond.Le) src1 src2))
+
+(decl turin_vpcmpneqd (Xmm XmmMem) Reg)
+(rule (turin_vpcmpneqd src1 src2) (turin_vpcmpd (Avx512Cond.Neq) src1 src2))
+
+(decl turin_vpcmpged (Xmm XmmMem) Reg)
+(rule (turin_vpcmpged src1 src2) (turin_vpcmpd (Avx512Cond.Ge) src1 src2))
+
+(decl turin_vpcmpgtd (Xmm XmmMem) Reg)
+(rule (turin_vpcmpgtd src1 src2) (turin_vpcmpd (Avx512Cond.Gt) src1 src2))
+
+;; Specific comparison helpers for common conditions (I64X8)
+(decl turin_vpcmpeqq (Xmm XmmMem) Reg)
+(rule (turin_vpcmpeqq src1 src2) (turin_vpcmpq (Avx512Cond.Eq) src1 src2))
+
+(decl turin_vpcmpltq (Xmm XmmMem) Reg)
+(rule (turin_vpcmpltq src1 src2) (turin_vpcmpq (Avx512Cond.Lt) src1 src2))
+
+(decl turin_vpcmpleq (Xmm XmmMem) Reg)
+(rule (turin_vpcmpleq src1 src2) (turin_vpcmpq (Avx512Cond.Le) src1 src2))
+
+(decl turin_vpcmpneqq (Xmm XmmMem) Reg)
+(rule (turin_vpcmpneqq src1 src2) (turin_vpcmpq (Avx512Cond.Neq) src1 src2))
+
+(decl turin_vpcmpgeq (Xmm XmmMem) Reg)
+(rule (turin_vpcmpgeq src1 src2) (turin_vpcmpq (Avx512Cond.Ge) src1 src2))
+
+(decl turin_vpcmpgtq (Xmm XmmMem) Reg)
+(rule (turin_vpcmpgtq src1 src2) (turin_vpcmpq (Avx512Cond.Gt) src1 src2))
+
+;; =============================================================================
+;; Turin AVX-512 Compress/Expand Operations
+;; =============================================================================
+;;
+;; VPCOMPRESSD/Q: Pack elements where mask bit is 1 to low lanes
+;; VPEXPANDD/Q: Scatter consecutive elements to lanes where mask is 1
+
+;; Note: TurinCompressStore stores directly to memory
+;; For register-to-register compress, we need a helper that allocates temp storage
+
+;; VPCOMPRESSD - compress 32-bit elements based on mask, store to memory
+(decl turin_vpcompressd_mem (Xmm Reg SyntheticAmode) SideEffectNoResult)
+(rule (turin_vpcompressd_mem src mask addr)
+      (SideEffectNoResult.Inst
+        (MInst.TurinCompressStore (OperandSize.Size32)
+                                   src
+                                   addr
+                                   mask)))
+
+;; VPCOMPRESSQ - compress 64-bit elements based on mask, store to memory
+(decl turin_vpcompressq_mem (Xmm Reg SyntheticAmode) SideEffectNoResult)
+(rule (turin_vpcompressq_mem src mask addr)
+      (SideEffectNoResult.Inst
+        (MInst.TurinCompressStore (OperandSize.Size64)
+                                   src
+                                   addr
+                                   mask)))
+
+;; VPEXPANDD - expand 32-bit elements from memory based on mask
+(decl turin_vpexpandd (SyntheticAmode Reg) Xmm)
+(rule (turin_vpexpandd addr mask)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinExpandLoad (OperandSize.Size32)
+                                                  dst
+                                                  addr
+                                                  mask
+                                                  (MergeMode.Zeroing)))))
+        dst))
+
+;; VPEXPANDQ - expand 64-bit elements from memory based on mask
+(decl turin_vpexpandq (SyntheticAmode Reg) Xmm)
+(rule (turin_vpexpandq addr mask)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinExpandLoad (OperandSize.Size64)
+                                                  dst
+                                                  addr
+                                                  mask
+                                                  (MergeMode.Zeroing)))))
+        dst))
+
+;; =============================================================================
+;; Turin AVX-512 Gather/Scatter Operations
+;; =============================================================================
+;;
+;; Gather: Load non-contiguous elements using indices from another vector
+;; Scatter: Store elements to non-contiguous locations using indices
+
+;; VPGATHERDD - gather 32-bit elements using 32-bit indices
+(decl turin_vpgatherdd (Reg Xmm u8 i32 Reg) Xmm)
+(rule (turin_vpgatherdd base indices scale disp mask)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (index_reg Reg (xmm_to_reg indices))
+            (_ Unit (emit (MInst.TurinGather (GatherOp.Vpgatherdd)
+                                              (writable_xmm_to_reg dst)
+                                              base
+                                              index_reg
+                                              scale
+                                              disp
+                                              mask))))
+        dst))
+
+;; VPGATHERDQ - gather 64-bit elements using 32-bit indices
+(decl turin_vpgatherdq (Reg Xmm u8 i32 Reg) Xmm)
+(rule (turin_vpgatherdq base indices scale disp mask)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (index_reg Reg (xmm_to_reg indices))
+            (_ Unit (emit (MInst.TurinGather (GatherOp.Vpgatherdq)
+                                              (writable_xmm_to_reg dst)
+                                              base
+                                              index_reg
+                                              scale
+                                              disp
+                                              mask))))
+        dst))
+
+;; VPGATHERQQ - gather 64-bit elements using 64-bit indices
+(decl turin_vpgatherqq (Reg Xmm u8 i32 Reg) Xmm)
+(rule (turin_vpgatherqq base indices scale disp mask)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (index_reg Reg (xmm_to_reg indices))
+            (_ Unit (emit (MInst.TurinGather (GatherOp.Vpgatherqq)
+                                              (writable_xmm_to_reg dst)
+                                              base
+                                              index_reg
+                                              scale
+                                              disp
+                                              mask))))
+        dst))
+
+;; VPSCATTERDD - scatter 32-bit elements using 32-bit indices
+;; Parameters: base pointer, indices vector, scale, displacement, source vector, mask
+(decl turin_vpscatterdd (Reg Xmm u8 i32 Xmm Reg) SideEffectNoResult)
+(rule (turin_vpscatterdd base indices scale disp src mask)
+      (let ((src_reg Reg (xmm_to_reg src))
+            (index_reg Reg (xmm_to_reg indices)))
+        (SideEffectNoResult.Inst
+          (MInst.TurinScatter (ScatterOp.Vpscatterdd)
+                              src_reg
+                              base
+                              index_reg
+                              scale
+                              disp
+                              mask))))
+
+;; VPSCATTERDQ - scatter 64-bit elements using 32-bit indices
+(decl turin_vpscatterdq (Reg Xmm u8 i32 Xmm Reg) SideEffectNoResult)
+(rule (turin_vpscatterdq base indices scale disp src mask)
+      (let ((src_reg Reg (xmm_to_reg src))
+            (index_reg Reg (xmm_to_reg indices)))
+        (SideEffectNoResult.Inst
+          (MInst.TurinScatter (ScatterOp.Vpscatterdq)
+                              src_reg
+                              base
+                              index_reg
+                              scale
+                              disp
+                              mask))))
+
+;; VPSCATTERQQ - scatter 64-bit elements using 64-bit indices
+(decl turin_vpscatterqq (Reg Xmm u8 i32 Xmm Reg) SideEffectNoResult)
+(rule (turin_vpscatterqq base indices scale disp src mask)
+      (let ((src_reg Reg (xmm_to_reg src))
+            (index_reg Reg (xmm_to_reg indices)))
+        (SideEffectNoResult.Inst
+          (MInst.TurinScatter (ScatterOp.Vpscatterqq)
+                              src_reg
+                              base
+                              index_reg
+                              scale
+                              disp
+                              mask))))
+
+;; =============================================================================
+;; 512-bit Load/Store (unmasked)
+;; =============================================================================
+
+;; VMOVDQU64 - load 512-bit I64X8 from memory
+(decl turin_load_i64x8 (SyntheticAmode) Xmm)
+(rule (turin_load_i64x8 addr)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.Turin512Load (OperandSize.Size64) dst addr))))
+        dst))
+
+;; VMOVDQU32 - load 512-bit I32X16 from memory
+(decl turin_load_i32x16 (SyntheticAmode) Xmm)
+(rule (turin_load_i32x16 addr)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.Turin512Load (OperandSize.Size32) dst addr))))
+        dst))
+
+;; VMOVDQU64 - store 512-bit I64X8 to memory
+(decl turin_store_i64x8 (SyntheticAmode Xmm) SideEffectNoResult)
+(rule (turin_store_i64x8 addr src)
+      (SideEffectNoResult.Inst
+        (MInst.Turin512Store (OperandSize.Size64) src addr)))
+
+;; VMOVDQU32 - store 512-bit I32X16 to memory
+(decl turin_store_i32x16 (SyntheticAmode Xmm) SideEffectNoResult)
+(rule (turin_store_i32x16 addr src)
+      (SideEffectNoResult.Inst
+        (MInst.Turin512Store (OperandSize.Size32) src addr)))
+
+;; =============================================================================
+;; Helper functions for AVX-512 IR operations
+;; =============================================================================
+
+;; Convert Offset32 to i32 for gather/scatter displacement
+(decl i32_from_offset32 (Offset32) i32)
+(extern constructor i32_from_offset32 i32_from_offset32)
+
+;; Convert Uimm8 to u8 for scale factors
+(decl uimm8_value (Uimm8) u8)
+(extern constructor uimm8_value uimm8_value)
+
+;; Convert an OptionReg::Some(reg)
+(decl some_reg (Reg) OptionReg)
+(extern constructor some_reg some_reg)
+
+;; Get k1 register for AVX-512 mask operations
+(decl k1_reg () Reg)
+(extern constructor k1_reg k1_reg)
+
+;; Convert a Reg to WritableReg (for pinned registers like k1)
+(decl reg_to_writable_reg (Reg) WritableReg)
+(extern constructor reg_to_writable_reg reg_to_writable_reg)
+
+;; =============================================================================
+;; Mask initialization helpers for gather/scatter
+;; =============================================================================
+
+;; Initialize an all-1s mask register using KXNORW k1, k1, k1
+;; Returns k1 with all bits set to 1.
+(decl turin_init_all_ones_mask () Reg)
+(rule (turin_init_all_ones_mask)
+      (let ((k1 Reg (k1_reg))
+            (_ Unit (emit (MInst.TurinMaskLogic (MaskAluOp.Kxnor)
+                                                  (reg_to_writable_reg k1)
+                                                  k1
+                                                  (some_reg k1)))))
+        k1))
+
+;; Convert a vector mask (0/-1 per element) to a k-register mask using VPMOVD2M
+;; Input: 512-bit vector with 32-bit elements where each element is 0 or -1
+;; Output: k-register with 16 mask bits corresponding to the sign bits
+(decl turin_vec_mask_to_kreg_32 (Xmm) Reg)
+(rule (turin_vec_mask_to_kreg_32 vec_mask)
+      (let ((k1 Reg (k1_reg))
+            (_ Unit (emit (MInst.TurinVmovmsk32 (reg_to_writable_reg k1) vec_mask))))
+        k1))
+
+;; Convert a vector mask (0/-1 per element) to a k-register mask using VPMOVQ2M
+;; Input: 512-bit vector with 64-bit elements where each element is 0 or -1
+;; Output: k-register with 8 mask bits corresponding to the sign bits
+(decl turin_vec_mask_to_kreg_64 (Xmm) Reg)
+(rule (turin_vec_mask_to_kreg_64 vec_mask)
+      (let ((k1 Reg (k1_reg))
+            (_ Unit (emit (MInst.TurinVmovmsk64 (reg_to_writable_reg k1) vec_mask))))
+        k1))
+
+;; Convert a k-register mask to a vector mask (0/-1 per element) using VPMOVM2D
+;; Input: k-register with mask bits
+;; Output: 512-bit vector with 32-bit elements (0 or -1)
+(decl turin_kreg_to_vec_mask_32 (Reg) Xmm)
+(rule (turin_kreg_to_vec_mask_32 kreg)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinMovm2d dst kreg))))
+        dst))
+
+;; Convert a k-register mask to a vector mask (0/-1 per element) using VPMOVM2Q
+;; Input: k-register with mask bits
+;; Output: 512-bit vector with 64-bit elements (0 or -1)
+(decl turin_kreg_to_vec_mask_64 (Reg) Xmm)
+(rule (turin_kreg_to_vec_mask_64 kreg)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinMovm2q dst kreg))))
+        dst))
+
+;; =============================================================================
+;; Broadcast helpers (VPBROADCASTD/Q)
+;; =============================================================================
+
+;; VPBROADCASTD - broadcast 32-bit element to all 16 lanes
+(decl turin_vpbroadcastd (RegMem) Xmm)
+(rule (turin_vpbroadcastd src)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinBroadcastd dst src))))
+        dst))
+
+;; VPBROADCASTQ - broadcast 64-bit element to all 8 lanes
+(decl turin_vpbroadcastq (RegMem) Xmm)
+(rule (turin_vpbroadcastq src)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinBroadcastq dst src))))
+        dst))
+
+;; =============================================================================
+;; Permute helpers (VPERMD/Q, VPERMI2D/Q)
+;; =============================================================================
+
+;; VPERMD - permute 32-bit elements: dst[i] = src[idx[i]]
+;; idx = index vector with 32-bit element indices (values 0-15 for 512-bit)
+;; src = source data vector
+(decl turin_vpermd (Xmm XmmMem) Xmm)
+(rule (turin_vpermd idx src)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512Alu (Avx512AluOp.Vpermd)
+                                                 (OperandSize.Size32)
+                                                 dst
+                                                 idx
+                                                 src
+                                                 (option_mask_reg_none)
+                                                 (MergeMode.Zeroing)))))
+        dst))
+
+;; VPERMQ - permute 64-bit elements: dst[i] = src[idx[i]]
+;; idx = index vector with 64-bit element indices (values 0-7 for 512-bit)
+;; src = source data vector
+(decl turin_vpermq (Xmm XmmMem) Xmm)
+(rule (turin_vpermq idx src)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512Alu (Avx512AluOp.Vpermq)
+                                                 (OperandSize.Size64)
+                                                 dst
+                                                 idx
+                                                 src
+                                                 (option_mask_reg_none)
+                                                 (MergeMode.Zeroing)))))
+        dst))
+
+;; VPERMI2D - two-source permute 32-bit: dst = permute(src1, src2, indices)
+;; indices: vector of indices where bit 4 selects src1 (0) or src2 (1), bits 3:0 select element
+;; src1: first source data (values selected by index bit 4 = 0)
+;; src2: second source data (values selected by index bit 4 = 1)
+;; Note: indices is the destination and is modified in place
+(decl turin_vpermi2d (Xmm Xmm XmmMem) Xmm)
+(rule (turin_vpermi2d indices src1 src2)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            ;; First copy indices to dst since vpermi2 modifies indices in place
+            (_ Unit (emit (MInst.TurinAvx512Alu (Avx512AluOp.Vpord)
+                                                 (OperandSize.Size32)
+                                                 dst
+                                                 indices
+                                                 (xmm_to_xmm_mem indices)
+                                                 (option_mask_reg_none)
+                                                 (MergeMode.Zeroing))))
+            ;; Now perform vpermi2d: dst is modified in place
+            (_ Unit (emit (MInst.TurinAvx512Alu (Avx512AluOp.Vpermi2d)
+                                                 (OperandSize.Size32)
+                                                 dst
+                                                 src1
+                                                 src2
+                                                 (option_mask_reg_none)
+                                                 (MergeMode.Zeroing)))))
+        dst))
+
+;; VPERMI2Q - two-source permute 64-bit: dst = permute(src1, src2, indices)
+;; indices: vector of indices where bit 3 selects src1 (0) or src2 (1), bits 2:0 select element
+;; src1: first source data (values selected by index bit 3 = 0)
+;; src2: second source data (values selected by index bit 3 = 1)
+;; Note: indices is the destination and is modified in place
+(decl turin_vpermi2q (Xmm Xmm XmmMem) Xmm)
+(rule (turin_vpermi2q indices src1 src2)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            ;; First copy indices to dst since vpermi2 modifies indices in place
+            (_ Unit (emit (MInst.TurinAvx512Alu (Avx512AluOp.Vporq)
+                                                 (OperandSize.Size64)
+                                                 dst
+                                                 indices
+                                                 (xmm_to_xmm_mem indices)
+                                                 (option_mask_reg_none)
+                                                 (MergeMode.Zeroing))))
+            ;; Now perform vpermi2q: dst is modified in place
+            (_ Unit (emit (MInst.TurinAvx512Alu (Avx512AluOp.Vpermi2q)
+                                                 (OperandSize.Size64)
+                                                 dst
+                                                 src1
+                                                 src2
+                                                 (option_mask_reg_none)
+                                                 (MergeMode.Zeroing)))))
+        dst))
+
+;; =============================================================================
+;; Variable Shift helpers (VPSLLVD/Q, VPSRLVD/Q, VPSRAVD/Q)
+;; =============================================================================
+
+;; VPSLLVD - variable left shift 32-bit elements
+;; dst[i] = data[i] << shift[i]
+(decl turin_vpsllvd (Xmm XmmMem) Xmm)
+(rule (turin_vpsllvd data shift)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512Alu (Avx512AluOp.Vpsllvd)
+                                                 (OperandSize.Size32)
+                                                 dst
+                                                 data
+                                                 shift
+                                                 (option_mask_reg_none)
+                                                 (MergeMode.Zeroing)))))
+        dst))
+
+;; VPSLLVQ - variable left shift 64-bit elements
+(decl turin_vpsllvq (Xmm XmmMem) Xmm)
+(rule (turin_vpsllvq data shift)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512Alu (Avx512AluOp.Vpsllvq)
+                                                 (OperandSize.Size64)
+                                                 dst
+                                                 data
+                                                 shift
+                                                 (option_mask_reg_none)
+                                                 (MergeMode.Zeroing)))))
+        dst))
+
+;; VPSRLVD - variable logical right shift 32-bit elements
+(decl turin_vpsrlvd (Xmm XmmMem) Xmm)
+(rule (turin_vpsrlvd data shift)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512Alu (Avx512AluOp.Vpsrlvd)
+                                                 (OperandSize.Size32)
+                                                 dst
+                                                 data
+                                                 shift
+                                                 (option_mask_reg_none)
+                                                 (MergeMode.Zeroing)))))
+        dst))
+
+;; VPSRLVQ - variable logical right shift 64-bit elements
+(decl turin_vpsrlvq (Xmm XmmMem) Xmm)
+(rule (turin_vpsrlvq data shift)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512Alu (Avx512AluOp.Vpsrlvq)
+                                                 (OperandSize.Size64)
+                                                 dst
+                                                 data
+                                                 shift
+                                                 (option_mask_reg_none)
+                                                 (MergeMode.Zeroing)))))
+        dst))
+
+;; VPSRAVD - variable arithmetic right shift 32-bit elements
+(decl turin_vpsravd (Xmm XmmMem) Xmm)
+(rule (turin_vpsravd data shift)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512Alu (Avx512AluOp.Vpsravd)
+                                                 (OperandSize.Size32)
+                                                 dst
+                                                 data
+                                                 shift
+                                                 (option_mask_reg_none)
+                                                 (MergeMode.Zeroing)))))
+        dst))
+
+;; VPSRAVQ - variable arithmetic right shift 64-bit elements
+(decl turin_vpsravq (Xmm XmmMem) Xmm)
+(rule (turin_vpsravq data shift)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512Alu (Avx512AluOp.Vpsravq)
+                                                 (OperandSize.Size64)
+                                                 dst
+                                                 data
+                                                 shift
+                                                 (option_mask_reg_none)
+                                                 (MergeMode.Zeroing)))))
+        dst))
+
+;; =============================================================================
+;; Variable Rotate helpers (VPROLVD/Q)
+;; =============================================================================
+
+;; VPROLVD - variable rotate left 32-bit elements
+;; dst[i] = data[i] <<< rotate[i] (rotate left by rotate[i] bits)
+(decl turin_vprolvd (Xmm XmmMem) Xmm)
+(rule (turin_vprolvd data rotate)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512Alu (Avx512AluOp.Vprolvd)
+                                                 (OperandSize.Size32)
+                                                 dst
+                                                 data
+                                                 rotate
+                                                 (option_mask_reg_none)
+                                                 (MergeMode.Zeroing)))))
+        dst))
+
+;; VPROLVQ - variable rotate left 64-bit elements
+(decl turin_vprolvq (Xmm XmmMem) Xmm)
+(rule (turin_vprolvq data rotate)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512Alu (Avx512AluOp.Vprolvq)
+                                                 (OperandSize.Size64)
+                                                 dst
+                                                 data
+                                                 rotate
+                                                 (option_mask_reg_none)
+                                                 (MergeMode.Zeroing)))))
+        dst))
+
+;; =============================================================================
+;; Population Count helpers (VPOPCNTD/Q - AVX-512 VPOPCNTDQ)
+;; =============================================================================
+
+;; VPOPCNTD - population count (count 1 bits) for each 32-bit element
+;; dst[i] = popcount(src[i])
+;; Note: Takes Xmm (not XmmMem) because unary ops need a valid register for src1
+;; even though it's ignored in encoding (vvvv=0xF). We use the input as dummy.
+(decl turin_vpopcntd (Xmm) Xmm)
+(rule (turin_vpopcntd src)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512Alu (Avx512AluOp.Vpopcntd)
+                                                 (OperandSize.Size32)
+                                                 dst
+                                                 src  ;; Dummy src1 (ignored in encoding)
+                                                 (xmm_to_xmm_mem src)  ;; Actual source
+                                                 (option_mask_reg_none)
+                                                 (MergeMode.Zeroing)))))
+        dst))
+
+;; VPOPCNTQ - population count (count 1 bits) for each 64-bit element
+(decl turin_vpopcntq (Xmm) Xmm)
+(rule (turin_vpopcntq src)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512Alu (Avx512AluOp.Vpopcntq)
+                                                 (OperandSize.Size64)
+                                                 dst
+                                                 src  ;; Dummy src1 (ignored in encoding)
+                                                 (xmm_to_xmm_mem src)  ;; Actual source
+                                                 (option_mask_reg_none)
+                                                 (MergeMode.Zeroing)))))
+        dst))
+
+;; =============================================================================
+;; Conflict Detection helpers (VPCONFLICTD/Q - AVX-512 CD)
+;; =============================================================================
+
+;; VPCONFLICTD - detect conflicts (duplicates) in 32-bit elements
+;; For each element, produces a bitmask indicating which prior elements have the same value
+;; Used for parallel histogram construction and scatter conflict detection
+;; Note: Takes Xmm (not XmmMem) because unary ops need a valid register for src1
+(decl turin_vpconflictd (Xmm) Xmm)
+(rule (turin_vpconflictd src)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512Alu (Avx512AluOp.Vpconflictd)
+                                                 (OperandSize.Size32)
+                                                 dst
+                                                 src  ;; Dummy src1 (ignored in encoding)
+                                                 (xmm_to_xmm_mem src)  ;; Actual source
+                                                 (option_mask_reg_none)
+                                                 (MergeMode.Zeroing)))))
+        dst))
+
+;; VPCONFLICTQ - detect conflicts (duplicates) in 64-bit elements
+(decl turin_vpconflictq (Xmm) Xmm)
+(rule (turin_vpconflictq src)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512Alu (Avx512AluOp.Vpconflictq)
+                                                 (OperandSize.Size64)
+                                                 dst
+                                                 src  ;; Dummy src1 (ignored in encoding)
+                                                 (xmm_to_xmm_mem src)  ;; Actual source
+                                                 (option_mask_reg_none)
+                                                 (MergeMode.Zeroing)))))
+        dst))
+
+;; VPLZCNTD - count leading zeros per 32-bit element (AVX-512CD)
+;; For each element, produces the count of leading zero bits (0-32)
+;; Used for find-first-set, log2 approximation, and bit manipulation
+(decl turin_vplzcntd (Xmm) Xmm)
+(rule (turin_vplzcntd src)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512Alu (Avx512AluOp.Vplzcntd)
+                                                 (OperandSize.Size32)
+                                                 dst
+                                                 src  ;; Dummy src1 (ignored in encoding)
+                                                 (xmm_to_xmm_mem src)  ;; Actual source
+                                                 (option_mask_reg_none)
+                                                 (MergeMode.Zeroing)))))
+        dst))
+
+;; VPLZCNTQ - count leading zeros per 64-bit element (AVX-512CD)
+(decl turin_vplzcntq (Xmm) Xmm)
+(rule (turin_vplzcntq src)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512Alu (Avx512AluOp.Vplzcntq)
+                                                 (OperandSize.Size64)
+                                                 dst
+                                                 src  ;; Dummy src1 (ignored in encoding)
+                                                 (xmm_to_xmm_mem src)  ;; Actual source
+                                                 (option_mask_reg_none)
+                                                 (MergeMode.Zeroing)))))
+        dst))
+
+;; VPABSD - absolute value per 32-bit element (AVX-512F)
+;; For each element, produces the absolute value
+(decl turin_vpabsd (Xmm) Xmm)
+(rule (turin_vpabsd src)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512Alu (Avx512AluOp.Vpabsd)
+                                                 (OperandSize.Size32)
+                                                 dst
+                                                 src  ;; Dummy src1 (ignored in encoding)
+                                                 (xmm_to_xmm_mem src)  ;; Actual source
+                                                 (option_mask_reg_none)
+                                                 (MergeMode.Zeroing)))))
+        dst))
+
+;; VPABSQ - absolute value per 64-bit element (AVX-512F)
+(decl turin_vpabsq (Xmm) Xmm)
+(rule (turin_vpabsq src)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512Alu (Avx512AluOp.Vpabsq)
+                                                 (OperandSize.Size64)
+                                                 dst
+                                                 src  ;; Dummy src1 (ignored in encoding)
+                                                 (xmm_to_xmm_mem src)  ;; Actual source
+                                                 (option_mask_reg_none)
+                                                 (MergeMode.Zeroing)))))
+        dst))
+
+;; =============================================================================
+;; Floating-Point ALU helpers (VADDPS/PD, VSUBPS/PD, VMULPS/PD, VDIVPS/PD, etc.)
+;; =============================================================================
+
+;; VADDPS - add F32X16
+(decl turin_vaddps (Xmm XmmMem) Xmm)
+(rule (turin_vaddps src1 src2)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512FpAlu (Avx512FpAluOp.Vaddps)
+                                                  dst
+                                                  src1
+                                                  src2
+                                                  (option_mask_reg_none)
+                                                  (MergeMode.Zeroing)))))
+        dst))
+
+;; VADDPD - add F64X8
+(decl turin_vaddpd (Xmm XmmMem) Xmm)
+(rule (turin_vaddpd src1 src2)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512FpAlu (Avx512FpAluOp.Vaddpd)
+                                                  dst
+                                                  src1
+                                                  src2
+                                                  (option_mask_reg_none)
+                                                  (MergeMode.Zeroing)))))
+        dst))
+
+;; VSUBPS - subtract F32X16
+(decl turin_vsubps (Xmm XmmMem) Xmm)
+(rule (turin_vsubps src1 src2)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512FpAlu (Avx512FpAluOp.Vsubps)
+                                                  dst
+                                                  src1
+                                                  src2
+                                                  (option_mask_reg_none)
+                                                  (MergeMode.Zeroing)))))
+        dst))
+
+;; VSUBPD - subtract F64X8
+(decl turin_vsubpd (Xmm XmmMem) Xmm)
+(rule (turin_vsubpd src1 src2)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512FpAlu (Avx512FpAluOp.Vsubpd)
+                                                  dst
+                                                  src1
+                                                  src2
+                                                  (option_mask_reg_none)
+                                                  (MergeMode.Zeroing)))))
+        dst))
+
+;; VMULPS - multiply F32X16
+(decl turin_vmulps (Xmm XmmMem) Xmm)
+(rule (turin_vmulps src1 src2)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512FpAlu (Avx512FpAluOp.Vmulps)
+                                                  dst
+                                                  src1
+                                                  src2
+                                                  (option_mask_reg_none)
+                                                  (MergeMode.Zeroing)))))
+        dst))
+
+;; VMULPD - multiply F64X8
+(decl turin_vmulpd (Xmm XmmMem) Xmm)
+(rule (turin_vmulpd src1 src2)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512FpAlu (Avx512FpAluOp.Vmulpd)
+                                                  dst
+                                                  src1
+                                                  src2
+                                                  (option_mask_reg_none)
+                                                  (MergeMode.Zeroing)))))
+        dst))
+
+;; VDIVPS - divide F32X16
+(decl turin_vdivps (Xmm XmmMem) Xmm)
+(rule (turin_vdivps src1 src2)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512FpAlu (Avx512FpAluOp.Vdivps)
+                                                  dst
+                                                  src1
+                                                  src2
+                                                  (option_mask_reg_none)
+                                                  (MergeMode.Zeroing)))))
+        dst))
+
+;; VDIVPD - divide F64X8
+(decl turin_vdivpd (Xmm XmmMem) Xmm)
+(rule (turin_vdivpd src1 src2)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512FpAlu (Avx512FpAluOp.Vdivpd)
+                                                  dst
+                                                  src1
+                                                  src2
+                                                  (option_mask_reg_none)
+                                                  (MergeMode.Zeroing)))))
+        dst))
+
+;; VMINPS - minimum F32X16
+(decl turin_vminps (Xmm XmmMem) Xmm)
+(rule (turin_vminps src1 src2)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512FpAlu (Avx512FpAluOp.Vminps)
+                                                  dst
+                                                  src1
+                                                  src2
+                                                  (option_mask_reg_none)
+                                                  (MergeMode.Zeroing)))))
+        dst))
+
+;; VMINPD - minimum F64X8
+(decl turin_vminpd (Xmm XmmMem) Xmm)
+(rule (turin_vminpd src1 src2)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512FpAlu (Avx512FpAluOp.Vminpd)
+                                                  dst
+                                                  src1
+                                                  src2
+                                                  (option_mask_reg_none)
+                                                  (MergeMode.Zeroing)))))
+        dst))
+
+;; VMAXPS - maximum F32X16
+(decl turin_vmaxps (Xmm XmmMem) Xmm)
+(rule (turin_vmaxps src1 src2)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512FpAlu (Avx512FpAluOp.Vmaxps)
+                                                  dst
+                                                  src1
+                                                  src2
+                                                  (option_mask_reg_none)
+                                                  (MergeMode.Zeroing)))))
+        dst))
+
+;; VMAXPD - maximum F64X8
+(decl turin_vmaxpd (Xmm XmmMem) Xmm)
+(rule (turin_vmaxpd src1 src2)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512FpAlu (Avx512FpAluOp.Vmaxpd)
+                                                  dst
+                                                  src1
+                                                  src2
+                                                  (option_mask_reg_none)
+                                                  (MergeMode.Zeroing)))))
+        dst))
+
+;; VSQRTPS - square root F32X16
+(decl turin_vsqrtps (XmmMem) Xmm)
+(rule (turin_vsqrtps src)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512FpSqrt (Avx512FpAluOp.Vsqrtps)
+                                                   dst
+                                                   src
+                                                   (option_mask_reg_none)
+                                                   (MergeMode.Zeroing)))))
+        dst))
+
+;; VSQRTPD - square root F64X8
+(decl turin_vsqrtpd (XmmMem) Xmm)
+(rule (turin_vsqrtpd src)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512FpSqrt (Avx512FpAluOp.Vsqrtpd)
+                                                   dst
+                                                   src
+                                                   (option_mask_reg_none)
+                                                   (MergeMode.Zeroing)))))
+        dst))
+
+;; =============================================================================
+;; AVX-512 FMA (Fused Multiply-Add) helpers
+;; =============================================================================
+
+;; VFMADD213PS - fma F32X16: result = src2 * src1 + src3 (src1 tied to dst)
+;; For Cranelift's fma(x, y, z) = x * y + z:
+;; Pass x as src1 (dst), y as src2, z as src3
+;; The register allocator will ensure dst gets the same register as src1 via reg_reuse_def
+(decl turin_vfmadd213ps (Xmm Xmm XmmMem) Xmm)
+(rule (turin_vfmadd213ps src1 src2 src3)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512Fma (Avx512FmaOp.Vfmadd213ps)
+                                                 dst
+                                                 src1
+                                                 src2
+                                                 src3
+                                                 (option_mask_reg_none)
+                                                 (MergeMode.Zeroing)))))
+        dst))
+
+;; VFMADD213PD - fma F64X8: result = src2 * src1 + src3 (src1 tied to dst)
+;; The register allocator will ensure dst gets the same register as src1 via reg_reuse_def
+(decl turin_vfmadd213pd (Xmm Xmm XmmMem) Xmm)
+(rule (turin_vfmadd213pd src1 src2 src3)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512Fma (Avx512FmaOp.Vfmadd213pd)
+                                                 dst
+                                                 src1
+                                                 src2
+                                                 src3
+                                                 (option_mask_reg_none)
+                                                 (MergeMode.Zeroing)))))
+        dst))
+
+;; VFMSUB213PS - fms F32X16: result = src2 * src1 - src3
+;; Computes (x * y) - z
+(decl turin_vfmsub213ps (Xmm Xmm XmmMem) Xmm)
+(rule (turin_vfmsub213ps src1 src2 src3)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512Fma (Avx512FmaOp.Vfmsub213ps)
+                                                 dst
+                                                 src1
+                                                 src2
+                                                 src3
+                                                 (option_mask_reg_none)
+                                                 (MergeMode.Zeroing)))))
+        dst))
+
+;; VFMSUB213PD - fms F64X8: result = src2 * src1 - src3
+;; Computes (x * y) - z
+(decl turin_vfmsub213pd (Xmm Xmm XmmMem) Xmm)
+(rule (turin_vfmsub213pd src1 src2 src3)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512Fma (Avx512FmaOp.Vfmsub213pd)
+                                                 dst
+                                                 src1
+                                                 src2
+                                                 src3
+                                                 (option_mask_reg_none)
+                                                 (MergeMode.Zeroing)))))
+        dst))
+
+;; VFNMADD213PS - fnma F32X16: result = -(src2 * src1) + src3
+;; Computes z - (x * y) = -(x * y) + z
+(decl turin_vfnmadd213ps (Xmm Xmm XmmMem) Xmm)
+(rule (turin_vfnmadd213ps src1 src2 src3)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512Fma (Avx512FmaOp.Vfnmadd213ps)
+                                                 dst
+                                                 src1
+                                                 src2
+                                                 src3
+                                                 (option_mask_reg_none)
+                                                 (MergeMode.Zeroing)))))
+        dst))
+
+;; VFNMADD213PD - fnma F64X8: result = -(src2 * src1) + src3
+;; Computes z - (x * y) = -(x * y) + z
+(decl turin_vfnmadd213pd (Xmm Xmm XmmMem) Xmm)
+(rule (turin_vfnmadd213pd src1 src2 src3)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512Fma (Avx512FmaOp.Vfnmadd213pd)
+                                                 dst
+                                                 src1
+                                                 src2
+                                                 src3
+                                                 (option_mask_reg_none)
+                                                 (MergeMode.Zeroing)))))
+        dst))
+
+;; VFNMSUB213PS - fnms F32X16: result = -(src2 * src1) - src3
+;; Computes -(x * y) - z
+(decl turin_vfnmsub213ps (Xmm Xmm XmmMem) Xmm)
+(rule (turin_vfnmsub213ps src1 src2 src3)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512Fma (Avx512FmaOp.Vfnmsub213ps)
+                                                 dst
+                                                 src1
+                                                 src2
+                                                 src3
+                                                 (option_mask_reg_none)
+                                                 (MergeMode.Zeroing)))))
+        dst))
+
+;; VFNMSUB213PD - fnms F64X8: result = -(src2 * src1) - src3
+;; Computes -(x * y) - z
+(decl turin_vfnmsub213pd (Xmm Xmm XmmMem) Xmm)
+(rule (turin_vfnmsub213pd src1 src2 src3)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512Fma (Avx512FmaOp.Vfnmsub213pd)
+                                                 dst
+                                                 src1
+                                                 src2
+                                                 src3
+                                                 (option_mask_reg_none)
+                                                 (MergeMode.Zeroing)))))
+        dst))
+
+;; =============================================================================
+;; VNNI (Vector Neural Network Instructions) helpers
+;; =============================================================================
+
+;; VPDPBUSD - Multiply unsigned bytes by signed bytes, add pairs to dword accumulator
+;; dst[i] = acc[i] + dot4(src1[4i:4i+3] unsigned, src2[4i:4i+3] signed)
+;; Each dword accumulator receives 4 byte products summed
+(decl turin_vpdpbusd (Xmm Xmm XmmMem) Xmm)
+(rule (turin_vpdpbusd acc src1 src2)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512Vnni (Avx512VnniOp.Vpdpbusd)
+                                                  dst
+                                                  acc
+                                                  src1
+                                                  src2
+                                                  (option_mask_reg_none)
+                                                  (MergeMode.Zeroing)))))
+        dst))
+
+;; VPDPBUSDS - Same as VPDPBUSD but with signed saturation
+(decl turin_vpdpbusds (Xmm Xmm XmmMem) Xmm)
+(rule (turin_vpdpbusds acc src1 src2)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512Vnni (Avx512VnniOp.Vpdpbusds)
+                                                  dst
+                                                  acc
+                                                  src1
+                                                  src2
+                                                  (option_mask_reg_none)
+                                                  (MergeMode.Zeroing)))))
+        dst))
+
+;; VPDPWSSD - Multiply signed words, add pairs to dword accumulator
+;; dst[i] = acc[i] + dot2(src1[2i:2i+1], src2[2i:2i+1])
+;; Each dword accumulator receives 2 word products summed
+(decl turin_vpdpwssd (Xmm Xmm XmmMem) Xmm)
+(rule (turin_vpdpwssd acc src1 src2)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512Vnni (Avx512VnniOp.Vpdpwssd)
+                                                  dst
+                                                  acc
+                                                  src1
+                                                  src2
+                                                  (option_mask_reg_none)
+                                                  (MergeMode.Zeroing)))))
+        dst))
+
+;; VPDPWSSDS - Same as VPDPWSSD but with signed saturation
+(decl turin_vpdpwssds (Xmm Xmm XmmMem) Xmm)
+(rule (turin_vpdpwssds acc src1 src2)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512Vnni (Avx512VnniOp.Vpdpwssds)
+                                                  dst
+                                                  acc
+                                                  src1
+                                                  src2
+                                                  (option_mask_reg_none)
+                                                  (MergeMode.Zeroing)))))
+        dst))
+
+;; =============================================================================
+;; VP2INTERSECT helpers (Hash join acceleration)
+;; =============================================================================
+
+;; VP2INTERSECTD - Compare 32-bit elements from two vectors
+;; Produces TWO mask outputs (consecutive k-registers):
+;; - First mask (returned): For each element in src1, set if it matches ANY element in src2
+;; - Second mask (dst+1): For each element in src2, set if it matches ANY element in src1
+;; Note: The hardware implicitly writes to both dst_k and dst_k+1.
+;; dst_k must be an even k-register (k0, k2, k4, k6).
+(decl turin_vp2intersectd (Xmm XmmMem) Reg)
+(rule (turin_vp2intersectd src1 src2)
+      (let ((dst WritableReg (temp_writable_reg $I64))
+            (_ Unit (emit (MInst.TurinVp2Intersect (Vp2IntersectOp.Vp2intersectd)
+                                                    dst
+                                                    src1
+                                                    src2))))
+        dst))
+
+;; VP2INTERSECTQ - Compare 64-bit elements from two vectors
+;; Same semantics as VP2INTERSECTD but for 64-bit elements.
+(decl turin_vp2intersectq (Xmm XmmMem) Reg)
+(rule (turin_vp2intersectq src1 src2)
+      (let ((dst WritableReg (temp_writable_reg $I64))
+            (_ Unit (emit (MInst.TurinVp2Intersect (Vp2IntersectOp.Vp2intersectq)
+                                                    dst
+                                                    src1
+                                                    src2))))
+        dst))
+
+;; =============================================================================
+;; Type Conversion helpers (VCVTDQ2PS, VCVTPS2DQ, etc.)
+;; =============================================================================
+
+;; VCVTDQ2PS - convert packed i32 to packed f32 (I32X16 -> F32X16)
+(decl turin_vcvtdq2ps (XmmMem) Xmm)
+(rule (turin_vcvtdq2ps src)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512Cvt (Avx512CvtOp.Vcvtdq2ps)
+                                                 dst
+                                                 src
+                                                 (option_mask_reg_none)
+                                                 (MergeMode.Zeroing)))))
+        dst))
+
+;; VCVTPS2DQ - convert packed f32 to packed i32 with rounding (F32X16 -> I32X16)
+(decl turin_vcvtps2dq (XmmMem) Xmm)
+(rule (turin_vcvtps2dq src)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512Cvt (Avx512CvtOp.Vcvtps2dq)
+                                                 dst
+                                                 src
+                                                 (option_mask_reg_none)
+                                                 (MergeMode.Zeroing)))))
+        dst))
+
+;; VCVTTPS2DQ - convert packed f32 to packed i32 with truncation (F32X16 -> I32X16)
+(decl turin_vcvttps2dq (XmmMem) Xmm)
+(rule (turin_vcvttps2dq src)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512Cvt (Avx512CvtOp.Vcvttps2dq)
+                                                 dst
+                                                 src
+                                                 (option_mask_reg_none)
+                                                 (MergeMode.Zeroing)))))
+        dst))
+
+;; VCVTQQ2PD - convert packed i64 to packed f64 (I64X8 -> F64X8)
+(decl turin_vcvtqq2pd (XmmMem) Xmm)
+(rule (turin_vcvtqq2pd src)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512Cvt (Avx512CvtOp.Vcvtqq2pd)
+                                                 dst
+                                                 src
+                                                 (option_mask_reg_none)
+                                                 (MergeMode.Zeroing)))))
+        dst))
+
+;; VCVTPD2QQ - convert packed f64 to packed i64 with rounding (F64X8 -> I64X8)
+(decl turin_vcvtpd2qq (XmmMem) Xmm)
+(rule (turin_vcvtpd2qq src)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512Cvt (Avx512CvtOp.Vcvtpd2qq)
+                                                 dst
+                                                 src
+                                                 (option_mask_reg_none)
+                                                 (MergeMode.Zeroing)))))
+        dst))
+
+;; VCVTTPD2QQ - convert packed f64 to packed i64 with truncation (F64X8 -> I64X8)
+(decl turin_vcvttpd2qq (XmmMem) Xmm)
+(rule (turin_vcvttpd2qq src)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512Cvt (Avx512CvtOp.Vcvttpd2qq)
+                                                 dst
+                                                 src
+                                                 (option_mask_reg_none)
+                                                 (MergeMode.Zeroing)))))
+        dst))
+
+;; VCVTPS2PD - convert packed f32 to packed f64 (F32X8 -> F64X8)
+(decl turin_vcvtps2pd (XmmMem) Xmm)
+(rule (turin_vcvtps2pd src)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512Cvt (Avx512CvtOp.Vcvtps2pd)
+                                                 dst
+                                                 src
+                                                 (option_mask_reg_none)
+                                                 (MergeMode.Zeroing)))))
+        dst))
+
+;; VCVTPD2PS - convert packed f64 to packed f32 (F64X8 -> F32X8)
+(decl turin_vcvtpd2ps (XmmMem) Xmm)
+(rule (turin_vcvtpd2ps src)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512Cvt (Avx512CvtOp.Vcvtpd2ps)
+                                                 dst
+                                                 src
+                                                 (option_mask_reg_none)
+                                                 (MergeMode.Zeroing)))))
+        dst))
+
+;; =============================================================================
+;; Vector Alignment helpers (VALIGND, VALIGNQ)
+;; =============================================================================
+
+;; VALIGND - Align 32-bit elements from concatenation of two vectors
+;; dst = (src1 || src2) >> (imm8 * 32)
+;; Extracts 16 consecutive 32-bit elements from the concatenation of src1:src2
+(decl turin_valignd (Xmm XmmMem u8) Xmm)
+(rule (turin_valignd src1 src2 imm8)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (src2_rm RegMem (turin_xmm_mem_to_reg_mem src2))
+            (_ Unit (emit (MInst.TurinAvx512Align (Avx512AlignOp.Valignd)
+                                                   dst
+                                                   src1
+                                                   src2_rm
+                                                   imm8
+                                                   (option_mask_reg_none)
+                                                   (MergeMode.Zeroing)))))
+        dst))
+
+;; VALIGNQ - Align 64-bit elements from concatenation of two vectors
+;; dst = (src1 || src2) >> (imm8 * 64)
+;; Extracts 8 consecutive 64-bit elements from the concatenation of src1:src2
+(decl turin_valignq (Xmm XmmMem u8) Xmm)
+(rule (turin_valignq src1 src2 imm8)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (src2_rm RegMem (turin_xmm_mem_to_reg_mem src2))
+            (_ Unit (emit (MInst.TurinAvx512Align (Avx512AlignOp.Valignq)
+                                                   dst
+                                                   src1
+                                                   src2_rm
+                                                   imm8
+                                                   (option_mask_reg_none)
+                                                   (MergeMode.Zeroing)))))
+        dst))
+
+;; =============================================================================
+;; Ternary Logic helpers (VPTERNLOGD/Q)
+;; =============================================================================
+;;
+;; These compute arbitrary 3-input boolean functions based on an 8-bit truth table.
+;; For each bit position i in the output:
+;;   bit_index = (src1[i] << 2) | (src2[i] << 1) | src3[i]
+;;   result[i] = imm8[bit_index]
+;;
+;; Common imm8 values:
+;;   0x00 = zero (clear all bits)
+;;   0xFF = all ones (set all bits)
+;;   0x80 = AND(a, b, c) = a & b & c
+;;   0xFE = OR(a, b, c) = a | b | c
+;;   0x96 = XOR3(a, b, c) = a ^ b ^ c
+;;   0xCA = blend(a, b, c) = (a & b) | (~a & c)
+;;   0xF8 = (a | b) & c
+;;   0xEA = (a | b) | c = a | b | c (same as 0xFE)
+;;   0xE8 = (a & b) | (b & c) | (a & c) = majority
+;;   0x28 = a & b & ~c
+;;   0x78 = a ^ (b & c)
+
+;; VPTERNLOGD - ternary logic on 32-bit elements
+;; dst = ternlog(src1, src2, src3, imm8)
+;; Note: dst is tied to src1 (the instruction modifies src1 in place)
+(decl turin_vpternlogd (Xmm Xmm XmmMem u8) Xmm)
+(rule (turin_vpternlogd src1 src2 src3 imm8)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            ;; First move src1 to dst since vpternlog modifies the first operand
+            (_ Unit (emit (MInst.TurinAvx512Alu (Avx512AluOp.Vpord)
+                                                 (OperandSize.Size32)
+                                                 dst
+                                                 src1
+                                                 (xmm_to_xmm_mem src1)
+                                                 (option_mask_reg_none)
+                                                 (MergeMode.Zeroing))))
+            (src3_rm RegMem (turin_xmm_mem_to_reg_mem src3))
+            (_ Unit (emit (MInst.TurinAvx512Ternlog (OperandSize.Size32)
+                                                     dst
+                                                     (writable_xmm_to_xmm dst)
+                                                     src2
+                                                     src3_rm
+                                                     imm8
+                                                     (option_mask_reg_none)
+                                                     (MergeMode.Zeroing)))))
+        dst))
+
+;; VPTERNLOGQ - ternary logic on 64-bit elements
+;; dst = ternlog(src1, src2, src3, imm8)
+(decl turin_vpternlogq (Xmm Xmm XmmMem u8) Xmm)
+(rule (turin_vpternlogq src1 src2 src3 imm8)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            ;; First move src1 to dst since vpternlog modifies the first operand
+            (_ Unit (emit (MInst.TurinAvx512Alu (Avx512AluOp.Vporq)
+                                                 (OperandSize.Size64)
+                                                 dst
+                                                 src1
+                                                 (xmm_to_xmm_mem src1)
+                                                 (option_mask_reg_none)
+                                                 (MergeMode.Zeroing))))
+            (src3_rm RegMem (turin_xmm_mem_to_reg_mem src3))
+            (_ Unit (emit (MInst.TurinAvx512Ternlog (OperandSize.Size64)
+                                                     dst
+                                                     (writable_xmm_to_xmm dst)
+                                                     src2
+                                                     src3_rm
+                                                     imm8
+                                                     (option_mask_reg_none)
+                                                     (MergeMode.Zeroing)))))
+        dst))
+
+;; =============================================================================
+;; Register-form Compress/Expand helpers
+;; =============================================================================
+
+;; VPCOMPRESSD register form - compress 32-bit elements based on mask
+(decl turin_vpcompressd_reg (Reg Xmm) Xmm)
+(rule (turin_vpcompressd_reg mask src)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinCompressReg (OperandSize.Size32)
+                                                   dst
+                                                   src
+                                                   mask))))
+        dst))
+
+;; VPCOMPRESSQ register form - compress 64-bit elements based on mask
+(decl turin_vpcompressq_reg (Reg Xmm) Xmm)
+(rule (turin_vpcompressq_reg mask src)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinCompressReg (OperandSize.Size64)
+                                                   dst
+                                                   src
+                                                   mask))))
+        dst))
+
+;; VPEXPANDD register form - expand 32-bit elements based on mask
+(decl turin_vpexpandd_reg (Reg Xmm) Xmm)
+(rule (turin_vpexpandd_reg mask src)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinExpandReg (OperandSize.Size32)
+                                                 dst
+                                                 src
+                                                 mask
+                                                 (MergeMode.Zeroing)))))
+        dst))
+
+;; VPEXPANDQ register form - expand 64-bit elements based on mask
+(decl turin_vpexpandq_reg (Reg Xmm) Xmm)
+(rule (turin_vpexpandq_reg mask src)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinExpandReg (OperandSize.Size64)
+                                                 dst
+                                                 src
+                                                 mask
+                                                 (MergeMode.Zeroing)))))
+        dst))
+
+;; =============================================================================
+;; Masked Load/Store helpers
+;; =============================================================================
+
+;; VMOVDQU32 with mask - masked load for 32-bit elements
+(decl turin_masked_load_i32x16 (SyntheticAmode Reg Xmm) Xmm)
+(rule (turin_masked_load_i32x16 addr mask passthru)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinMaskedLoad (OperandSize.Size32)
+                                                  dst
+                                                  addr
+                                                  mask
+                                                  (MergeMode.Merging)))))
+        ;; Copy passthru to dst first, then the masked load merges
+        (turin_vpblendmd mask passthru (xmm_to_xmm_mem (turin_masked_load_raw_i32x16 addr mask)))))
+
+;; Raw masked load (no merge with passthru)
+(decl turin_masked_load_raw_i32x16 (SyntheticAmode Reg) Xmm)
+(rule (turin_masked_load_raw_i32x16 addr mask)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinMaskedLoad (OperandSize.Size32)
+                                                  dst
+                                                  addr
+                                                  mask
+                                                  (MergeMode.Zeroing)))))
+        dst))
+
+;; VMOVDQU64 with mask - masked load for 64-bit elements
+(decl turin_masked_load_i64x8 (SyntheticAmode Reg Xmm) Xmm)
+(rule (turin_masked_load_i64x8 addr mask passthru)
+      (turin_vpblendmq mask passthru (xmm_to_xmm_mem (turin_masked_load_raw_i64x8 addr mask))))
+
+;; Raw masked load (no merge with passthru)
+(decl turin_masked_load_raw_i64x8 (SyntheticAmode Reg) Xmm)
+(rule (turin_masked_load_raw_i64x8 addr mask)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinMaskedLoad (OperandSize.Size64)
+                                                  dst
+                                                  addr
+                                                  mask
+                                                  (MergeMode.Zeroing)))))
+        dst))
+
+;; VMOVDQU32 with mask - masked store for 32-bit elements
+(decl turin_masked_store_i32x16 (SyntheticAmode Reg Xmm) SideEffectNoResult)
+(rule (turin_masked_store_i32x16 addr mask src)
+      (SideEffectNoResult.Inst
+        (MInst.TurinMaskedStore (OperandSize.Size32) src addr mask)))
+
+;; VMOVDQU64 with mask - masked store for 64-bit elements
+(decl turin_masked_store_i64x8 (SyntheticAmode Reg Xmm) SideEffectNoResult)
+(rule (turin_masked_store_i64x8 addr mask src)
+      (SideEffectNoResult.Inst
+        (MInst.TurinMaskedStore (OperandSize.Size64) src addr mask)))
+
+;; =============================================================================
+;; Immediate Rotate helpers (VPROLD/VPROLQ/VPRORD/VPRORQ)
+;; =============================================================================
+
+;; VPROLD - rotate left 32-bit elements by immediate
+(decl turin_vprold (XmmMem u8) Xmm)
+(rule (turin_vprold src imm8)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (src_rm RegMem (turin_xmm_mem_to_reg_mem src))
+            (_ Unit (emit (MInst.TurinAvx512ImmRotate (OperandSize.Size32)
+                                                       dst
+                                                       src_rm
+                                                       imm8
+                                                       true  ;; is_left = true
+                                                       (option_mask_reg_none)
+                                                       (MergeMode.Zeroing)))))
+        dst))
+
+;; VPROLQ - rotate left 64-bit elements by immediate
+(decl turin_vprolq (XmmMem u8) Xmm)
+(rule (turin_vprolq src imm8)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (src_rm RegMem (turin_xmm_mem_to_reg_mem src))
+            (_ Unit (emit (MInst.TurinAvx512ImmRotate (OperandSize.Size64)
+                                                       dst
+                                                       src_rm
+                                                       imm8
+                                                       true  ;; is_left = true
+                                                       (option_mask_reg_none)
+                                                       (MergeMode.Zeroing)))))
+        dst))
+
+;; VPRORD - rotate right 32-bit elements by immediate
+(decl turin_vprord (XmmMem u8) Xmm)
+(rule (turin_vprord src imm8)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (src_rm RegMem (turin_xmm_mem_to_reg_mem src))
+            (_ Unit (emit (MInst.TurinAvx512ImmRotate (OperandSize.Size32)
+                                                       dst
+                                                       src_rm
+                                                       imm8
+                                                       false  ;; is_left = false
+                                                       (option_mask_reg_none)
+                                                       (MergeMode.Zeroing)))))
+        dst))
+
+;; VPRORQ - rotate right 64-bit elements by immediate
+(decl turin_vprorq (XmmMem u8) Xmm)
+(rule (turin_vprorq src imm8)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (src_rm RegMem (turin_xmm_mem_to_reg_mem src))
+            (_ Unit (emit (MInst.TurinAvx512ImmRotate (OperandSize.Size64)
+                                                       dst
+                                                       src_rm
+                                                       imm8
+                                                       false  ;; is_left = false
+                                                       (option_mask_reg_none)
+                                                       (MergeMode.Zeroing)))))
+        dst))
+
+;; =============================================================================
+;; Immediate Shuffle helpers (VPSHUFD, VPSHUFHW, VPSHUFLW)
+;; =============================================================================
+
+;; VPSHUFD - Shuffle packed dwords according to immediate
+;; Each 2-bit field in imm8 selects one of 4 dwords within each 128-bit lane
+;; Result: For each 128-bit lane, dst[i] = src[imm8[i*2+1:i*2]] for i=0..3
+(decl turin_vpshufd (XmmMem u8) Xmm)
+(rule (turin_vpshufd src imm8)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (src_rm RegMem (turin_xmm_mem_to_reg_mem src))
+            (_ Unit (emit (MInst.TurinAvx512ImmShuffle (Avx512ImmShuffleOp.Vpshufd)
+                                                        dst
+                                                        src_rm
+                                                        imm8
+                                                        (option_mask_reg_none)
+                                                        (MergeMode.Zeroing)))))
+        dst))
+
+;; VPSHUFHW - Shuffle packed high words according to immediate
+;; Shuffles the high 4 words (bits 64-127) of each 128-bit lane
+;; Low 4 words are copied unchanged
+(decl turin_vpshufhw (XmmMem u8) Xmm)
+(rule (turin_vpshufhw src imm8)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (src_rm RegMem (turin_xmm_mem_to_reg_mem src))
+            (_ Unit (emit (MInst.TurinAvx512ImmShuffle (Avx512ImmShuffleOp.Vpshufhw)
+                                                        dst
+                                                        src_rm
+                                                        imm8
+                                                        (option_mask_reg_none)
+                                                        (MergeMode.Zeroing)))))
+        dst))
+
+;; VPSHUFLW - Shuffle packed low words according to immediate
+;; Shuffles the low 4 words (bits 0-63) of each 128-bit lane
+;; High 4 words are copied unchanged
+(decl turin_vpshuflw (XmmMem u8) Xmm)
+(rule (turin_vpshuflw src imm8)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (src_rm RegMem (turin_xmm_mem_to_reg_mem src))
+            (_ Unit (emit (MInst.TurinAvx512ImmShuffle (Avx512ImmShuffleOp.Vpshuflw)
+                                                        dst
+                                                        src_rm
+                                                        imm8
+                                                        (option_mask_reg_none)
+                                                        (MergeMode.Zeroing)))))
+        dst))
+
+;; =============================================================================
+;; FP Compare helpers (VCMPPS/VCMPPD)
+;; =============================================================================
+
+;; VCMPPS - compare packed single-precision floats to k-mask
+;; Returns the k-register containing the comparison result mask
+(decl turin_vcmpps (Xmm XmmMem u8) Reg)
+(rule (turin_vcmpps src1 src2 imm8)
+      (let ((dst WritableReg (temp_writable_reg $I64))
+            (src2_rm RegMem (turin_xmm_mem_to_reg_mem src2))
+            (_ Unit (emit (MInst.TurinAvx512FpCmp (OperandSize.Size32)
+                                                   dst
+                                                   src1
+                                                   src2_rm
+                                                   imm8
+                                                   (option_mask_reg_none)))))
+        dst))
+
+;; VCMPPD - compare packed double-precision floats to k-mask
+;; Returns the k-register containing the comparison result mask
+(decl turin_vcmppd (Xmm XmmMem u8) Reg)
+(rule (turin_vcmppd src1 src2 imm8)
+      (let ((dst WritableReg (temp_writable_reg $I64))
+            (src2_rm RegMem (turin_xmm_mem_to_reg_mem src2))
+            (_ Unit (emit (MInst.TurinAvx512FpCmp (OperandSize.Size64)
+                                                   dst
+                                                   src1
+                                                   src2_rm
+                                                   imm8
+                                                   (option_mask_reg_none)))))
+        dst))
+
+;; =============================================================================
+;; Pack/Unpack helpers (type narrowing/widening operations)
+;; =============================================================================
+
+;; VPACKSSDW - Pack 32-bit signed to 16-bit signed with saturation
+;; Pack and saturate src1 and src2 doublewords to words in dst
+(decl turin_vpackssdw (Xmm XmmMem) Xmm)
+(rule (turin_vpackssdw src1 src2)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512Alu (Avx512AluOp.Vpackssdw)
+                                                 (OperandSize.Size32)
+                                                 dst
+                                                 src1
+                                                 src2
+                                                 (option_mask_reg_none)
+                                                 (MergeMode.Zeroing)))))
+        dst))
+
+;; VPACKUSDW - Pack 32-bit unsigned to 16-bit unsigned with saturation
+(decl turin_vpackusdw (Xmm XmmMem) Xmm)
+(rule (turin_vpackusdw src1 src2)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512Alu (Avx512AluOp.Vpackusdw)
+                                                 (OperandSize.Size32)
+                                                 dst
+                                                 src1
+                                                 src2
+                                                 (option_mask_reg_none)
+                                                 (MergeMode.Zeroing)))))
+        dst))
+
+;; VPACKSSWB - Pack 16-bit signed to 8-bit signed with saturation
+(decl turin_vpacksswb (Xmm XmmMem) Xmm)
+(rule (turin_vpacksswb src1 src2)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512Alu (Avx512AluOp.Vpacksswb)
+                                                 (OperandSize.Size32)
+                                                 dst
+                                                 src1
+                                                 src2
+                                                 (option_mask_reg_none)
+                                                 (MergeMode.Zeroing)))))
+        dst))
+
+;; VPACKUSWB - Pack 16-bit unsigned to 8-bit unsigned with saturation
+(decl turin_vpackuswb (Xmm XmmMem) Xmm)
+(rule (turin_vpackuswb src1 src2)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512Alu (Avx512AluOp.Vpackuswb)
+                                                 (OperandSize.Size32)
+                                                 dst
+                                                 src1
+                                                 src2
+                                                 (option_mask_reg_none)
+                                                 (MergeMode.Zeroing)))))
+        dst))
+
+;; VPUNPCKLBW - Unpack low bytes (interleave low bytes from src1 and src2)
+(decl turin_vpunpcklbw (Xmm XmmMem) Xmm)
+(rule (turin_vpunpcklbw src1 src2)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512Alu (Avx512AluOp.Vpunpcklbw)
+                                                 (OperandSize.Size32)
+                                                 dst
+                                                 src1
+                                                 src2
+                                                 (option_mask_reg_none)
+                                                 (MergeMode.Zeroing)))))
+        dst))
+
+;; VPUNPCKHBW - Unpack high bytes
+(decl turin_vpunpckhbw (Xmm XmmMem) Xmm)
+(rule (turin_vpunpckhbw src1 src2)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512Alu (Avx512AluOp.Vpunpckhbw)
+                                                 (OperandSize.Size32)
+                                                 dst
+                                                 src1
+                                                 src2
+                                                 (option_mask_reg_none)
+                                                 (MergeMode.Zeroing)))))
+        dst))
+
+;; VPUNPCKLWD - Unpack low words
+(decl turin_vpunpcklwd (Xmm XmmMem) Xmm)
+(rule (turin_vpunpcklwd src1 src2)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512Alu (Avx512AluOp.Vpunpcklwd)
+                                                 (OperandSize.Size32)
+                                                 dst
+                                                 src1
+                                                 src2
+                                                 (option_mask_reg_none)
+                                                 (MergeMode.Zeroing)))))
+        dst))
+
+;; VPUNPCKHWD - Unpack high words
+(decl turin_vpunpckhwd (Xmm XmmMem) Xmm)
+(rule (turin_vpunpckhwd src1 src2)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512Alu (Avx512AluOp.Vpunpckhwd)
+                                                 (OperandSize.Size32)
+                                                 dst
+                                                 src1
+                                                 src2
+                                                 (option_mask_reg_none)
+                                                 (MergeMode.Zeroing)))))
+        dst))
+
+;; VPUNPCKLDQ - Unpack low doublewords
+(decl turin_vpunpckldq (Xmm XmmMem) Xmm)
+(rule (turin_vpunpckldq src1 src2)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512Alu (Avx512AluOp.Vpunpckldq)
+                                                 (OperandSize.Size32)
+                                                 dst
+                                                 src1
+                                                 src2
+                                                 (option_mask_reg_none)
+                                                 (MergeMode.Zeroing)))))
+        dst))
+
+;; VPUNPCKHDQ - Unpack high doublewords
+(decl turin_vpunpckhdq (Xmm XmmMem) Xmm)
+(rule (turin_vpunpckhdq src1 src2)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512Alu (Avx512AluOp.Vpunpckhdq)
+                                                 (OperandSize.Size32)
+                                                 dst
+                                                 src1
+                                                 src2
+                                                 (option_mask_reg_none)
+                                                 (MergeMode.Zeroing)))))
+        dst))
+
+;; VPUNPCKLQDQ - Unpack low quadwords
+(decl turin_vpunpcklqdq (Xmm XmmMem) Xmm)
+(rule (turin_vpunpcklqdq src1 src2)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512Alu (Avx512AluOp.Vpunpcklqdq)
+                                                 (OperandSize.Size64)
+                                                 dst
+                                                 src1
+                                                 src2
+                                                 (option_mask_reg_none)
+                                                 (MergeMode.Zeroing)))))
+        dst))
+
+;; VPUNPCKHQDQ - Unpack high quadwords
+(decl turin_vpunpckhqdq (Xmm XmmMem) Xmm)
+(rule (turin_vpunpckhqdq src1 src2)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512Alu (Avx512AluOp.Vpunpckhqdq)
+                                                 (OperandSize.Size64)
+                                                 dst
+                                                 src1
+                                                 src2
+                                                 (option_mask_reg_none)
+                                                 (MergeMode.Zeroing)))))
+        dst))
+
+;; =============================================================================
+;; Integer-Double Conversion helpers (VCVTDQ2PD, VCVTPD2DQ, VCVTTPD2DQ)
+;; =============================================================================
+
+;; VCVTDQ2PD - Convert packed i32 to packed f64 (I32X8 -> F64X8)
+(decl turin_vcvtdq2pd (XmmMem) Xmm)
+(rule (turin_vcvtdq2pd src)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512Cvt (Avx512CvtOp.Vcvtdq2pd)
+                                                 dst
+                                                 src
+                                                 (option_mask_reg_none)
+                                                 (MergeMode.Zeroing)))))
+        dst))
+
+;; VCVTPD2DQ - Convert packed f64 to packed i32 with rounding (F64X8 -> I32X8)
+(decl turin_vcvtpd2dq (XmmMem) Xmm)
+(rule (turin_vcvtpd2dq src)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512Cvt (Avx512CvtOp.Vcvtpd2dq)
+                                                 dst
+                                                 src
+                                                 (option_mask_reg_none)
+                                                 (MergeMode.Zeroing)))))
+        dst))
+
+;; VCVTTPD2DQ - Convert packed f64 to packed i32 with truncation (F64X8 -> I32X8)
+(decl turin_vcvttpd2dq (XmmMem) Xmm)
+(rule (turin_vcvttpd2dq src)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512Cvt (Avx512CvtOp.Vcvttpd2dq)
+                                                 dst
+                                                 src
+                                                 (option_mask_reg_none)
+                                                 (MergeMode.Zeroing)))))
+        dst))
+
+;; =============================================================================
+;; Zero/Sign-Extend helpers (VPMOVZX/VPMOVSX)
+;; =============================================================================
+
+;; VPMOVZXBD - Zero-extend packed bytes to dwords (I8 -> I32)
+(decl turin_vpmovzxbd (XmmMem) Xmm)
+(rule (turin_vpmovzxbd src)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512Cvt (Avx512CvtOp.Vpmovzxbd)
+                                                 dst
+                                                 src
+                                                 (option_mask_reg_none)
+                                                 (MergeMode.Zeroing)))))
+        dst))
+
+;; VPMOVZXBQ - Zero-extend packed bytes to qwords (I8 -> I64)
+(decl turin_vpmovzxbq (XmmMem) Xmm)
+(rule (turin_vpmovzxbq src)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512Cvt (Avx512CvtOp.Vpmovzxbq)
+                                                 dst
+                                                 src
+                                                 (option_mask_reg_none)
+                                                 (MergeMode.Zeroing)))))
+        dst))
+
+;; VPMOVZXWD - Zero-extend packed words to dwords (I16 -> I32)
+(decl turin_vpmovzxwd (XmmMem) Xmm)
+(rule (turin_vpmovzxwd src)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512Cvt (Avx512CvtOp.Vpmovzxwd)
+                                                 dst
+                                                 src
+                                                 (option_mask_reg_none)
+                                                 (MergeMode.Zeroing)))))
+        dst))
+
+;; VPMOVZXWQ - Zero-extend packed words to qwords (I16 -> I64)
+(decl turin_vpmovzxwq (XmmMem) Xmm)
+(rule (turin_vpmovzxwq src)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512Cvt (Avx512CvtOp.Vpmovzxwq)
+                                                 dst
+                                                 src
+                                                 (option_mask_reg_none)
+                                                 (MergeMode.Zeroing)))))
+        dst))
+
+;; VPMOVZXDQ - Zero-extend packed dwords to qwords (I32 -> I64)
+(decl turin_vpmovzxdq (XmmMem) Xmm)
+(rule (turin_vpmovzxdq src)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512Cvt (Avx512CvtOp.Vpmovzxdq)
+                                                 dst
+                                                 src
+                                                 (option_mask_reg_none)
+                                                 (MergeMode.Zeroing)))))
+        dst))
+
+;; VPMOVSXBD - Sign-extend packed bytes to dwords (I8 -> I32)
+(decl turin_vpmovsxbd (XmmMem) Xmm)
+(rule (turin_vpmovsxbd src)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512Cvt (Avx512CvtOp.Vpmovsxbd)
+                                                 dst
+                                                 src
+                                                 (option_mask_reg_none)
+                                                 (MergeMode.Zeroing)))))
+        dst))
+
+;; VPMOVSXBQ - Sign-extend packed bytes to qwords (I8 -> I64)
+(decl turin_vpmovsxbq (XmmMem) Xmm)
+(rule (turin_vpmovsxbq src)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512Cvt (Avx512CvtOp.Vpmovsxbq)
+                                                 dst
+                                                 src
+                                                 (option_mask_reg_none)
+                                                 (MergeMode.Zeroing)))))
+        dst))
+
+;; VPMOVSXWD - Sign-extend packed words to dwords (I16 -> I32)
+(decl turin_vpmovsxwd (XmmMem) Xmm)
+(rule (turin_vpmovsxwd src)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512Cvt (Avx512CvtOp.Vpmovsxwd)
+                                                 dst
+                                                 src
+                                                 (option_mask_reg_none)
+                                                 (MergeMode.Zeroing)))))
+        dst))
+
+;; VPMOVSXWQ - Sign-extend packed words to qwords (I16 -> I64)
+(decl turin_vpmovsxwq (XmmMem) Xmm)
+(rule (turin_vpmovsxwq src)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512Cvt (Avx512CvtOp.Vpmovsxwq)
+                                                 dst
+                                                 src
+                                                 (option_mask_reg_none)
+                                                 (MergeMode.Zeroing)))))
+        dst))
+
+;; VPMOVSXDQ - Sign-extend packed dwords to qwords (I32 -> I64)
+(decl turin_vpmovsxdq (XmmMem) Xmm)
+(rule (turin_vpmovsxdq src)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512Cvt (Avx512CvtOp.Vpmovsxdq)
+                                                 dst
+                                                 src
+                                                 (option_mask_reg_none)
+                                                 (MergeMode.Zeroing)))))
+        dst))
+
+;; =============================================================================
+;; Truncation helpers (VPMOVDB/DW/QB/QD/QW/WB and saturating variants)
+;; =============================================================================
+
+;; VPMOVDB - Truncate packed dwords to bytes (I32X16 -> I8X16)
+(decl turin_vpmovdb (XmmMem) Xmm)
+(rule (turin_vpmovdb src)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512Cvt (Avx512CvtOp.Vpmovdb)
+                                                 dst
+                                                 src
+                                                 (option_mask_reg_none)
+                                                 (MergeMode.Zeroing)))))
+        dst))
+
+;; VPMOVDW - Truncate packed dwords to words (I32X16 -> I16X16)
+(decl turin_vpmovdw (XmmMem) Xmm)
+(rule (turin_vpmovdw src)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512Cvt (Avx512CvtOp.Vpmovdw)
+                                                 dst
+                                                 src
+                                                 (option_mask_reg_none)
+                                                 (MergeMode.Zeroing)))))
+        dst))
+
+;; VPMOVQB - Truncate packed qwords to bytes (I64X8 -> I8X8)
+(decl turin_vpmovqb (XmmMem) Xmm)
+(rule (turin_vpmovqb src)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512Cvt (Avx512CvtOp.Vpmovqb)
+                                                 dst
+                                                 src
+                                                 (option_mask_reg_none)
+                                                 (MergeMode.Zeroing)))))
+        dst))
+
+;; VPMOVQD - Truncate packed qwords to dwords (I64X8 -> I32X8)
+(decl turin_vpmovqd (XmmMem) Xmm)
+(rule (turin_vpmovqd src)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512Cvt (Avx512CvtOp.Vpmovqd)
+                                                 dst
+                                                 src
+                                                 (option_mask_reg_none)
+                                                 (MergeMode.Zeroing)))))
+        dst))
+
+;; VPMOVQW - Truncate packed qwords to words (I64X8 -> I16X8)
+(decl turin_vpmovqw (XmmMem) Xmm)
+(rule (turin_vpmovqw src)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512Cvt (Avx512CvtOp.Vpmovqw)
+                                                 dst
+                                                 src
+                                                 (option_mask_reg_none)
+                                                 (MergeMode.Zeroing)))))
+        dst))
+
+;; VPMOVWB - Truncate packed words to bytes (I16X32 -> I8X32)
+(decl turin_vpmovwb (XmmMem) Xmm)
+(rule (turin_vpmovwb src)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512Cvt (Avx512CvtOp.Vpmovwb)
+                                                 dst
+                                                 src
+                                                 (option_mask_reg_none)
+                                                 (MergeMode.Zeroing)))))
+        dst))
+
+;; VPMOVSDB - Truncate dwords to bytes with signed saturation
+(decl turin_vpmovsdb (XmmMem) Xmm)
+(rule (turin_vpmovsdb src)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512Cvt (Avx512CvtOp.Vpmovsdb)
+                                                 dst
+                                                 src
+                                                 (option_mask_reg_none)
+                                                 (MergeMode.Zeroing)))))
+        dst))
+
+;; VPMOVUSDB - Truncate dwords to bytes with unsigned saturation
+(decl turin_vpmovusdb (XmmMem) Xmm)
+(rule (turin_vpmovusdb src)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512Cvt (Avx512CvtOp.Vpmovusdb)
+                                                 dst
+                                                 src
+                                                 (option_mask_reg_none)
+                                                 (MergeMode.Zeroing)))))
+        dst))
+
+;; VPMOVSQD - Truncate qwords to dwords with signed saturation
+(decl turin_vpmovsqd (XmmMem) Xmm)
+(rule (turin_vpmovsqd src)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512Cvt (Avx512CvtOp.Vpmovsqd)
+                                                 dst
+                                                 src
+                                                 (option_mask_reg_none)
+                                                 (MergeMode.Zeroing)))))
+        dst))
+
+;; VPMOVUSQD - Truncate qwords to dwords with unsigned saturation
+(decl turin_vpmovusqd (XmmMem) Xmm)
+(rule (turin_vpmovusqd src)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512Cvt (Avx512CvtOp.Vpmovusqd)
+                                                 dst
+                                                 src
+                                                 (option_mask_reg_none)
+                                                 (MergeMode.Zeroing)))))
+        dst))
+
+;; =============================================================================
+;; Shuffle/Permute helpers
+;; =============================================================================
+
+;; VPSHUFB - Shuffle bytes using indices from another vector
+;; For each byte in dst, the corresponding byte in indices selects which byte from src to use
+;; If index[7] is 1, the result byte is 0
+(decl turin_vpshufb (Xmm XmmMem) Xmm)
+(rule (turin_vpshufb src indices)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512Alu (Avx512AluOp.Vpshufb)
+                                                 (OperandSize.Size32)
+                                                 dst
+                                                 src
+                                                 indices
+                                                 (option_mask_reg_none)
+                                                 (MergeMode.Zeroing)))))
+        dst))
+
+;; =============================================================================
+;; Multiply-Add helpers (dot products)
+;; =============================================================================
+
+;; VPMADDWD - Multiply packed words, add adjacent pairs to dwords
+;; dst[i] = src1[2*i] * src2[2*i] + src1[2*i+1] * src2[2*i+1]
+(decl turin_vpmaddwd (Xmm XmmMem) Xmm)
+(rule (turin_vpmaddwd src1 src2)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512Alu (Avx512AluOp.Vpmaddwd)
+                                                 (OperandSize.Size32)
+                                                 dst
+                                                 src1
+                                                 src2
+                                                 (option_mask_reg_none)
+                                                 (MergeMode.Zeroing)))))
+        dst))
+
+;; VPMADDUBSW - Multiply packed unsigned/signed bytes, add adjacent pairs to words
+;; dst[i] = saturate16(src1_u8[2*i] * src2_s8[2*i] + src1_u8[2*i+1] * src2_s8[2*i+1])
+(decl turin_vpmaddubsw (Xmm XmmMem) Xmm)
+(rule (turin_vpmaddubsw src1 src2)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512Alu (Avx512AluOp.Vpmaddubsw)
+                                                 (OperandSize.Size32)
+                                                 dst
+                                                 src1
+                                                 src2
+                                                 (option_mask_reg_none)
+                                                 (MergeMode.Zeroing)))))
+        dst))
+
+;; =============================================================================
+;; Masked unsigned min/max operations (I32X16 / I64X8)
+;; =============================================================================
+
+;; Masked VPMINUD - unsigned min I32X16
+(decl turin_masked_vpminud (Reg Xmm XmmMem Xmm) Xmm)
+(rule (turin_masked_vpminud mask src1 src2 passthrough)
+      (turin_masked_alu_d (Avx512AluOp.Vpminud) mask src1 src2 passthrough))
+
+;; Masked VPMAXUD - unsigned max I32X16
+(decl turin_masked_vpmaxud (Reg Xmm XmmMem Xmm) Xmm)
+(rule (turin_masked_vpmaxud mask src1 src2 passthrough)
+      (turin_masked_alu_d (Avx512AluOp.Vpmaxud) mask src1 src2 passthrough))
+
+;; Masked VPMINUQ - unsigned min I64X8
+(decl turin_masked_vpminuq (Reg Xmm XmmMem Xmm) Xmm)
+(rule (turin_masked_vpminuq mask src1 src2 passthrough)
+      (turin_masked_alu_q (Avx512AluOp.Vpminuq) mask src1 src2 passthrough))
+
+;; Masked VPMAXUQ - unsigned max I64X8
+(decl turin_masked_vpmaxuq (Reg Xmm XmmMem Xmm) Xmm)
+(rule (turin_masked_vpmaxuq mask src1 src2 passthrough)
+      (turin_masked_alu_q (Avx512AluOp.Vpmaxuq) mask src1 src2 passthrough))
+
+;; =============================================================================
+;; Masked FP ALU helpers (F32X16 / F64X8)
+;; =============================================================================
+;; Strategy: Execute with zeroing mask, then blend with passthrough using
+;; VPBLENDMD/Q (integer blend works fine for FP bits)
+
+;; Generic zeroing FP ALU (32-bit elements / single-precision)
+(decl turin_zeroing_fp_alu_ps (Avx512FpAluOp Reg Xmm XmmMem) Xmm)
+(rule (turin_zeroing_fp_alu_ps op mask src1 src2)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (mask_reg OptionMaskReg (turin_mask_reg mask))
+            (_ Unit (emit (MInst.TurinAvx512FpAlu op
+                                                  dst
+                                                  src1
+                                                  src2
+                                                  mask_reg
+                                                  (MergeMode.Zeroing)))))
+        dst))
+
+;; Generic zeroing FP ALU (64-bit elements / double-precision)
+(decl turin_zeroing_fp_alu_pd (Avx512FpAluOp Reg Xmm XmmMem) Xmm)
+(rule (turin_zeroing_fp_alu_pd op mask src1 src2)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (mask_reg OptionMaskReg (turin_mask_reg mask))
+            (_ Unit (emit (MInst.TurinAvx512FpAlu op
+                                                  dst
+                                                  src1
+                                                  src2
+                                                  mask_reg
+                                                  (MergeMode.Zeroing)))))
+        dst))
+
+;; Generic masked FP ALU (32-bit elements / single-precision)
+;; Strategy: Execute with zeroing mask, then blend with passthrough
+;; Uses VPBLENDMD since it works on bits (same 32-bit element size)
+(decl turin_masked_fp_alu_ps (Avx512FpAluOp Reg Xmm XmmMem Xmm) Xmm)
+(rule (turin_masked_fp_alu_ps op mask src1 src2 passthrough)
+      (let ((raw_result Xmm (turin_zeroing_fp_alu_ps op mask src1 src2)))
+        ;; Blend: where mask=1 take raw_result, where mask=0 take passthrough
+        (turin_vpblendmd mask passthrough (xmm_to_xmm_mem raw_result))))
+
+;; Generic masked FP ALU (64-bit elements / double-precision)
+;; Strategy: Execute with zeroing mask, then blend with passthrough
+;; Uses VPBLENDMQ since it works on bits (same 64-bit element size)
+(decl turin_masked_fp_alu_pd (Avx512FpAluOp Reg Xmm XmmMem Xmm) Xmm)
+(rule (turin_masked_fp_alu_pd op mask src1 src2 passthrough)
+      (let ((raw_result Xmm (turin_zeroing_fp_alu_pd op mask src1 src2)))
+        ;; Blend: where mask=1 take raw_result, where mask=0 take passthrough
+        (turin_vpblendmq mask passthrough (xmm_to_xmm_mem raw_result))))
+
+;; Masked VADDPS - add F32X16
+(decl turin_masked_vaddps (Reg Xmm XmmMem Xmm) Xmm)
+(rule (turin_masked_vaddps mask src1 src2 passthrough)
+      (turin_masked_fp_alu_ps (Avx512FpAluOp.Vaddps) mask src1 src2 passthrough))
+
+;; Masked VADDPD - add F64X8
+(decl turin_masked_vaddpd (Reg Xmm XmmMem Xmm) Xmm)
+(rule (turin_masked_vaddpd mask src1 src2 passthrough)
+      (turin_masked_fp_alu_pd (Avx512FpAluOp.Vaddpd) mask src1 src2 passthrough))
+
+;; Masked VSUBPS - subtract F32X16
+(decl turin_masked_vsubps (Reg Xmm XmmMem Xmm) Xmm)
+(rule (turin_masked_vsubps mask src1 src2 passthrough)
+      (turin_masked_fp_alu_ps (Avx512FpAluOp.Vsubps) mask src1 src2 passthrough))
+
+;; Masked VSUBPD - subtract F64X8
+(decl turin_masked_vsubpd (Reg Xmm XmmMem Xmm) Xmm)
+(rule (turin_masked_vsubpd mask src1 src2 passthrough)
+      (turin_masked_fp_alu_pd (Avx512FpAluOp.Vsubpd) mask src1 src2 passthrough))
+
+;; Masked VMULPS - multiply F32X16
+(decl turin_masked_vmulps (Reg Xmm XmmMem Xmm) Xmm)
+(rule (turin_masked_vmulps mask src1 src2 passthrough)
+      (turin_masked_fp_alu_ps (Avx512FpAluOp.Vmulps) mask src1 src2 passthrough))
+
+;; Masked VMULPD - multiply F64X8
+(decl turin_masked_vmulpd (Reg Xmm XmmMem Xmm) Xmm)
+(rule (turin_masked_vmulpd mask src1 src2 passthrough)
+      (turin_masked_fp_alu_pd (Avx512FpAluOp.Vmulpd) mask src1 src2 passthrough))
+
+;; Masked VDIVPS - divide F32X16
+(decl turin_masked_vdivps (Reg Xmm XmmMem Xmm) Xmm)
+(rule (turin_masked_vdivps mask src1 src2 passthrough)
+      (turin_masked_fp_alu_ps (Avx512FpAluOp.Vdivps) mask src1 src2 passthrough))
+
+;; Masked VDIVPD - divide F64X8
+(decl turin_masked_vdivpd (Reg Xmm XmmMem Xmm) Xmm)
+(rule (turin_masked_vdivpd mask src1 src2 passthrough)
+      (turin_masked_fp_alu_pd (Avx512FpAluOp.Vdivpd) mask src1 src2 passthrough))
+
+;; Masked VMINPS - min F32X16
+(decl turin_masked_vminps (Reg Xmm XmmMem Xmm) Xmm)
+(rule (turin_masked_vminps mask src1 src2 passthrough)
+      (turin_masked_fp_alu_ps (Avx512FpAluOp.Vminps) mask src1 src2 passthrough))
+
+;; Masked VMINPD - min F64X8
+(decl turin_masked_vminpd (Reg Xmm XmmMem Xmm) Xmm)
+(rule (turin_masked_vminpd mask src1 src2 passthrough)
+      (turin_masked_fp_alu_pd (Avx512FpAluOp.Vminpd) mask src1 src2 passthrough))
+
+;; Masked VMAXPS - max F32X16
+(decl turin_masked_vmaxps (Reg Xmm XmmMem Xmm) Xmm)
+(rule (turin_masked_vmaxps mask src1 src2 passthrough)
+      (turin_masked_fp_alu_ps (Avx512FpAluOp.Vmaxps) mask src1 src2 passthrough))
+
+;; Masked VMAXPD - max F64X8
+(decl turin_masked_vmaxpd (Reg Xmm XmmMem Xmm) Xmm)
+(rule (turin_masked_vmaxpd mask src1 src2 passthrough)
+      (turin_masked_fp_alu_pd (Avx512FpAluOp.Vmaxpd) mask src1 src2 passthrough))
+
+;; =============================================================================
+;; Masked shift operations - execute with zeroing mask, then blend with passthru
+;; =============================================================================
+
+;; Generic zeroing shift for 32-bit elements
+(decl turin_zeroing_shift_d (Avx512AluOp Reg Xmm XmmMem) Xmm)
+(rule (turin_zeroing_shift_d op mask data shift)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (mask_reg OptionMaskReg (turin_mask_reg mask))
+            (_ Unit (emit (MInst.TurinAvx512Alu op
+                                                (OperandSize.Size32)
+                                                dst data shift
+                                                mask_reg (MergeMode.Zeroing)))))
+        dst))
+
+;; Generic zeroing shift for 64-bit elements
+(decl turin_zeroing_shift_q (Avx512AluOp Reg Xmm XmmMem) Xmm)
+(rule (turin_zeroing_shift_q op mask data shift)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (mask_reg OptionMaskReg (turin_mask_reg mask))
+            (_ Unit (emit (MInst.TurinAvx512Alu op
+                                                (OperandSize.Size64)
+                                                dst data shift
+                                                mask_reg (MergeMode.Zeroing)))))
+        dst))
+
+;; Generic masked shift for 32-bit elements - zeroing + blend
+(decl turin_masked_shift_d (Avx512AluOp Reg Xmm XmmMem Xmm) Xmm)
+(rule (turin_masked_shift_d op mask data shift passthrough)
+      (let ((raw_result Xmm (turin_zeroing_shift_d op mask data shift)))
+        (turin_vpblendmd mask passthrough (xmm_to_xmm_mem raw_result))))
+
+;; Generic masked shift for 64-bit elements - zeroing + blend
+(decl turin_masked_shift_q (Avx512AluOp Reg Xmm XmmMem Xmm) Xmm)
+(rule (turin_masked_shift_q op mask data shift passthrough)
+      (let ((raw_result Xmm (turin_zeroing_shift_q op mask data shift)))
+        (turin_vpblendmq mask passthrough (xmm_to_xmm_mem raw_result))))
+
+;; Masked VPSLLVD - variable left shift I32X16
+(decl turin_masked_vpsllvd (Reg Xmm XmmMem Xmm) Xmm)
+(rule (turin_masked_vpsllvd mask data shift passthrough)
+      (turin_masked_shift_d (Avx512AluOp.Vpsllvd) mask data shift passthrough))
+
+;; Masked VPSLLVQ - variable left shift I64X8
+(decl turin_masked_vpsllvq (Reg Xmm XmmMem Xmm) Xmm)
+(rule (turin_masked_vpsllvq mask data shift passthrough)
+      (turin_masked_shift_q (Avx512AluOp.Vpsllvq) mask data shift passthrough))
+
+;; Masked VPSRLVD - variable logical right shift I32X16
+(decl turin_masked_vpsrlvd (Reg Xmm XmmMem Xmm) Xmm)
+(rule (turin_masked_vpsrlvd mask data shift passthrough)
+      (turin_masked_shift_d (Avx512AluOp.Vpsrlvd) mask data shift passthrough))
+
+;; Masked VPSRLVQ - variable logical right shift I64X8
+(decl turin_masked_vpsrlvq (Reg Xmm XmmMem Xmm) Xmm)
+(rule (turin_masked_vpsrlvq mask data shift passthrough)
+      (turin_masked_shift_q (Avx512AluOp.Vpsrlvq) mask data shift passthrough))
+
+;; Masked VPSRAVD - variable arithmetic right shift I32X16
+(decl turin_masked_vpsravd (Reg Xmm XmmMem Xmm) Xmm)
+(rule (turin_masked_vpsravd mask data shift passthrough)
+      (turin_masked_shift_d (Avx512AluOp.Vpsravd) mask data shift passthrough))
+
+;; Masked VPSRAVQ - variable arithmetic right shift I64X8
+(decl turin_masked_vpsravq (Reg Xmm XmmMem Xmm) Xmm)
+(rule (turin_masked_vpsravq mask data shift passthrough)
+      (turin_masked_shift_q (Avx512AluOp.Vpsravq) mask data shift passthrough))
+
+;; =============================================================================
+;; AVX-512 Extract Lane operations (VEXTRACTI32X4, VEXTRACTI64X2)
+;; =============================================================================
+
+;; VEXTRACTI32X4 - Extract 128-bit lane from 512-bit vector (as I32X4)
+;; lane: 0-3 selects which 128-bit lane to extract
+(decl turin_vextracti32x4 (Xmm u8) Xmm)
+(rule (turin_vextracti32x4 src lane)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512Extract (Avx512ExtractOp.Vextracti32x4)
+                                                     dst src lane))))
+        dst))
+
+;; VEXTRACTI64X2 - Extract 128-bit lane from 512-bit vector (as I64X2)
+;; lane: 0-3 selects which 128-bit lane to extract
+(decl turin_vextracti64x2 (Xmm u8) Xmm)
+(rule (turin_vextracti64x2 src lane)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512Extract (Avx512ExtractOp.Vextracti64x2)
+                                                     dst src lane))))
+        dst))
+
+;; =============================================================================
+;; AVX-512 FP Special operations (VRCP14PS/PD, VRSQRT14PS/PD)
+;; =============================================================================
+
+;; VRCP14PS - Reciprocal approximation of F32X16 elements (1/x)
+(decl turin_vrcp14ps (XmmMem) Xmm)
+(rule (turin_vrcp14ps src)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512FpSpecial (Avx512FpSpecialOp.Vrcp14ps)
+                                                       dst src
+                                                       (option_mask_reg_none)
+                                                       (MergeMode.Zeroing)))))
+        dst))
+
+;; VRCP14PD - Reciprocal approximation of F64X8 elements (1/x)
+(decl turin_vrcp14pd (XmmMem) Xmm)
+(rule (turin_vrcp14pd src)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512FpSpecial (Avx512FpSpecialOp.Vrcp14pd)
+                                                       dst src
+                                                       (option_mask_reg_none)
+                                                       (MergeMode.Zeroing)))))
+        dst))
+
+;; VRSQRT14PS - Reciprocal square root approximation of F32X16 (1/sqrt(x))
+(decl turin_vrsqrt14ps (XmmMem) Xmm)
+(rule (turin_vrsqrt14ps src)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512FpSpecial (Avx512FpSpecialOp.Vrsqrt14ps)
+                                                       dst src
+                                                       (option_mask_reg_none)
+                                                       (MergeMode.Zeroing)))))
+        dst))
+
+;; VRSQRT14PD - Reciprocal square root approximation of F64X8 (1/sqrt(x))
+(decl turin_vrsqrt14pd (XmmMem) Xmm)
+(rule (turin_vrsqrt14pd src)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinAvx512FpSpecial (Avx512FpSpecialOp.Vrsqrt14pd)
+                                                       dst src
+                                                       (option_mask_reg_none)
+                                                       (MergeMode.Zeroing)))))
+        dst))

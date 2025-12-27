@@ -135,13 +135,21 @@ pub(crate) const fn xmm15() -> Reg {
     fpr(xmm::enc::XMM15)
 }
 
+// K-registers are AVX-512 mask registers.
+// They use indices 32-39 to distinguish them from XMM/ZMM registers (0-31)
+// in the Vector class, since regalloc2 doesn't have a separate Mask class.
+// These are physical registers and should be marked as non-allocatable.
+// PReg::MAX is 63, so we use 32+ for k-registers (k0=32, k1=33, etc.)
 pub(crate) const fn k_preg(enc: u8) -> PReg {
-    PReg::new(enc as usize, RegClass::Vector)
+    // Use index 32+ for k-registers to avoid conflict with XMM/ZMM registers (0-31)
+    PReg::new(32 + enc as usize, RegClass::Vector)
 }
 
 const fn k_reg(enc: u8) -> Reg {
     let preg = k_preg(enc);
-    Reg::from_virtual_reg(VReg::new(preg.index(), RegClass::Vector))
+    // Create as a real register, not a virtual register
+    // This allows reg_def/reg_use to properly identify it as fixed/nonallocatable
+    Reg::from_real_reg(preg)
 }
 
 pub(crate) const fn k0() -> Reg {
@@ -179,7 +187,7 @@ pub(crate) const fn k7() -> Reg {
 pub fn pretty_print_reg(reg: Reg, size: u8) -> String {
     if let Some(rreg) = reg.to_real_reg() {
         let enc = rreg.hw_enc();
-        let name = match rreg.class() {
+        match rreg.class() {
             RegClass::Int => {
                 let size = match size {
                     8 => gpr::Size::Quadword,
@@ -188,12 +196,11 @@ pub fn pretty_print_reg(reg: Reg, size: u8) -> String {
                     1 => gpr::Size::Byte,
                     _ => unreachable!("invalid size"),
                 };
-                gpr::enc::to_string(enc, size)
+                gpr::enc::to_string(enc, size).to_string()
             }
-            RegClass::Float => xmm::enc::to_string(enc),
+            RegClass::Float => xmm::enc::to_string(enc).to_string(),
             RegClass::Vector => format!("k{enc}"),
-        };
-        name.to_string()
+        }
     } else {
         let mut name = format!("%{reg:?}");
         // Add size suffixes to GPR virtual registers at narrower widths.
