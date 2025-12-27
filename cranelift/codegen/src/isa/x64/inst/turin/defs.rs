@@ -85,6 +85,47 @@ pub enum Avx512AluOp {
     Vpmuldq,
 
     // =========================================
+    // Byte/Word Arithmetic Operations (AVX-512BW)
+    // =========================================
+
+    /// VPADDB - Packed byte (8-bit) integer add
+    Vpaddb,
+    /// VPADDW - Packed word (16-bit) integer add
+    Vpaddw,
+    /// VPSUBB - Packed byte (8-bit) integer subtract
+    Vpsubb,
+    /// VPSUBW - Packed word (16-bit) integer subtract
+    Vpsubw,
+    /// VPMINSB - Packed minimum signed (8-bit)
+    Vpminsb,
+    /// VPMINUB - Packed minimum unsigned (8-bit)
+    Vpminub,
+    /// VPMINSW - Packed minimum signed (16-bit)
+    Vpminsw,
+    /// VPMINUW - Packed minimum unsigned (16-bit)
+    Vpminuw,
+    /// VPMAXSB - Packed maximum signed (8-bit)
+    Vpmaxsb,
+    /// VPMAXUB - Packed maximum unsigned (8-bit)
+    Vpmaxub,
+    /// VPMAXSW - Packed maximum signed (16-bit)
+    Vpmaxsw,
+    /// VPMAXUW - Packed maximum unsigned (16-bit)
+    Vpmaxuw,
+    /// VPABSB - Packed absolute value (8-bit)
+    Vpabsb,
+    /// VPABSW - Packed absolute value (16-bit)
+    Vpabsw,
+    /// VPCMPEQB - Packed compare equal (8-bit) - all 1s if equal, else 0
+    Vpcmpeqb,
+    /// VPCMPEQW - Packed compare equal (16-bit) - all 1s if equal, else 0
+    Vpcmpeqw,
+    /// VPCMPGTB - Packed compare greater than (8-bit signed)
+    Vpcmpgtb,
+    /// VPCMPGTW - Packed compare greater than (16-bit signed)
+    Vpcmpgtw,
+
+    // =========================================
     // Bitwise Logical Operations
     // =========================================
 
@@ -785,6 +826,26 @@ impl Avx512AluOp {
             Avx512AluOp::Vpmuludq => 0xF4,  // 0F map
             Avx512AluOp::Vpmuldq => 0x28,   // 0F38 map
 
+            // Byte/word arithmetic (AVX-512BW)
+            Avx512AluOp::Vpaddb => 0xFC,
+            Avx512AluOp::Vpaddw => 0xFD,
+            Avx512AluOp::Vpsubb => 0xF8,
+            Avx512AluOp::Vpsubw => 0xF9,
+            Avx512AluOp::Vpminsb => 0x38,   // 0F38 map
+            Avx512AluOp::Vpminub => 0xDA,
+            Avx512AluOp::Vpminsw => 0xEA,
+            Avx512AluOp::Vpminuw => 0x3A,   // 0F38 map
+            Avx512AluOp::Vpmaxsb => 0x3C,   // 0F38 map
+            Avx512AluOp::Vpmaxub => 0xDE,
+            Avx512AluOp::Vpmaxsw => 0xEE,
+            Avx512AluOp::Vpmaxuw => 0x3E,   // 0F38 map
+            Avx512AluOp::Vpabsb => 0x1C,    // 0F38 map
+            Avx512AluOp::Vpabsw => 0x1D,    // 0F38 map
+            Avx512AluOp::Vpcmpeqb => 0x74,
+            Avx512AluOp::Vpcmpeqw => 0x75,
+            Avx512AluOp::Vpcmpgtb => 0x64,
+            Avx512AluOp::Vpcmpgtw => 0x65,
+
             // Bitwise logical
             Avx512AluOp::Vpandd => 0xDB,
             Avx512AluOp::Vpandq => 0xDB,
@@ -934,7 +995,20 @@ impl Avx512AluOp {
             | Avx512AluOp::Vpshufhw
             | Avx512AluOp::Vpshuflw
             // Multiply-add (0F map)
-            | Avx512AluOp::Vpmaddwd => 0x01,
+            | Avx512AluOp::Vpmaddwd
+            // Byte/word ops (0F map)
+            | Avx512AluOp::Vpaddb
+            | Avx512AluOp::Vpaddw
+            | Avx512AluOp::Vpsubb
+            | Avx512AluOp::Vpsubw
+            | Avx512AluOp::Vpminub
+            | Avx512AluOp::Vpminsw
+            | Avx512AluOp::Vpmaxub
+            | Avx512AluOp::Vpmaxsw
+            | Avx512AluOp::Vpcmpeqb
+            | Avx512AluOp::Vpcmpeqw
+            | Avx512AluOp::Vpcmpgtb
+            | Avx512AluOp::Vpcmpgtw => 0x01,
 
             // 0F38 map (more complex operations)
             Avx512AluOp::Vpmulld
@@ -976,7 +1050,14 @@ impl Avx512AluOp {
             | Avx512AluOp::Vpconflictq
             | Avx512AluOp::Vplzcntd
             | Avx512AluOp::Vplzcntq
-            | Avx512AluOp::Vpackusdw => 0x02,
+            | Avx512AluOp::Vpackusdw
+            // Byte/word ops (0F38 map)
+            | Avx512AluOp::Vpminsb
+            | Avx512AluOp::Vpminuw
+            | Avx512AluOp::Vpmaxsb
+            | Avx512AluOp::Vpmaxuw
+            | Avx512AluOp::Vpabsb
+            | Avx512AluOp::Vpabsw => 0x02,
 
             // 0F3A map (ternary logic)
             Avx512AluOp::Vpternlogd | Avx512AluOp::Vpternlogq => 0x03,
@@ -1048,6 +1129,25 @@ impl Avx512AluOp {
             Avx512AluOp::Vpmullq => "vpmullq",
             Avx512AluOp::Vpmuludq => "vpmuludq",
             Avx512AluOp::Vpmuldq => "vpmuldq",
+            // Byte/word arithmetic
+            Avx512AluOp::Vpaddb => "vpaddb",
+            Avx512AluOp::Vpaddw => "vpaddw",
+            Avx512AluOp::Vpsubb => "vpsubb",
+            Avx512AluOp::Vpsubw => "vpsubw",
+            Avx512AluOp::Vpminsb => "vpminsb",
+            Avx512AluOp::Vpminub => "vpminub",
+            Avx512AluOp::Vpminsw => "vpminsw",
+            Avx512AluOp::Vpminuw => "vpminuw",
+            Avx512AluOp::Vpmaxsb => "vpmaxsb",
+            Avx512AluOp::Vpmaxub => "vpmaxub",
+            Avx512AluOp::Vpmaxsw => "vpmaxsw",
+            Avx512AluOp::Vpmaxuw => "vpmaxuw",
+            Avx512AluOp::Vpabsb => "vpabsb",
+            Avx512AluOp::Vpabsw => "vpabsw",
+            Avx512AluOp::Vpcmpeqb => "vpcmpeqb",
+            Avx512AluOp::Vpcmpeqw => "vpcmpeqw",
+            Avx512AluOp::Vpcmpgtb => "vpcmpgtb",
+            Avx512AluOp::Vpcmpgtw => "vpcmpgtw",
             Avx512AluOp::Vpandd => "vpandd",
             Avx512AluOp::Vpandq => "vpandq",
             Avx512AluOp::Vpord => "vpord",
@@ -1178,6 +1278,216 @@ impl MaskAluOp {
             MaskAluOp::Kxnor => "kxnorw",
             MaskAluOp::Knot => "knotw",
             MaskAluOp::Kandn => "kandnw",
+        }
+    }
+}
+
+/// K-register shift operations.
+///
+/// These shift the bits in a mask register by an immediate count.
+/// Shift count is modulo the register width (8/16/32/64).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MaskShiftOp {
+    /// KSHIFTLB - Shift k-register left by immediate (8-bit register)
+    Kshiftlb,
+    /// KSHIFTLW - Shift k-register left by immediate (16-bit register)
+    Kshiftlw,
+    /// KSHIFTLD - Shift k-register left by immediate (32-bit register)
+    Kshiftld,
+    /// KSHIFTLQ - Shift k-register left by immediate (64-bit register)
+    Kshiftlq,
+    /// KSHIFTRB - Shift k-register right by immediate (8-bit register)
+    Kshiftrb,
+    /// KSHIFTRW - Shift k-register right by immediate (16-bit register)
+    Kshiftrw,
+    /// KSHIFTRD - Shift k-register right by immediate (32-bit register)
+    Kshiftrd,
+    /// KSHIFTRQ - Shift k-register right by immediate (64-bit register)
+    Kshiftrq,
+}
+
+impl MaskShiftOp {
+    /// Returns the VEX opcode for this shift operation.
+    /// KSHIFTL* uses 0x32/0x33, KSHIFTR* uses 0x30/0x31
+    pub fn vex_opcode(&self) -> u8 {
+        match self {
+            // KSHIFTL: 0x32 for byte/word, 0x33 for dword/qword
+            MaskShiftOp::Kshiftlb | MaskShiftOp::Kshiftlw => 0x32,
+            MaskShiftOp::Kshiftld | MaskShiftOp::Kshiftlq => 0x33,
+            // KSHIFTR: 0x30 for byte/word, 0x31 for dword/qword
+            MaskShiftOp::Kshiftrb | MaskShiftOp::Kshiftrw => 0x30,
+            MaskShiftOp::Kshiftrd | MaskShiftOp::Kshiftrq => 0x31,
+        }
+    }
+
+    /// Returns the VEX.W bit for this operation.
+    /// W=0 for byte, W=1 for word, W=0 for dword, W=1 for qword
+    pub fn vex_w(&self) -> bool {
+        match self {
+            MaskShiftOp::Kshiftlb | MaskShiftOp::Kshiftld
+            | MaskShiftOp::Kshiftrb | MaskShiftOp::Kshiftrd => false,
+            MaskShiftOp::Kshiftlw | MaskShiftOp::Kshiftlq
+            | MaskShiftOp::Kshiftrw | MaskShiftOp::Kshiftrq => true,
+        }
+    }
+
+    /// Returns a human-readable name for this operation.
+    pub fn name(&self) -> &'static str {
+        match self {
+            MaskShiftOp::Kshiftlb => "kshiftlb",
+            MaskShiftOp::Kshiftlw => "kshiftlw",
+            MaskShiftOp::Kshiftld => "kshiftld",
+            MaskShiftOp::Kshiftlq => "kshiftlq",
+            MaskShiftOp::Kshiftrb => "kshiftrb",
+            MaskShiftOp::Kshiftrw => "kshiftrw",
+            MaskShiftOp::Kshiftrd => "kshiftrd",
+            MaskShiftOp::Kshiftrq => "kshiftrq",
+        }
+    }
+}
+
+/// K-register unpack operations.
+///
+/// These unpack and interleave low halves of two mask registers.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MaskUnpackOp {
+    /// KUNPCKBW - Unpack 8-bit to 16-bit (low bytes of two 8-bit regs -> 16-bit)
+    Kunpckbw,
+    /// KUNPCKWD - Unpack 16-bit to 32-bit (low words of two 16-bit regs -> 32-bit)
+    Kunpckwd,
+    /// KUNPCKDQ - Unpack 32-bit to 64-bit (low dwords of two 32-bit regs -> 64-bit)
+    Kunpckdq,
+}
+
+impl MaskUnpackOp {
+    /// Returns the VEX opcode for this unpack operation.
+    pub fn vex_opcode(&self) -> u8 {
+        // KUNPCK* all use opcode 0x4B in 0F map
+        0x4B
+    }
+
+    /// Returns the VEX.W bit for this operation.
+    pub fn vex_w(&self) -> bool {
+        match self {
+            MaskUnpackOp::Kunpckbw => false, // W=0
+            MaskUnpackOp::Kunpckwd => false, // W=0 (L=1 distinguishes from BW)
+            MaskUnpackOp::Kunpckdq => true,  // W=1
+        }
+    }
+
+    /// Returns the VEX.L bit for this operation.
+    pub fn vex_l(&self) -> bool {
+        match self {
+            MaskUnpackOp::Kunpckbw => false, // L=0
+            MaskUnpackOp::Kunpckwd => true,  // L=1
+            MaskUnpackOp::Kunpckdq => true,  // L=1
+        }
+    }
+
+    /// Returns a human-readable name for this operation.
+    pub fn name(&self) -> &'static str {
+        match self {
+            MaskUnpackOp::Kunpckbw => "kunpckbw",
+            MaskUnpackOp::Kunpckwd => "kunpckwd",
+            MaskUnpackOp::Kunpckdq => "kunpckdq",
+        }
+    }
+}
+
+/// K-register add operations.
+///
+/// These add two mask registers element-wise.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MaskAddOp {
+    /// KADDB - Add 8-bit mask registers
+    Kaddb,
+    /// KADDW - Add 16-bit mask registers
+    Kaddw,
+    /// KADDD - Add 32-bit mask registers
+    Kaddd,
+    /// KADDQ - Add 64-bit mask registers
+    Kaddq,
+}
+
+impl MaskAddOp {
+    /// Returns the VEX opcode for this add operation.
+    pub fn vex_opcode(&self) -> u8 {
+        // KADD* all use opcode 0x4A in 0F map
+        0x4A
+    }
+
+    /// Returns the VEX.W bit for this operation.
+    pub fn vex_w(&self) -> bool {
+        match self {
+            MaskAddOp::Kaddb | MaskAddOp::Kaddd => false,
+            MaskAddOp::Kaddw | MaskAddOp::Kaddq => true,
+        }
+    }
+
+    /// Returns the VEX.L bit for this operation.
+    pub fn vex_l(&self) -> bool {
+        match self {
+            MaskAddOp::Kaddb | MaskAddOp::Kaddw => false, // L=0
+            MaskAddOp::Kaddd | MaskAddOp::Kaddq => true,  // L=1
+        }
+    }
+
+    /// Returns a human-readable name for this operation.
+    pub fn name(&self) -> &'static str {
+        match self {
+            MaskAddOp::Kaddb => "kaddb",
+            MaskAddOp::Kaddw => "kaddw",
+            MaskAddOp::Kaddd => "kaddd",
+            MaskAddOp::Kaddq => "kaddq",
+        }
+    }
+}
+
+/// K-register test operations.
+///
+/// These test two mask registers and set CPU flags.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MaskTestOp {
+    /// KTESTB - Test 8-bit mask registers
+    Ktestb,
+    /// KTESTW - Test 16-bit mask registers
+    Ktestw,
+    /// KTESTD - Test 32-bit mask registers
+    Ktestd,
+    /// KTESTQ - Test 64-bit mask registers
+    Ktestq,
+}
+
+impl MaskTestOp {
+    /// Returns the VEX opcode for this test operation.
+    pub fn vex_opcode(&self) -> u8 {
+        // KTEST* all use opcode 0x99 in 0F map
+        0x99
+    }
+
+    /// Returns the VEX.W bit for this operation.
+    pub fn vex_w(&self) -> bool {
+        match self {
+            MaskTestOp::Ktestb | MaskTestOp::Ktestd => false,
+            MaskTestOp::Ktestw | MaskTestOp::Ktestq => true,
+        }
+    }
+
+    /// Returns the VEX.L bit for this operation.
+    pub fn vex_l(&self) -> bool {
+        match self {
+            MaskTestOp::Ktestb | MaskTestOp::Ktestw => false, // L=0
+            MaskTestOp::Ktestd | MaskTestOp::Ktestq => true,  // L=1
+        }
+    }
+
+    /// Returns a human-readable name for this operation.
+    pub fn name(&self) -> &'static str {
+        match self {
+            MaskTestOp::Ktestb => "ktestb",
+            MaskTestOp::Ktestw => "ktestw",
+            MaskTestOp::Ktestd => "ktestd",
+            MaskTestOp::Ktestq => "ktestq",
         }
     }
 }
@@ -1895,6 +2205,68 @@ impl Avx512ImmShuffleOp {
     }
 }
 
+/// AVX-512 lane shuffle operations.
+///
+/// These instructions shuffle entire 128-bit lanes within a 512-bit register.
+/// Each lane can be selected from any of the 4 lanes in src1 or src2.
+/// The immediate byte encodes the selection pattern.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Avx512LaneShuffleOp {
+    /// VSHUFF32X4 - Shuffle 128-bit lanes of packed single-precision FP
+    /// Interprets each 128-bit lane as 4 x F32
+    Vshuff32x4,
+    /// VSHUFF64X2 - Shuffle 128-bit lanes of packed double-precision FP
+    /// Interprets each 128-bit lane as 2 x F64
+    Vshuff64x2,
+    /// VSHUFI32X4 - Shuffle 128-bit lanes of packed 32-bit integers
+    /// Interprets each 128-bit lane as 4 x I32
+    Vshufi32x4,
+    /// VSHUFI64X2 - Shuffle 128-bit lanes of packed 64-bit integers
+    /// Interprets each 128-bit lane as 2 x I64
+    Vshufi64x2,
+}
+
+impl Avx512LaneShuffleOp {
+    /// Returns the opcode for this lane shuffle operation.
+    /// F variants use 0x23, I variants use 0x43.
+    pub fn opcode(&self) -> u8 {
+        match self {
+            Avx512LaneShuffleOp::Vshuff32x4 | Avx512LaneShuffleOp::Vshuff64x2 => 0x23,
+            Avx512LaneShuffleOp::Vshufi32x4 | Avx512LaneShuffleOp::Vshufi64x2 => 0x43,
+        }
+    }
+
+    /// Returns the EVEX map encoding (0x03 = 0F3A map).
+    pub fn evex_map(&self) -> u8 {
+        0x03 // All use 0F3A map
+    }
+
+    /// Returns the EVEX pp (prefix) encoding.
+    /// All use 66 prefix (pp=0x01).
+    pub fn evex_pp(&self) -> u8 {
+        0x01 // 66 prefix
+    }
+
+    /// Returns the EVEX.W bit.
+    /// 64x2 variants use W=1, 32x4 variants use W=0.
+    pub fn evex_w(&self) -> bool {
+        match self {
+            Avx512LaneShuffleOp::Vshuff64x2 | Avx512LaneShuffleOp::Vshufi64x2 => true,
+            Avx512LaneShuffleOp::Vshuff32x4 | Avx512LaneShuffleOp::Vshufi32x4 => false,
+        }
+    }
+
+    /// Returns a human-readable name for this operation.
+    pub fn name(&self) -> &'static str {
+        match self {
+            Avx512LaneShuffleOp::Vshuff32x4 => "vshuff32x4",
+            Avx512LaneShuffleOp::Vshuff64x2 => "vshuff64x2",
+            Avx512LaneShuffleOp::Vshufi32x4 => "vshufi32x4",
+            Avx512LaneShuffleOp::Vshufi64x2 => "vshufi64x2",
+        }
+    }
+}
+
 /// AVX-512 VP2INTERSECT operations for hash join acceleration.
 ///
 /// VP2INTERSECT compares two vectors element-by-element and produces TWO mask
@@ -2026,6 +2398,77 @@ impl Avx512ExtractOp {
         match self {
             Avx512ExtractOp::Vextracti32x4 | Avx512ExtractOp::Vextracti64x2 => false,
             Avx512ExtractOp::Vextracti32x8 | Avx512ExtractOp::Vextracti64x4 => true,
+        }
+    }
+}
+
+/// AVX-512 insert operations (VINSERTI32X4, VINSERTI64X2, VINSERTI32X8, VINSERTI64X4).
+///
+/// These insert a 128-bit or 256-bit lane into a 512-bit vector.
+///
+/// Encoding:
+/// - VINSERTI32X4: EVEX.512.66.0F3A.W0 38 /r imm8
+/// - VINSERTI64X2: EVEX.512.66.0F3A.W1 38 /r imm8
+/// - VINSERTI32X8: EVEX.512.66.0F3A.W0 3A /r imm8
+/// - VINSERTI64X4: EVEX.512.66.0F3A.W1 3A /r imm8
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Avx512InsertOp {
+    /// VINSERTI32X4 - Insert 128-bit lane (as 4x32-bit) into 512-bit vector
+    /// imm8[1:0] selects which 128-bit lane (0-3) to insert at
+    Vinserti32x4,
+    /// VINSERTI64X2 - Insert 128-bit lane (as 2x64-bit) into 512-bit vector
+    /// imm8[1:0] selects which 128-bit lane (0-3) to insert at
+    Vinserti64x2,
+    /// VINSERTI32X8 - Insert 256-bit lane (as 8x32-bit) into 512-bit vector
+    /// imm8[0] selects which 256-bit lane (0-1) to insert at
+    Vinserti32x8,
+    /// VINSERTI64X4 - Insert 256-bit lane (as 4x64-bit) into 512-bit vector
+    /// imm8[0] selects which 256-bit lane (0-1) to insert at
+    Vinserti64x4,
+}
+
+impl Avx512InsertOp {
+    /// Returns the opcode for this insert operation.
+    pub fn opcode(&self) -> u8 {
+        match self {
+            Avx512InsertOp::Vinserti32x4 | Avx512InsertOp::Vinserti64x2 => 0x38,
+            Avx512InsertOp::Vinserti32x8 | Avx512InsertOp::Vinserti64x4 => 0x3A,
+        }
+    }
+
+    /// Returns the EVEX map encoding (0x03 = 0F3A map).
+    pub fn evex_map(&self) -> u8 {
+        0x03 // 0F3A map
+    }
+
+    /// Returns the EVEX pp (prefix) encoding (always 0x01 = 66 prefix).
+    pub fn evex_pp(&self) -> u8 {
+        0x01 // 66 prefix
+    }
+
+    /// Returns the EVEX.W bit.
+    pub fn evex_w(&self) -> bool {
+        match self {
+            Avx512InsertOp::Vinserti32x4 | Avx512InsertOp::Vinserti32x8 => false,
+            Avx512InsertOp::Vinserti64x2 | Avx512InsertOp::Vinserti64x4 => true,
+        }
+    }
+
+    /// Returns a human-readable name for this operation.
+    pub fn name(&self) -> &'static str {
+        match self {
+            Avx512InsertOp::Vinserti32x4 => "vinserti32x4",
+            Avx512InsertOp::Vinserti64x2 => "vinserti64x2",
+            Avx512InsertOp::Vinserti32x8 => "vinserti32x8",
+            Avx512InsertOp::Vinserti64x4 => "vinserti64x4",
+        }
+    }
+
+    /// Returns true if this inserts a 256-bit source (ymm), false for 128-bit (xmm).
+    pub fn is_256bit(&self) -> bool {
+        match self {
+            Avx512InsertOp::Vinserti32x4 | Avx512InsertOp::Vinserti64x2 => false,
+            Avx512InsertOp::Vinserti32x8 | Avx512InsertOp::Vinserti64x4 => true,
         }
     }
 }

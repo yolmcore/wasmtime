@@ -226,6 +226,10 @@ pub(crate) fn check(
         | Inst::TurinMaskLogic { .. }
         | Inst::TurinKmov { .. }
         | Inst::TurinKortest { .. }
+        | Inst::TurinMaskShift { .. }
+        | Inst::TurinMaskUnpack { .. }
+        | Inst::TurinMaskAdd { .. }
+        | Inst::TurinMaskTest { .. }
         | Inst::TurinGather { .. }
         | Inst::TurinScatter { .. }
         | Inst::TurinCompressReg { .. }
@@ -234,6 +238,10 @@ pub(crate) fn check(
         | Inst::TurinVmovmsk64 { .. }
         | Inst::TurinMovm2d { .. }
         | Inst::TurinMovm2q { .. }
+        | Inst::TurinVmovmsk8 { .. }
+        | Inst::TurinVmovmsk16 { .. }
+        | Inst::TurinMovm2b { .. }
+        | Inst::TurinMovm2w { .. }
         | Inst::TurinBroadcastd { .. }
         | Inst::TurinBroadcastq { .. }
         | Inst::TurinAvx512FpAlu { .. }
@@ -244,10 +252,12 @@ pub(crate) fn check(
         | Inst::TurinAvx512Ternlog { .. }
         | Inst::TurinAvx512ImmRotate { .. }
         | Inst::TurinAvx512ImmShuffle { .. }
+        | Inst::TurinAvx512LaneShuffle { .. }
         | Inst::TurinAvx512Vnni { .. }
         | Inst::TurinVp2Intersect { .. }
         | Inst::TurinAvx512FpCmp { .. }
         | Inst::TurinAvx512Extract { .. }
+        | Inst::TurinAvx512Insert { .. }
         | Inst::TurinAvx512FpSpecial { .. } => Ok(()),
 
         Inst::External { .. } => Ok(()), // TODO: unsure what to do about this!

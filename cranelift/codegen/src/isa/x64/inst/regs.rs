@@ -199,7 +199,9 @@ pub fn pretty_print_reg(reg: Reg, size: u8) -> String {
                 gpr::enc::to_string(enc, size).to_string()
             }
             RegClass::Float => xmm::enc::to_string(enc).to_string(),
-            RegClass::Vector => format!("k{enc}"),
+            // K-registers have hw_enc 32-39 (k0=32, k1=33, etc.)
+            // Display as k0-k7 by subtracting 32
+            RegClass::Vector => format!("k{}", enc - 32),
         }
     } else {
         let mut name = format!("%{reg:?}");

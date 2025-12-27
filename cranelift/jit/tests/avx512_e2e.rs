@@ -331,6 +331,134 @@ impl TestCompiler {
         Ok(self.module.get_finalized_function(func_id))
     }
 
+    /// Compile a function for I8X64 (64 x byte) binary operations.
+    fn compile_binary_i8x64<F>(
+        &mut self,
+        name: &str,
+        build_fn: F,
+    ) -> Result<*const u8, ModuleError>
+    where
+        F: FnOnce(&mut FunctionBuilder, Value, Value) -> Value,
+    {
+        let mut sig = self.module.make_signature();
+        let ptr_type = self.module.target_config().pointer_type();
+        sig.params.push(AbiParam::new(ptr_type)); // src1 ptr
+        sig.params.push(AbiParam::new(ptr_type)); // src2 ptr
+        sig.params.push(AbiParam::new(ptr_type)); // dst ptr
+        sig.call_conv = CallConv::SystemV;
+
+        let func_id = self.module.declare_function(name, Linkage::Local, &sig)?;
+
+        self.ctx.func = Function::with_name_signature(
+            UserFuncName::user(0, func_id.as_u32()),
+            sig,
+        );
+
+        {
+            let mut builder = FunctionBuilder::new(&mut self.ctx.func, &mut self.func_ctx);
+            let block = builder.create_block();
+            builder.append_block_params_for_function_params(block);
+            builder.switch_to_block(block);
+
+            let params = builder.block_params(block).to_vec();
+            let src1_ptr = params[0];
+            let src2_ptr = params[1];
+            let dst_ptr = params[2];
+
+            // Load 512-bit vectors (I8X64 = 64 bytes)
+            let src1 = builder.ins().load(I8X64, MemFlags::trusted(), src1_ptr, 0);
+            let src2 = builder.ins().load(I8X64, MemFlags::trusted(), src2_ptr, 0);
+
+            // Perform the operation
+            let result = build_fn(&mut builder, src1, src2);
+
+            // Store result
+            builder.ins().store(MemFlags::trusted(), result, dst_ptr, 0);
+            builder.ins().return_(&[]);
+
+            builder.seal_all_blocks();
+            builder.finalize();
+        }
+
+        self.ctx.set_disasm(true);
+        self.module.define_function(func_id, &mut self.ctx)?;
+
+        if let Some(compiled) = self.ctx.compiled_code() {
+            if let Some(disasm) = &compiled.vcode {
+                println!("=== VCode for {} ===\n{}", name, disasm);
+            }
+        }
+
+        self.module.clear_context(&mut self.ctx);
+        self.module.finalize_definitions()?;
+
+        Ok(self.module.get_finalized_function(func_id))
+    }
+
+    /// Compile a function for I16X32 (32 x word) binary operations.
+    fn compile_binary_i16x32<F>(
+        &mut self,
+        name: &str,
+        build_fn: F,
+    ) -> Result<*const u8, ModuleError>
+    where
+        F: FnOnce(&mut FunctionBuilder, Value, Value) -> Value,
+    {
+        let mut sig = self.module.make_signature();
+        let ptr_type = self.module.target_config().pointer_type();
+        sig.params.push(AbiParam::new(ptr_type)); // src1 ptr
+        sig.params.push(AbiParam::new(ptr_type)); // src2 ptr
+        sig.params.push(AbiParam::new(ptr_type)); // dst ptr
+        sig.call_conv = CallConv::SystemV;
+
+        let func_id = self.module.declare_function(name, Linkage::Local, &sig)?;
+
+        self.ctx.func = Function::with_name_signature(
+            UserFuncName::user(0, func_id.as_u32()),
+            sig,
+        );
+
+        {
+            let mut builder = FunctionBuilder::new(&mut self.ctx.func, &mut self.func_ctx);
+            let block = builder.create_block();
+            builder.append_block_params_for_function_params(block);
+            builder.switch_to_block(block);
+
+            let params = builder.block_params(block).to_vec();
+            let src1_ptr = params[0];
+            let src2_ptr = params[1];
+            let dst_ptr = params[2];
+
+            // Load 512-bit vectors (I16X32 = 32 words)
+            let src1 = builder.ins().load(I16X32, MemFlags::trusted(), src1_ptr, 0);
+            let src2 = builder.ins().load(I16X32, MemFlags::trusted(), src2_ptr, 0);
+
+            // Perform the operation
+            let result = build_fn(&mut builder, src1, src2);
+
+            // Store result
+            builder.ins().store(MemFlags::trusted(), result, dst_ptr, 0);
+            builder.ins().return_(&[]);
+
+            builder.seal_all_blocks();
+            builder.finalize();
+        }
+
+        self.ctx.set_disasm(true);
+        self.module.define_function(func_id, &mut self.ctx)?;
+
+        if let Some(compiled) = self.ctx.compiled_code() {
+            if let Some(disasm) = &compiled.vcode {
+                println!("=== VCode for {} ===\n{}", name, disasm);
+            }
+        }
+
+        self.module.clear_context(&mut self.ctx);
+        self.module.finalize_definitions()?;
+
+        Ok(self.module.get_finalized_function(func_id))
+    }
+
     /// Compile a function for F64X8 binary operations.
     fn compile_binary_f64x8<F>(
         &mut self,
@@ -847,6 +975,128 @@ impl TestCompiler {
 
         Ok(self.module.get_finalized_function(func_id))
     }
+
+    /// Compile a conversion function: F32X8 -> F64X8 (fpromote).
+    fn compile_convert_f32x8_to_f64x8<F>(
+        &mut self,
+        name: &str,
+        build_fn: F,
+    ) -> Result<*const u8, ModuleError>
+    where
+        F: FnOnce(&mut FunctionBuilder, Value) -> Value,
+    {
+        let mut sig = self.module.make_signature();
+        let ptr_type = self.module.target_config().pointer_type();
+        sig.params.push(AbiParam::new(ptr_type)); // src ptr (F32X8, 256-bit)
+        sig.params.push(AbiParam::new(ptr_type)); // dst ptr (F64X8, 512-bit)
+        sig.call_conv = CallConv::SystemV;
+
+        let func_id = self.module.declare_function(name, Linkage::Local, &sig)?;
+
+        self.ctx.func = Function::with_name_signature(
+            UserFuncName::user(0, func_id.as_u32()),
+            sig,
+        );
+
+        {
+            let mut builder = FunctionBuilder::new(&mut self.ctx.func, &mut self.func_ctx);
+            let block = builder.create_block();
+            builder.append_block_params_for_function_params(block);
+            builder.switch_to_block(block);
+
+            let params = builder.block_params(block).to_vec();
+            let src_ptr = params[0];
+            let dst_ptr = params[1];
+
+            // Load F32X8 (256-bit vector)
+            let src = builder.ins().load(F32X8, MemFlags::trusted(), src_ptr, 0);
+
+            // Perform the conversion (fpromote)
+            let result = build_fn(&mut builder, src);
+
+            // Store F64X8 (512-bit vector)
+            builder.ins().store(MemFlags::trusted(), result, dst_ptr, 0);
+            builder.ins().return_(&[]);
+
+            builder.seal_all_blocks();
+            builder.finalize();
+        }
+
+        self.ctx.set_disasm(true);
+        self.module.define_function(func_id, &mut self.ctx)?;
+
+        if let Some(compiled) = self.ctx.compiled_code() {
+            if let Some(disasm) = &compiled.vcode {
+                println!("=== VCode for {} ===\n{}", name, disasm);
+            }
+        }
+
+        self.module.clear_context(&mut self.ctx);
+        self.module.finalize_definitions()?;
+
+        Ok(self.module.get_finalized_function(func_id))
+    }
+
+    /// Compile a conversion function: F64X8 -> F32X8 (fdemote).
+    fn compile_convert_f64x8_to_f32x8<F>(
+        &mut self,
+        name: &str,
+        build_fn: F,
+    ) -> Result<*const u8, ModuleError>
+    where
+        F: FnOnce(&mut FunctionBuilder, Value) -> Value,
+    {
+        let mut sig = self.module.make_signature();
+        let ptr_type = self.module.target_config().pointer_type();
+        sig.params.push(AbiParam::new(ptr_type)); // src ptr (F64X8, 512-bit)
+        sig.params.push(AbiParam::new(ptr_type)); // dst ptr (F32X8, 256-bit)
+        sig.call_conv = CallConv::SystemV;
+
+        let func_id = self.module.declare_function(name, Linkage::Local, &sig)?;
+
+        self.ctx.func = Function::with_name_signature(
+            UserFuncName::user(0, func_id.as_u32()),
+            sig,
+        );
+
+        {
+            let mut builder = FunctionBuilder::new(&mut self.ctx.func, &mut self.func_ctx);
+            let block = builder.create_block();
+            builder.append_block_params_for_function_params(block);
+            builder.switch_to_block(block);
+
+            let params = builder.block_params(block).to_vec();
+            let src_ptr = params[0];
+            let dst_ptr = params[1];
+
+            // Load F64X8 (512-bit vector)
+            let src = builder.ins().load(F64X8, MemFlags::trusted(), src_ptr, 0);
+
+            // Perform the conversion (fdemote)
+            let result = build_fn(&mut builder, src);
+
+            // Store F32X8 (256-bit vector)
+            builder.ins().store(MemFlags::trusted(), result, dst_ptr, 0);
+            builder.ins().return_(&[]);
+
+            builder.seal_all_blocks();
+            builder.finalize();
+        }
+
+        self.ctx.set_disasm(true);
+        self.module.define_function(func_id, &mut self.ctx)?;
+
+        if let Some(compiled) = self.ctx.compiled_code() {
+            if let Some(disasm) = &compiled.vcode {
+                println!("=== VCode for {} ===\n{}", name, disasm);
+            }
+        }
+
+        self.module.clear_context(&mut self.ctx);
+        self.module.finalize_definitions()?;
+
+        Ok(self.module.get_finalized_function(func_id))
+    }
 }
 
 // =============================================================================
@@ -883,6 +1133,36 @@ impl I32x16 {
     }
 }
 
+/// 512-bit vector as 64 x i8 (byte)
+#[repr(C, align(64))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct I8x64([i8; 64]);
+
+impl I8x64 {
+    fn new(values: [i8; 64]) -> Self {
+        Self(values)
+    }
+
+    fn splat(v: i8) -> Self {
+        Self([v; 64])
+    }
+}
+
+/// 512-bit vector as 32 x i16 (word)
+#[repr(C, align(64))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct I16x32([i16; 32]);
+
+impl I16x32 {
+    fn new(values: [i16; 32]) -> Self {
+        Self(values)
+    }
+
+    fn splat(v: i16) -> Self {
+        Self([v; 32])
+    }
+}
+
 /// 512-bit vector as 8 x f64
 #[repr(C, align(64))]
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -913,12 +1193,29 @@ impl F32x16 {
     }
 }
 
+/// 256-bit vector as 8 x f32 (used for fpromote/fdemote)
+#[repr(C, align(32))]
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct F32x8([f32; 8]);
+
+impl F32x8 {
+    fn new(values: [f32; 8]) -> Self {
+        Self(values)
+    }
+
+    fn splat(v: f32) -> Self {
+        Self([v; 8])
+    }
+}
+
 // =============================================================================
 // Binary operation function type
 // =============================================================================
 
 type BinaryI64x8Fn = unsafe extern "C" fn(*const I64x8, *const I64x8, *mut I64x8);
 type BinaryI32x16Fn = unsafe extern "C" fn(*const I32x16, *const I32x16, *mut I32x16);
+type BinaryI8x64Fn = unsafe extern "C" fn(*const I8x64, *const I8x64, *mut I8x64);
+type BinaryI16x32Fn = unsafe extern "C" fn(*const I16x32, *const I16x32, *mut I16x32);
 type UnaryI64x8Fn = unsafe extern "C" fn(*const I64x8, *mut I64x8);
 type UnaryI32x16Fn = unsafe extern "C" fn(*const I32x16, *mut I32x16);
 type BinaryF64x8Fn = unsafe extern "C" fn(*const F64x8, *const F64x8, *mut F64x8);
@@ -930,6 +1227,8 @@ type ConvertI32x16ToF32x16Fn = unsafe extern "C" fn(*const I32x16, *mut F32x16);
 type ConvertF32x16ToI32x16Fn = unsafe extern "C" fn(*const F32x16, *mut I32x16);
 type SplatI64x8Fn = unsafe extern "C" fn(i64, *mut I64x8);
 type SplatI32x16Fn = unsafe extern "C" fn(i32, *mut I32x16);
+type ConvertF32x8ToF64x8Fn = unsafe extern "C" fn(*const F32x8, *mut F64x8);
+type ConvertF64x8ToF32x8Fn = unsafe extern "C" fn(*const F64x8, *mut F32x8);
 
 // =============================================================================
 // Tests: 512-bit Integer Add (VPADDQ / VPADDD)
@@ -4981,3 +5280,2450 @@ fn test_f64x8_masked_fmax_fusion() {
 // shifts would require either:
 // 1. Uniform shift instructions (VPSLLD zmm, zmm, xmm) with masking
 // 2. An x86-specific CLIF opcode for per-element variable shifts
+
+// =============================================================================
+// AVX-512BW Byte (I8X64) Tests
+// =============================================================================
+
+#[test]
+fn test_i8x64_iadd() {
+    let Some(mut compiler) = TestCompiler::new() else {
+        println!("Skipping: AVX-512 not available");
+        return;
+    };
+
+    let code = compiler
+        .compile_binary_i8x64("i8x64_iadd", |builder, a, b| {
+            builder.ins().iadd(a, b)
+        })
+        .expect("Failed to compile");
+
+    let func: BinaryI8x64Fn = unsafe { mem::transmute(code) };
+
+    // Create test data
+    let mut a_arr = [0i8; 64];
+    let mut b_arr = [0i8; 64];
+    for i in 0..64 {
+        a_arr[i] = i as i8;
+        b_arr[i] = 1;
+    }
+    let a = I8x64::new(a_arr);
+    let b = I8x64::new(b_arr);
+    let mut result = I8x64::splat(0);
+
+    unsafe {
+        func(&a, &b, &mut result);
+    }
+
+    // a[i] + b[i] = i + 1
+    let mut expected = [0i8; 64];
+    for i in 0..64 {
+        expected[i] = (i + 1) as i8;
+    }
+    assert_eq!(result, I8x64::new(expected));
+    println!("test_i8x64_iadd: PASSED");
+}
+
+#[test]
+fn test_i8x64_isub() {
+    let Some(mut compiler) = TestCompiler::new() else {
+        println!("Skipping: AVX-512 not available");
+        return;
+    };
+
+    let code = compiler
+        .compile_binary_i8x64("i8x64_isub", |builder, a, b| {
+            builder.ins().isub(a, b)
+        })
+        .expect("Failed to compile");
+
+    let func: BinaryI8x64Fn = unsafe { mem::transmute(code) };
+
+    let mut a_arr = [0i8; 64];
+    let mut b_arr = [0i8; 64];
+    for i in 0..64 {
+        a_arr[i] = (i + 10) as i8;
+        b_arr[i] = 5;
+    }
+    let a = I8x64::new(a_arr);
+    let b = I8x64::new(b_arr);
+    let mut result = I8x64::splat(0);
+
+    unsafe {
+        func(&a, &b, &mut result);
+    }
+
+    let mut expected = [0i8; 64];
+    for i in 0..64 {
+        expected[i] = (i + 5) as i8;
+    }
+    assert_eq!(result, I8x64::new(expected));
+    println!("test_i8x64_isub: PASSED");
+}
+
+#[test]
+fn test_i8x64_smin() {
+    let Some(mut compiler) = TestCompiler::new() else {
+        println!("Skipping: AVX-512 not available");
+        return;
+    };
+
+    let code = compiler
+        .compile_binary_i8x64("i8x64_smin", |builder, a, b| {
+            builder.ins().smin(a, b)
+        })
+        .expect("Failed to compile");
+
+    let func: BinaryI8x64Fn = unsafe { mem::transmute(code) };
+
+    let mut a_arr = [0i8; 64];
+    let mut b_arr = [0i8; 64];
+    for i in 0..64 {
+        a_arr[i] = (i as i8) - 32;  // -32 to 31
+        b_arr[i] = 0;
+    }
+    let a = I8x64::new(a_arr);
+    let b = I8x64::new(b_arr);
+    let mut result = I8x64::splat(0);
+
+    unsafe {
+        func(&a, &b, &mut result);
+    }
+
+    // min(a[i], 0) = a[i] if a[i] < 0, else 0
+    let mut expected = [0i8; 64];
+    for i in 0..64 {
+        expected[i] = std::cmp::min(a_arr[i], 0);
+    }
+    assert_eq!(result, I8x64::new(expected));
+    println!("test_i8x64_smin: PASSED");
+}
+
+#[test]
+fn test_i8x64_smax() {
+    let Some(mut compiler) = TestCompiler::new() else {
+        println!("Skipping: AVX-512 not available");
+        return;
+    };
+
+    let code = compiler
+        .compile_binary_i8x64("i8x64_smax", |builder, a, b| {
+            builder.ins().smax(a, b)
+        })
+        .expect("Failed to compile");
+
+    let func: BinaryI8x64Fn = unsafe { mem::transmute(code) };
+
+    let mut a_arr = [0i8; 64];
+    let mut b_arr = [0i8; 64];
+    for i in 0..64 {
+        a_arr[i] = (i as i8) - 32;
+        b_arr[i] = 0;
+    }
+    let a = I8x64::new(a_arr);
+    let b = I8x64::new(b_arr);
+    let mut result = I8x64::splat(0);
+
+    unsafe {
+        func(&a, &b, &mut result);
+    }
+
+    let mut expected = [0i8; 64];
+    for i in 0..64 {
+        expected[i] = std::cmp::max(a_arr[i], 0);
+    }
+    assert_eq!(result, I8x64::new(expected));
+    println!("test_i8x64_smax: PASSED");
+}
+
+#[test]
+fn test_i8x64_umin() {
+    let Some(mut compiler) = TestCompiler::new() else {
+        println!("Skipping: AVX-512 not available");
+        return;
+    };
+
+    let code = compiler
+        .compile_binary_i8x64("i8x64_umin", |builder, a, b| {
+            builder.ins().umin(a, b)
+        })
+        .expect("Failed to compile");
+
+    let func: BinaryI8x64Fn = unsafe { mem::transmute(code) };
+
+    let mut a_arr = [0i8; 64];
+    let b_arr = [100i8; 64];
+    for i in 0..64 {
+        a_arr[i] = (i * 4) as i8;
+    }
+    let a = I8x64::new(a_arr);
+    let b = I8x64::new(b_arr);
+    let mut result = I8x64::splat(0);
+
+    unsafe {
+        func(&a, &b, &mut result);
+    }
+
+    // Unsigned min - treat bytes as unsigned
+    let mut expected = [0i8; 64];
+    for i in 0..64 {
+        let a_u = a_arr[i] as u8;
+        let b_u = 100u8;
+        expected[i] = std::cmp::min(a_u, b_u) as i8;
+    }
+    assert_eq!(result, I8x64::new(expected));
+    println!("test_i8x64_umin: PASSED");
+}
+
+#[test]
+fn test_i8x64_umax() {
+    let Some(mut compiler) = TestCompiler::new() else {
+        println!("Skipping: AVX-512 not available");
+        return;
+    };
+
+    let code = compiler
+        .compile_binary_i8x64("i8x64_umax", |builder, a, b| {
+            builder.ins().umax(a, b)
+        })
+        .expect("Failed to compile");
+
+    let func: BinaryI8x64Fn = unsafe { mem::transmute(code) };
+
+    let mut a_arr = [0i8; 64];
+    let b_arr = [100i8; 64];
+    for i in 0..64 {
+        a_arr[i] = (i * 4) as i8;
+    }
+    let a = I8x64::new(a_arr);
+    let b = I8x64::new(b_arr);
+    let mut result = I8x64::splat(0);
+
+    unsafe {
+        func(&a, &b, &mut result);
+    }
+
+    let mut expected = [0i8; 64];
+    for i in 0..64 {
+        let a_u = a_arr[i] as u8;
+        let b_u = 100u8;
+        expected[i] = std::cmp::max(a_u, b_u) as i8;
+    }
+    assert_eq!(result, I8x64::new(expected));
+    println!("test_i8x64_umax: PASSED");
+}
+
+// =============================================================================
+// AVX-512BW Word (I16X32) Tests
+// =============================================================================
+
+#[test]
+fn test_i16x32_iadd() {
+    let Some(mut compiler) = TestCompiler::new() else {
+        println!("Skipping: AVX-512 not available");
+        return;
+    };
+
+    let code = compiler
+        .compile_binary_i16x32("i16x32_iadd", |builder, a, b| {
+            builder.ins().iadd(a, b)
+        })
+        .expect("Failed to compile");
+
+    let func: BinaryI16x32Fn = unsafe { mem::transmute(code) };
+
+    let mut a_arr = [0i16; 32];
+    let mut b_arr = [0i16; 32];
+    for i in 0..32 {
+        a_arr[i] = (i * 100) as i16;
+        b_arr[i] = 1;
+    }
+    let a = I16x32::new(a_arr);
+    let b = I16x32::new(b_arr);
+    let mut result = I16x32::splat(0);
+
+    unsafe {
+        func(&a, &b, &mut result);
+    }
+
+    let mut expected = [0i16; 32];
+    for i in 0..32 {
+        expected[i] = (i * 100 + 1) as i16;
+    }
+    assert_eq!(result, I16x32::new(expected));
+    println!("test_i16x32_iadd: PASSED");
+}
+
+#[test]
+fn test_i16x32_isub() {
+    let Some(mut compiler) = TestCompiler::new() else {
+        println!("Skipping: AVX-512 not available");
+        return;
+    };
+
+    let code = compiler
+        .compile_binary_i16x32("i16x32_isub", |builder, a, b| {
+            builder.ins().isub(a, b)
+        })
+        .expect("Failed to compile");
+
+    let func: BinaryI16x32Fn = unsafe { mem::transmute(code) };
+
+    let mut a_arr = [0i16; 32];
+    let b_arr = [500i16; 32];
+    for i in 0..32 {
+        a_arr[i] = (i * 100 + 500) as i16;
+    }
+    let a = I16x32::new(a_arr);
+    let b = I16x32::new(b_arr);
+    let mut result = I16x32::splat(0);
+
+    unsafe {
+        func(&a, &b, &mut result);
+    }
+
+    let mut expected = [0i16; 32];
+    for i in 0..32 {
+        expected[i] = (i * 100) as i16;
+    }
+    assert_eq!(result, I16x32::new(expected));
+    println!("test_i16x32_isub: PASSED");
+}
+
+#[test]
+fn test_i16x32_smin() {
+    let Some(mut compiler) = TestCompiler::new() else {
+        println!("Skipping: AVX-512 not available");
+        return;
+    };
+
+    let code = compiler
+        .compile_binary_i16x32("i16x32_smin", |builder, a, b| {
+            builder.ins().smin(a, b)
+        })
+        .expect("Failed to compile");
+
+    let func: BinaryI16x32Fn = unsafe { mem::transmute(code) };
+
+    let mut a_arr = [0i16; 32];
+    let b_arr = [0i16; 32];
+    for i in 0..32 {
+        a_arr[i] = (i as i16) - 16;  // -16 to 15
+    }
+    let a = I16x32::new(a_arr);
+    let b = I16x32::new(b_arr);
+    let mut result = I16x32::splat(0);
+
+    unsafe {
+        func(&a, &b, &mut result);
+    }
+
+    let mut expected = [0i16; 32];
+    for i in 0..32 {
+        expected[i] = std::cmp::min(a_arr[i], 0);
+    }
+    assert_eq!(result, I16x32::new(expected));
+    println!("test_i16x32_smin: PASSED");
+}
+
+#[test]
+fn test_i16x32_smax() {
+    let Some(mut compiler) = TestCompiler::new() else {
+        println!("Skipping: AVX-512 not available");
+        return;
+    };
+
+    let code = compiler
+        .compile_binary_i16x32("i16x32_smax", |builder, a, b| {
+            builder.ins().smax(a, b)
+        })
+        .expect("Failed to compile");
+
+    let func: BinaryI16x32Fn = unsafe { mem::transmute(code) };
+
+    let mut a_arr = [0i16; 32];
+    let b_arr = [0i16; 32];
+    for i in 0..32 {
+        a_arr[i] = (i as i16) - 16;
+    }
+    let a = I16x32::new(a_arr);
+    let b = I16x32::new(b_arr);
+    let mut result = I16x32::splat(0);
+
+    unsafe {
+        func(&a, &b, &mut result);
+    }
+
+    let mut expected = [0i16; 32];
+    for i in 0..32 {
+        expected[i] = std::cmp::max(a_arr[i], 0);
+    }
+    assert_eq!(result, I16x32::new(expected));
+    println!("test_i16x32_smax: PASSED");
+}
+
+#[test]
+fn test_i16x32_umin() {
+    let Some(mut compiler) = TestCompiler::new() else {
+        println!("Skipping: AVX-512 not available");
+        return;
+    };
+
+    let code = compiler
+        .compile_binary_i16x32("i16x32_umin", |builder, a, b| {
+            builder.ins().umin(a, b)
+        })
+        .expect("Failed to compile");
+
+    let func: BinaryI16x32Fn = unsafe { mem::transmute(code) };
+
+    let mut a_arr = [0i16; 32];
+    let b_arr = [1000i16; 32];
+    for i in 0..32 {
+        a_arr[i] = (i * 100) as i16;
+    }
+    let a = I16x32::new(a_arr);
+    let b = I16x32::new(b_arr);
+    let mut result = I16x32::splat(0);
+
+    unsafe {
+        func(&a, &b, &mut result);
+    }
+
+    let mut expected = [0i16; 32];
+    for i in 0..32 {
+        let a_u = a_arr[i] as u16;
+        let b_u = 1000u16;
+        expected[i] = std::cmp::min(a_u, b_u) as i16;
+    }
+    assert_eq!(result, I16x32::new(expected));
+    println!("test_i16x32_umin: PASSED");
+}
+
+#[test]
+fn test_i16x32_umax() {
+    let Some(mut compiler) = TestCompiler::new() else {
+        println!("Skipping: AVX-512 not available");
+        return;
+    };
+
+    let code = compiler
+        .compile_binary_i16x32("i16x32_umax", |builder, a, b| {
+            builder.ins().umax(a, b)
+        })
+        .expect("Failed to compile");
+
+    let func: BinaryI16x32Fn = unsafe { mem::transmute(code) };
+
+    let mut a_arr = [0i16; 32];
+    let b_arr = [1000i16; 32];
+    for i in 0..32 {
+        a_arr[i] = (i * 100) as i16;
+    }
+    let a = I16x32::new(a_arr);
+    let b = I16x32::new(b_arr);
+    let mut result = I16x32::splat(0);
+
+    unsafe {
+        func(&a, &b, &mut result);
+    }
+
+    let mut expected = [0i16; 32];
+    for i in 0..32 {
+        let a_u = a_arr[i] as u16;
+        let b_u = 1000u16;
+        expected[i] = std::cmp::max(a_u, b_u) as i16;
+    }
+    assert_eq!(result, I16x32::new(expected));
+    println!("test_i16x32_umax: PASSED");
+}
+
+// =============================================================================
+// Tests: 512-bit Rotate Left (VPROLVD / VPROLVQ) - Scalar rotation broadcast
+// =============================================================================
+
+// Function type: vector input, scalar rotation, vector output
+type RotlI64x8Fn = unsafe extern "C" fn(*const I64x8, i64, *mut I64x8);
+type RotlI32x16Fn = unsafe extern "C" fn(*const I32x16, i32, *mut I32x16);
+
+#[test]
+fn test_i64x8_rotl() {
+    let Some(mut compiler) = TestCompiler::new() else {
+        println!("Skipping: AVX-512 not available");
+        return;
+    };
+
+    // Build function: load vector, rotl with scalar, store result
+    let mut sig = compiler.module.make_signature();
+    let ptr_type = compiler.module.target_config().pointer_type();
+    sig.params.push(AbiParam::new(ptr_type)); // src ptr
+    sig.params.push(AbiParam::new(I64)); // scalar rotation amount
+    sig.params.push(AbiParam::new(ptr_type)); // dst ptr
+    sig.call_conv = CallConv::SystemV;
+
+    let func_id = compiler
+        .module
+        .declare_function("i64x8_rotl", Linkage::Local, &sig)
+        .unwrap();
+
+    compiler.ctx.func =
+        Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), sig);
+
+    {
+        let mut builder = FunctionBuilder::new(&mut compiler.ctx.func, &mut compiler.func_ctx);
+        let block = builder.create_block();
+        builder.append_block_params_for_function_params(block);
+        builder.switch_to_block(block);
+
+        let params = builder.block_params(block).to_vec();
+        let src_ptr = params[0];
+        let rotate = params[1];
+        let dst_ptr = params[2];
+
+        let src = builder.ins().load(I64X8, MemFlags::trusted(), src_ptr, 0);
+        let result = builder.ins().rotl(src, rotate);
+        builder.ins().store(MemFlags::trusted(), result, dst_ptr, 0);
+        builder.ins().return_(&[]);
+
+        builder.seal_all_blocks();
+        builder.finalize();
+    }
+
+    compiler.ctx.set_disasm(true);
+    compiler
+        .module
+        .define_function(func_id, &mut compiler.ctx)
+        .expect("Failed to define function");
+
+    if let Some(compiled) = compiler.ctx.compiled_code() {
+        if let Some(disasm) = &compiled.vcode {
+            println!("=== VCode for i64x8_rotl ===\n{}", disasm);
+        }
+    }
+
+    compiler.module.clear_context(&mut compiler.ctx);
+    compiler.module.finalize_definitions().unwrap();
+
+    let code = compiler.module.get_finalized_function(func_id);
+    let func: RotlI64x8Fn = unsafe { mem::transmute(code) };
+
+    // Test: rotate all elements by 4 bits
+    let a = I64x8::new([
+        0x0000_0000_0000_00FFu64 as i64,
+        0x0000_0000_0000_FF00u64 as i64,
+        0x8000_0000_0000_0001u64 as i64,
+        0x1234_5678_9ABC_DEF0u64 as i64,
+        0xFFFF_FFFF_FFFF_FFFFu64 as i64,
+        0x0000_0000_0000_0001u64 as i64,
+        0xAAAA_AAAA_AAAA_AAAAu64 as i64,
+        0x5555_5555_5555_5555u64 as i64,
+    ]);
+    let rotate: i64 = 4;
+    let mut result = I64x8::splat(0);
+
+    unsafe {
+        func(&a, rotate, &mut result);
+    }
+
+    // Expected: all elements rotated left by 4 bits
+    let mut expected = [0i64; 8];
+    for i in 0..8 {
+        expected[i] = (a.0[i] as u64).rotate_left(4) as i64;
+    }
+    assert_eq!(result, I64x8::new(expected));
+    println!("test_i64x8_rotl: PASSED");
+}
+
+#[test]
+fn test_i32x16_rotl() {
+    let Some(mut compiler) = TestCompiler::new() else {
+        println!("Skipping: AVX-512 not available");
+        return;
+    };
+
+    // Build function: load vector, rotl with scalar, store result
+    let mut sig = compiler.module.make_signature();
+    let ptr_type = compiler.module.target_config().pointer_type();
+    sig.params.push(AbiParam::new(ptr_type)); // src ptr
+    sig.params.push(AbiParam::new(I32)); // scalar rotation amount
+    sig.params.push(AbiParam::new(ptr_type)); // dst ptr
+    sig.call_conv = CallConv::SystemV;
+
+    let func_id = compiler
+        .module
+        .declare_function("i32x16_rotl", Linkage::Local, &sig)
+        .unwrap();
+
+    compiler.ctx.func =
+        Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), sig);
+
+    {
+        let mut builder = FunctionBuilder::new(&mut compiler.ctx.func, &mut compiler.func_ctx);
+        let block = builder.create_block();
+        builder.append_block_params_for_function_params(block);
+        builder.switch_to_block(block);
+
+        let params = builder.block_params(block).to_vec();
+        let src_ptr = params[0];
+        let rotate = params[1];
+        let dst_ptr = params[2];
+
+        let src = builder.ins().load(I32X16, MemFlags::trusted(), src_ptr, 0);
+        let result = builder.ins().rotl(src, rotate);
+        builder.ins().store(MemFlags::trusted(), result, dst_ptr, 0);
+        builder.ins().return_(&[]);
+
+        builder.seal_all_blocks();
+        builder.finalize();
+    }
+
+    compiler.ctx.set_disasm(true);
+    compiler
+        .module
+        .define_function(func_id, &mut compiler.ctx)
+        .expect("Failed to define function");
+
+    if let Some(compiled) = compiler.ctx.compiled_code() {
+        if let Some(disasm) = &compiled.vcode {
+            println!("=== VCode for i32x16_rotl ===\n{}", disasm);
+        }
+    }
+
+    compiler.module.clear_context(&mut compiler.ctx);
+    compiler.module.finalize_definitions().unwrap();
+
+    let code = compiler.module.get_finalized_function(func_id);
+    let func: RotlI32x16Fn = unsafe { mem::transmute(code) };
+
+    // Test: rotate all elements by 8 bits
+    let a = I32x16::new([
+        0x0000_00FFu32 as i32,
+        0x0000_FF00u32 as i32,
+        0x8000_0001u32 as i32,
+        0x1234_5678u32 as i32,
+        0xFFFF_FFFFu32 as i32,
+        0x0000_0001u32 as i32,
+        0xAAAA_AAAAu32 as i32,
+        0x5555_5555u32 as i32,
+        0xDEAD_BEEFu32 as i32,
+        0xCAFE_BABEu32 as i32,
+        0x0F0F_0F0Fu32 as i32,
+        0xF0F0_F0F0u32 as i32,
+        0x0000_FFFFu32 as i32,
+        0xFFFF_0000u32 as i32,
+        0x1111_1111u32 as i32,
+        0x8888_8888u32 as i32,
+    ]);
+    let rotate: i32 = 8;
+    let mut result = I32x16::splat(0);
+
+    unsafe {
+        func(&a, rotate, &mut result);
+    }
+
+    // Expected: all elements rotated left by 8 bits
+    let mut expected = [0i32; 16];
+    for i in 0..16 {
+        expected[i] = (a.0[i] as u32).rotate_left(8) as i32;
+    }
+    assert_eq!(result, I32x16::new(expected));
+    println!("test_i32x16_rotl: PASSED");
+}
+
+// =============================================================================
+// Tests: 512-bit Bitwise AND NOT (VPANDND / VPANDNQ)
+// =============================================================================
+
+#[test]
+fn test_i64x8_band_not() {
+    let Some(mut compiler) = TestCompiler::new() else {
+        println!("Skipping: AVX-512 not available");
+        return;
+    };
+
+    let code = compiler
+        .compile_binary_i64x8("i64x8_band_not", |builder, a, b| builder.ins().band_not(a, b))
+        .expect("Failed to compile i64x8_band_not");
+
+    let func: BinaryI64x8Fn = unsafe { mem::transmute(code) };
+
+    // band_not(a, b) = a & (~b)
+    let a = I64x8::new([
+        0xFFFF_FFFF_FFFF_FFFFu64 as i64,
+        0x1234_5678_1234_5678u64 as i64,
+        0x0000_FFFF_0000_FFFFu64 as i64,
+        0xF0F0_F0F0_F0F0_F0F0u64 as i64,
+        0xFFFF_FFFF_FFFF_FFFFu64 as i64,
+        0xFFFF_FFFF_FFFF_FFFFu64 as i64,
+        0xFFFF_FFFF_FFFF_FFFFu64 as i64,
+        0xFFFF_FFFF_FFFF_FFFFu64 as i64,
+    ]);
+    let b = I64x8::new([
+        0xFFFF_FFFF_FFFF_FFFFu64 as i64, // ~b = 0
+        0x0000_0000_0000_0000u64 as i64, // ~b = all 1s
+        0xFFFF_0000_FFFF_0000u64 as i64,
+        0x0F0F_0F0F_0F0F_0F0Fu64 as i64,
+        0x1234_5678_9ABC_DEF0u64 as i64,
+        0x5555_5555_5555_5555u64 as i64,
+        0xAAAA_AAAA_AAAA_AAAAu64 as i64,
+        0xDEAD_BEEF_CAFE_BABEu64 as i64,
+    ]);
+    let mut result = I64x8::splat(0);
+
+    unsafe {
+        func(&a, &b, &mut result);
+    }
+
+    // Expected: a & (~b)
+    let mut expected = [0i64; 8];
+    for i in 0..8 {
+        expected[i] = ((a.0[i] as u64) & !(b.0[i] as u64)) as i64;
+    }
+    assert_eq!(result, I64x8::new(expected));
+    println!("test_i64x8_band_not: PASSED");
+}
+
+#[test]
+fn test_i32x16_band_not() {
+    let Some(mut compiler) = TestCompiler::new() else {
+        println!("Skipping: AVX-512 not available");
+        return;
+    };
+
+    let code = compiler
+        .compile_binary_i32x16("i32x16_band_not", |builder, a, b| builder.ins().band_not(a, b))
+        .expect("Failed to compile i32x16_band_not");
+
+    let func: BinaryI32x16Fn = unsafe { mem::transmute(code) };
+
+    // band_not(a, b) = a & (~b)
+    let a = I32x16::new([
+        0xFFFF_FFFFu32 as i32,
+        0x1234_5678u32 as i32,
+        0x0000_FFFFu32 as i32,
+        0xF0F0_F0F0u32 as i32,
+        0xFFFF_FFFFu32 as i32,
+        0xFFFF_FFFFu32 as i32,
+        0xFFFF_FFFFu32 as i32,
+        0xFFFF_FFFFu32 as i32,
+        0x0000_0000u32 as i32,
+        0xFFFF_FFFFu32 as i32,
+        0xFFFF_FFFFu32 as i32,
+        0xFFFF_FFFFu32 as i32,
+        0xFFFF_FFFFu32 as i32,
+        0xFFFF_FFFFu32 as i32,
+        0xFFFF_FFFFu32 as i32,
+        0xFFFF_FFFFu32 as i32,
+    ]);
+    let b = I32x16::new([
+        0xFFFF_FFFFu32 as i32, // ~b = 0
+        0x0000_0000u32 as i32, // ~b = all 1s
+        0xFFFF_0000u32 as i32,
+        0x0F0F_0F0Fu32 as i32,
+        0x1234_5678u32 as i32,
+        0x5555_5555u32 as i32,
+        0xAAAA_AAAAu32 as i32,
+        0xDEAD_BEEFu32 as i32,
+        0xCAFE_BABEu32 as i32,
+        0x0000_FFFFu32 as i32,
+        0xFFFF_0000u32 as i32,
+        0x00FF_00FFu32 as i32,
+        0xFF00_FF00u32 as i32,
+        0x0F0F_0F0Fu32 as i32,
+        0xF0F0_F0F0u32 as i32,
+        0x1111_1111u32 as i32,
+    ]);
+    let mut result = I32x16::splat(0);
+
+    unsafe {
+        func(&a, &b, &mut result);
+    }
+
+    // Expected: a & (~b)
+    let mut expected = [0i32; 16];
+    for i in 0..16 {
+        expected[i] = ((a.0[i] as u32) & !(b.0[i] as u32)) as i32;
+    }
+    assert_eq!(result, I32x16::new(expected));
+    println!("test_i32x16_band_not: PASSED");
+}
+
+// =============================================================================
+// Tests: Float Precision Conversion (VCVTPS2PD / VCVTPD2PS)
+// =============================================================================
+
+// NOTE: These tests are currently ignored because CLIF's fpromote/fdemote instructions
+// have a "Narrower" constraint that only accepts scalar float types, not vector types.
+// To enable these tests, we would need to either:
+// 1. Modify CLIF's Narrower constraint to support vector types (F32X8, F64X8)
+// 2. Add x86-specific opcodes (x86_vcvtps2pd, x86_vcvtpd2ps) that bypass the constraint
+// The lowering rules in turin.isle are ready; this is purely a CLIF type constraint issue.
+
+#[test]
+#[ignore = "CLIF Narrower constraint doesn't support 512-bit vector types (F32X8, F64X8)"]
+fn test_f32x8_to_f64x8_fpromote() {
+    let Some(mut compiler) = TestCompiler::new() else {
+        println!("Skipping: AVX-512 not available");
+        return;
+    };
+
+    let code = compiler
+        .compile_convert_f32x8_to_f64x8("f32x8_to_f64x8", |builder, src| {
+            builder.ins().fpromote(F64X8, src)
+        })
+        .expect("Failed to compile f32x8_to_f64x8");
+
+    let func: ConvertF32x8ToF64x8Fn = unsafe { mem::transmute(code) };
+
+    // Test values covering various float values
+    let src = F32x8::new([
+        1.0f32,
+        -1.0f32,
+        0.0f32,
+        3.14159f32,
+        f32::MAX,
+        f32::MIN,
+        f32::EPSILON,
+        1.5e10f32,
+    ]);
+    let mut result = F64x8::splat(0.0);
+
+    unsafe {
+        func(&src, &mut result);
+    }
+
+    // Each f32 should be promoted to f64 exactly
+    for i in 0..8 {
+        let expected = src.0[i] as f64;
+        assert!(
+            (result.0[i] - expected).abs() < 1e-30 || result.0[i] == expected,
+            "Mismatch at index {}: expected {}, got {}",
+            i,
+            expected,
+            result.0[i]
+        );
+    }
+    println!("test_f32x8_to_f64x8_fpromote: PASSED");
+}
+
+#[test]
+#[ignore = "CLIF Narrower constraint doesn't support 512-bit vector types (F32X8, F64X8)"]
+fn test_f64x8_to_f32x8_fdemote() {
+    let Some(mut compiler) = TestCompiler::new() else {
+        println!("Skipping: AVX-512 not available");
+        return;
+    };
+
+    let code = compiler
+        .compile_convert_f64x8_to_f32x8("f64x8_to_f32x8", |builder, src| {
+            builder.ins().fdemote(F32X8, src)
+        })
+        .expect("Failed to compile f64x8_to_f32x8");
+
+    let func: ConvertF64x8ToF32x8Fn = unsafe { mem::transmute(code) };
+
+    // Test values that can be represented in f32
+    let src = F64x8::new([
+        1.0f64,
+        -1.0f64,
+        0.0f64,
+        3.14159f64,
+        1000.0f64,
+        -1000.0f64,
+        0.5f64,
+        1.5e10f64,
+    ]);
+    let mut result = F32x8::splat(0.0);
+
+    unsafe {
+        func(&src, &mut result);
+    }
+
+    // Each f64 should be demoted to f32 (with potential loss of precision)
+    for i in 0..8 {
+        let expected = src.0[i] as f32;
+        assert!(
+            (result.0[i] - expected).abs() < 1e-6 || result.0[i] == expected,
+            "Mismatch at index {}: expected {}, got {}",
+            i,
+            expected,
+            result.0[i]
+        );
+    }
+    println!("test_f64x8_to_f32x8_fdemote: PASSED");
+}
+
+// =============================================================================
+// Tests: AVX-512 Compress (VPCOMPRESSD/Q) - Core of Filter Pattern
+// =============================================================================
+//
+// This tests the critical VPCOMPRESSD/VPCOMPRESSQ instructions used in:
+// - Vectorized filter: compress surviving row indices based on filter mask
+// - CTE materialization: compress column values for surviving rows
+//
+// Pattern:
+//   mask = vpcmpd(values, threshold)
+//   survivors = vpcompressd(mask, values)
+//   count = popcnt(mask)
+
+#[test]
+fn test_i32x16_compress() {
+    let Some(mut compiler) = TestCompiler::new() else {
+        println!("Skipping: AVX-512 not available");
+        return;
+    };
+
+    // Build function: compress elements where mask is -1 (true)
+    let mut sig = compiler.module.make_signature();
+    let ptr_type = compiler.module.target_config().pointer_type();
+    sig.params.push(AbiParam::new(ptr_type)); // values ptr
+    sig.params.push(AbiParam::new(ptr_type)); // mask ptr (I32X16 with -1/0)
+    sig.params.push(AbiParam::new(ptr_type)); // output ptr
+    sig.call_conv = CallConv::SystemV;
+
+    let func_id = compiler
+        .module
+        .declare_function("i32x16_compress", Linkage::Local, &sig)
+        .unwrap();
+
+    compiler.ctx.func =
+        Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), sig);
+
+    {
+        let mut builder = FunctionBuilder::new(&mut compiler.ctx.func, &mut compiler.func_ctx);
+        let block = builder.create_block();
+        builder.append_block_params_for_function_params(block);
+        builder.switch_to_block(block);
+
+        let params = builder.block_params(block).to_vec();
+        let values_ptr = params[0];
+        let mask_ptr = params[1];
+        let out_ptr = params[2];
+
+        let values = builder.ins().load(I32X16, MemFlags::trusted(), values_ptr, 0);
+        let mask = builder.ins().load(I32X16, MemFlags::trusted(), mask_ptr, 0);
+
+        // x86_simd_compress: compress values where mask bit is set
+        // First argument is the result type
+        let compressed = builder.ins().x86_simd_compress(I32X16, mask, values);
+
+        builder.ins().store(MemFlags::trusted(), compressed, out_ptr, 0);
+        builder.ins().return_(&[]);
+
+        builder.seal_all_blocks();
+        builder.finalize();
+    }
+
+    compiler.ctx.set_disasm(true);
+    compiler
+        .module
+        .define_function(func_id, &mut compiler.ctx)
+        .expect("Failed to define function");
+
+    if let Some(compiled) = compiler.ctx.compiled_code() {
+        if let Some(disasm) = &compiled.vcode {
+            println!("=== VCode for i32x16_compress ===\n{}", disasm);
+            // Verify VPCOMPRESSD is used
+            assert!(
+                disasm.contains("vpcompressd") || disasm.contains("vpmovd2m"),
+                "Expected VPCOMPRESSD instruction in: {}",
+                disasm
+            );
+        }
+    }
+
+    compiler.module.clear_context(&mut compiler.ctx);
+    compiler.module.finalize_definitions().unwrap();
+
+    let code = compiler.module.get_finalized_function(func_id);
+    type CompressI32x16Fn = unsafe extern "C" fn(*const I32x16, *const I32x16, *mut I32x16);
+    let func: CompressI32x16Fn = unsafe { mem::transmute(code) };
+
+    // Test: compress with mask selecting indices 0, 3, 7, 10, 15
+    let values = I32x16::new([
+        100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115,
+    ]);
+    // Mask: -1 means select, 0 means skip
+    let mask = I32x16::new([
+        -1, 0, 0, -1, 0, 0, 0, -1, 0, 0, -1, 0, 0, 0, 0, -1,
+    ]);
+    let mut result = I32x16::splat(0);
+
+    unsafe {
+        func(&values, &mask, &mut result);
+    }
+
+    // Expected: values at positions 0, 3, 7, 10, 15 compressed to front
+    // Positions: 100, 103, 107, 110, 115, then zeros
+    assert_eq!(result.0[0], 100, "First compressed element");
+    assert_eq!(result.0[1], 103, "Second compressed element");
+    assert_eq!(result.0[2], 107, "Third compressed element");
+    assert_eq!(result.0[3], 110, "Fourth compressed element");
+    assert_eq!(result.0[4], 115, "Fifth compressed element");
+    println!("test_i32x16_compress: PASSED");
+}
+
+#[test]
+fn test_i64x8_compress() {
+    let Some(mut compiler) = TestCompiler::new() else {
+        println!("Skipping: AVX-512 not available");
+        return;
+    };
+
+    let mut sig = compiler.module.make_signature();
+    let ptr_type = compiler.module.target_config().pointer_type();
+    sig.params.push(AbiParam::new(ptr_type)); // values ptr
+    sig.params.push(AbiParam::new(ptr_type)); // mask ptr (I64X8 with -1/0)
+    sig.params.push(AbiParam::new(ptr_type)); // output ptr
+    sig.call_conv = CallConv::SystemV;
+
+    let func_id = compiler
+        .module
+        .declare_function("i64x8_compress", Linkage::Local, &sig)
+        .unwrap();
+
+    compiler.ctx.func =
+        Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), sig);
+
+    {
+        let mut builder = FunctionBuilder::new(&mut compiler.ctx.func, &mut compiler.func_ctx);
+        let block = builder.create_block();
+        builder.append_block_params_for_function_params(block);
+        builder.switch_to_block(block);
+
+        let params = builder.block_params(block).to_vec();
+        let values_ptr = params[0];
+        let mask_ptr = params[1];
+        let out_ptr = params[2];
+
+        let values = builder.ins().load(I64X8, MemFlags::trusted(), values_ptr, 0);
+        let mask = builder.ins().load(I64X8, MemFlags::trusted(), mask_ptr, 0);
+
+        // First argument is the result type
+        let compressed = builder.ins().x86_simd_compress(I64X8, mask, values);
+
+        builder.ins().store(MemFlags::trusted(), compressed, out_ptr, 0);
+        builder.ins().return_(&[]);
+
+        builder.seal_all_blocks();
+        builder.finalize();
+    }
+
+    compiler.ctx.set_disasm(true);
+    compiler
+        .module
+        .define_function(func_id, &mut compiler.ctx)
+        .expect("Failed to define function");
+
+    if let Some(compiled) = compiler.ctx.compiled_code() {
+        if let Some(disasm) = &compiled.vcode {
+            println!("=== VCode for i64x8_compress ===\n{}", disasm);
+            assert!(
+                disasm.contains("vpcompressq") || disasm.contains("vpmovq2m"),
+                "Expected VPCOMPRESSQ instruction"
+            );
+        }
+    }
+
+    compiler.module.clear_context(&mut compiler.ctx);
+    compiler.module.finalize_definitions().unwrap();
+
+    let code = compiler.module.get_finalized_function(func_id);
+    type CompressI64x8Fn = unsafe extern "C" fn(*const I64x8, *const I64x8, *mut I64x8);
+    let func: CompressI64x8Fn = unsafe { mem::transmute(code) };
+
+    // Test: compress with mask selecting indices 1, 4, 7
+    let values = I64x8::new([1000, 1001, 1002, 1003, 1004, 1005, 1006, 1007]);
+    let mask = I64x8::new([0, -1, 0, 0, -1, 0, 0, -1]);
+    let mut result = I64x8::splat(0);
+
+    unsafe {
+        func(&values, &mask, &mut result);
+    }
+
+    assert_eq!(result.0[0], 1001, "First compressed element");
+    assert_eq!(result.0[1], 1004, "Second compressed element");
+    assert_eq!(result.0[2], 1007, "Third compressed element");
+    println!("test_i64x8_compress: PASSED");
+}
+
+// =============================================================================
+// Tests: AVX-512 Expand (VPEXPANDD/Q) - Inverse of Compress
+// =============================================================================
+
+#[test]
+fn test_i32x16_expand() {
+    let Some(mut compiler) = TestCompiler::new() else {
+        println!("Skipping: AVX-512 not available");
+        return;
+    };
+
+    let mut sig = compiler.module.make_signature();
+    let ptr_type = compiler.module.target_config().pointer_type();
+    sig.params.push(AbiParam::new(ptr_type)); // values ptr (compressed)
+    sig.params.push(AbiParam::new(ptr_type)); // mask ptr (I32X16 with -1/0)
+    sig.params.push(AbiParam::new(ptr_type)); // output ptr
+    sig.call_conv = CallConv::SystemV;
+
+    let func_id = compiler
+        .module
+        .declare_function("i32x16_expand", Linkage::Local, &sig)
+        .unwrap();
+
+    compiler.ctx.func =
+        Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), sig);
+
+    {
+        let mut builder = FunctionBuilder::new(&mut compiler.ctx.func, &mut compiler.func_ctx);
+        let block = builder.create_block();
+        builder.append_block_params_for_function_params(block);
+        builder.switch_to_block(block);
+
+        let params = builder.block_params(block).to_vec();
+        let values_ptr = params[0];
+        let mask_ptr = params[1];
+        let out_ptr = params[2];
+
+        let values = builder.ins().load(I32X16, MemFlags::trusted(), values_ptr, 0);
+        let mask = builder.ins().load(I32X16, MemFlags::trusted(), mask_ptr, 0);
+
+        // First argument is the result type
+        let expanded = builder.ins().x86_simd_expand(I32X16, mask, values);
+
+        builder.ins().store(MemFlags::trusted(), expanded, out_ptr, 0);
+        builder.ins().return_(&[]);
+
+        builder.seal_all_blocks();
+        builder.finalize();
+    }
+
+    compiler.ctx.set_disasm(true);
+    compiler
+        .module
+        .define_function(func_id, &mut compiler.ctx)
+        .expect("Failed to define function");
+
+    if let Some(compiled) = compiler.ctx.compiled_code() {
+        if let Some(disasm) = &compiled.vcode {
+            println!("=== VCode for i32x16_expand ===\n{}", disasm);
+            assert!(
+                disasm.contains("vpexpandd") || disasm.contains("vpmovd2m"),
+                "Expected VPEXPANDD instruction"
+            );
+        }
+    }
+
+    compiler.module.clear_context(&mut compiler.ctx);
+    compiler.module.finalize_definitions().unwrap();
+
+    let code = compiler.module.get_finalized_function(func_id);
+    type ExpandI32x16Fn = unsafe extern "C" fn(*const I32x16, *const I32x16, *mut I32x16);
+    let func: ExpandI32x16Fn = unsafe { mem::transmute(code) };
+
+    // Test: expand values to positions 0, 3, 7
+    let values = I32x16::new([100, 103, 107, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    let mask = I32x16::new([-1, 0, 0, -1, 0, 0, 0, -1, 0, 0, 0, 0, 0, 0, 0, 0]);
+    let mut result = I32x16::splat(0);
+
+    unsafe {
+        func(&values, &mask, &mut result);
+    }
+
+    assert_eq!(result.0[0], 100, "Expanded to position 0");
+    assert_eq!(result.0[3], 103, "Expanded to position 3");
+    assert_eq!(result.0[7], 107, "Expanded to position 7");
+    assert_eq!(result.0[1], 0, "Unset position should be 0");
+    println!("test_i32x16_expand: PASSED");
+}
+
+// =============================================================================
+// Tests: AVX-512 Gather (VPGATHERQQ) - For GermanString Indexed Access
+// =============================================================================
+//
+// This tests VPGATHERQQ which is critical for:
+// - GermanString prefilter: gather low64 and high64 of 16-byte strings
+// - Indexed column access after VPCOMPRESS
+//
+// Pattern for GermanString:
+//   indices = compressed_row_indices * 16  (pre-scaled for 16-byte stride)
+//   low64 = vpgatherqq([base + indices])
+//   high64 = vpgatherqq([base + 8 + indices])
+
+#[test]
+fn test_i64x8_gather_dd() {
+    let Some(mut compiler) = TestCompiler::new() else {
+        println!("Skipping: AVX-512 not available");
+        return;
+    };
+
+    // Build function: gather 8 i64 values using 32-bit indices
+    // This is VPGATHERDQ (32-bit indices → 64-bit elements)
+    let mut sig = compiler.module.make_signature();
+    let ptr_type = compiler.module.target_config().pointer_type();
+    sig.params.push(AbiParam::new(ptr_type)); // base ptr
+    sig.params.push(AbiParam::new(ptr_type)); // indices ptr (I32X8 with byte offsets)
+    sig.params.push(AbiParam::new(ptr_type)); // output ptr
+    sig.call_conv = CallConv::SystemV;
+
+    let func_id = compiler
+        .module
+        .declare_function("i64x8_gather_dq", Linkage::Local, &sig)
+        .unwrap();
+
+    compiler.ctx.func =
+        Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), sig);
+
+    {
+        let mut builder = FunctionBuilder::new(&mut compiler.ctx.func, &mut compiler.func_ctx);
+        let block = builder.create_block();
+        builder.append_block_params_for_function_params(block);
+        builder.switch_to_block(block);
+
+        let params = builder.block_params(block).to_vec();
+        let base_ptr = params[0];
+        let indices_ptr = params[1];
+        let out_ptr = params[2];
+
+        // Load 8 x i32 indices (uses I32X8 which is 256-bit, but stored in I32X16 for alignment)
+        let indices = builder
+            .ins()
+            .load(I32X8, MemFlags::trusted(), indices_ptr, 0);
+
+        // Gather: base[indices[i]] for each lane, with scale=1 (indices are byte offsets)
+        // First argument is the result type, then MemFlags, then base, indices, scale, offset
+        let gathered = builder.ins().x86_simd_gather(
+            I64X8,             // result type
+            MemFlags::trusted(),
+            base_ptr,
+            indices,
+            1u8,   // scale: Uimm8 immediate
+            0i32,  // offset: Offset32 immediate
+        );
+
+        builder.ins().store(MemFlags::trusted(), gathered, out_ptr, 0);
+        builder.ins().return_(&[]);
+
+        builder.seal_all_blocks();
+        builder.finalize();
+    }
+
+    compiler.ctx.set_disasm(true);
+    compiler
+        .module
+        .define_function(func_id, &mut compiler.ctx)
+        .expect("Failed to define function");
+
+    if let Some(compiled) = compiler.ctx.compiled_code() {
+        if let Some(disasm) = &compiled.vcode {
+            println!("=== VCode for i64x8_gather_dq ===\n{}", disasm);
+            assert!(
+                disasm.contains("vpgatherdq"),
+                "Expected VPGATHERDQ instruction"
+            );
+        }
+    }
+
+    compiler.module.clear_context(&mut compiler.ctx);
+    compiler.module.finalize_definitions().unwrap();
+
+    let code = compiler.module.get_finalized_function(func_id);
+
+    // Create a data array to gather from
+    #[repr(C, align(64))]
+    struct DataArray([i64; 32]);
+    let data = DataArray([
+        1000, 1001, 1002, 1003, 1004, 1005, 1006, 1007, 1008, 1009, 1010, 1011, 1012, 1013, 1014,
+        1015, 1016, 1017, 1018, 1019, 1020, 1021, 1022, 1023, 1024, 1025, 1026, 1027, 1028, 1029,
+        1030, 1031,
+    ]);
+
+    // Indices are byte offsets: element 0, 2, 4, 6, 8, 10, 12, 14
+    // Each i64 is 8 bytes, so indices = [0, 16, 32, 48, 64, 80, 96, 112]
+    #[repr(C, align(32))]
+    struct Indices([i32; 8]);
+    let indices = Indices([0, 16, 32, 48, 64, 80, 96, 112]);
+
+    let mut result = I64x8::splat(0);
+
+    type GatherDQFn = unsafe extern "C" fn(*const i64, *const i32, *mut I64x8);
+    let func: GatherDQFn = unsafe { mem::transmute(code) };
+
+    unsafe {
+        func(data.0.as_ptr(), indices.0.as_ptr(), &mut result);
+    }
+
+    // Should gather elements 0, 2, 4, 6, 8, 10, 12, 14
+    assert_eq!(result.0[0], 1000, "Gathered element 0");
+    assert_eq!(result.0[1], 1002, "Gathered element 2");
+    assert_eq!(result.0[2], 1004, "Gathered element 4");
+    assert_eq!(result.0[3], 1006, "Gathered element 6");
+    assert_eq!(result.0[4], 1008, "Gathered element 8");
+    assert_eq!(result.0[5], 1010, "Gathered element 10");
+    assert_eq!(result.0[6], 1012, "Gathered element 12");
+    assert_eq!(result.0[7], 1014, "Gathered element 14");
+    println!("test_i64x8_gather_dd: PASSED");
+}
+
+#[test]
+fn test_i64x8_gather_qq() {
+    let Some(mut compiler) = TestCompiler::new() else {
+        println!("Skipping: AVX-512 not available");
+        return;
+    };
+
+    // Build function: gather 8 i64 values using 64-bit indices
+    // This is VPGATHERQQ (64-bit indices → 64-bit elements)
+    let mut sig = compiler.module.make_signature();
+    let ptr_type = compiler.module.target_config().pointer_type();
+    sig.params.push(AbiParam::new(ptr_type)); // base ptr
+    sig.params.push(AbiParam::new(ptr_type)); // indices ptr (I64X8 with byte offsets)
+    sig.params.push(AbiParam::new(ptr_type)); // output ptr
+    sig.call_conv = CallConv::SystemV;
+
+    let func_id = compiler
+        .module
+        .declare_function("i64x8_gather_qq", Linkage::Local, &sig)
+        .unwrap();
+
+    compiler.ctx.func =
+        Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), sig);
+
+    {
+        let mut builder = FunctionBuilder::new(&mut compiler.ctx.func, &mut compiler.func_ctx);
+        let block = builder.create_block();
+        builder.append_block_params_for_function_params(block);
+        builder.switch_to_block(block);
+
+        let params = builder.block_params(block).to_vec();
+        let base_ptr = params[0];
+        let indices_ptr = params[1];
+        let out_ptr = params[2];
+
+        let indices = builder.ins().load(I64X8, MemFlags::trusted(), indices_ptr, 0);
+
+        // First argument is the result type, then MemFlags, then base, indices, scale, offset
+        let gathered = builder.ins().x86_simd_gather(
+            I64X8,             // result type
+            MemFlags::trusted(),
+            base_ptr,
+            indices,
+            1u8,   // scale: Uimm8 immediate
+            0i32,  // offset: Offset32 immediate
+        );
+
+        builder.ins().store(MemFlags::trusted(), gathered, out_ptr, 0);
+        builder.ins().return_(&[]);
+
+        builder.seal_all_blocks();
+        builder.finalize();
+    }
+
+    compiler.ctx.set_disasm(true);
+    compiler
+        .module
+        .define_function(func_id, &mut compiler.ctx)
+        .expect("Failed to define function");
+
+    if let Some(compiled) = compiler.ctx.compiled_code() {
+        if let Some(disasm) = &compiled.vcode {
+            println!("=== VCode for i64x8_gather_qq ===\n{}", disasm);
+            assert!(
+                disasm.contains("vpgatherqq"),
+                "Expected VPGATHERQQ instruction"
+            );
+        }
+    }
+
+    compiler.module.clear_context(&mut compiler.ctx);
+    compiler.module.finalize_definitions().unwrap();
+
+    let code = compiler.module.get_finalized_function(func_id);
+
+    #[repr(C, align(64))]
+    struct DataArray([i64; 32]);
+    let data = DataArray([
+        1000, 1001, 1002, 1003, 1004, 1005, 1006, 1007, 1008, 1009, 1010, 1011, 1012, 1013, 1014,
+        1015, 1016, 1017, 1018, 1019, 1020, 1021, 1022, 1023, 1024, 1025, 1026, 1027, 1028, 1029,
+        1030, 1031,
+    ]);
+
+    // 64-bit indices (byte offsets): gather elements 1, 3, 5, 7, 9, 11, 13, 15
+    let indices = I64x8::new([8, 24, 40, 56, 72, 88, 104, 120]);
+    let mut result = I64x8::splat(0);
+
+    type GatherQQFn = unsafe extern "C" fn(*const i64, *const I64x8, *mut I64x8);
+    let func: GatherQQFn = unsafe { mem::transmute(code) };
+
+    unsafe {
+        func(data.0.as_ptr(), &indices, &mut result);
+    }
+
+    assert_eq!(result.0[0], 1001, "Gathered element 1");
+    assert_eq!(result.0[1], 1003, "Gathered element 3");
+    assert_eq!(result.0[2], 1005, "Gathered element 5");
+    assert_eq!(result.0[3], 1007, "Gathered element 7");
+    assert_eq!(result.0[4], 1009, "Gathered element 9");
+    assert_eq!(result.0[5], 1011, "Gathered element 11");
+    assert_eq!(result.0[6], 1013, "Gathered element 13");
+    assert_eq!(result.0[7], 1015, "Gathered element 15");
+    println!("test_i64x8_gather_qq: PASSED");
+}
+
+// =============================================================================
+// Tests: AVX-512 Scatter (VPSCATTERQQ) - For Indexed Store
+// =============================================================================
+
+#[test]
+fn test_i64x8_scatter_qq() {
+    let Some(mut compiler) = TestCompiler::new() else {
+        println!("Skipping: AVX-512 not available");
+        return;
+    };
+
+    let mut sig = compiler.module.make_signature();
+    let ptr_type = compiler.module.target_config().pointer_type();
+    sig.params.push(AbiParam::new(ptr_type)); // base ptr
+    sig.params.push(AbiParam::new(ptr_type)); // indices ptr (I64X8)
+    sig.params.push(AbiParam::new(ptr_type)); // values ptr (I64X8)
+    sig.params.push(AbiParam::new(ptr_type)); // mask ptr (I64X8)
+    sig.call_conv = CallConv::SystemV;
+
+    let func_id = compiler
+        .module
+        .declare_function("i64x8_scatter_qq", Linkage::Local, &sig)
+        .unwrap();
+
+    compiler.ctx.func =
+        Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), sig);
+
+    {
+        let mut builder = FunctionBuilder::new(&mut compiler.ctx.func, &mut compiler.func_ctx);
+        let block = builder.create_block();
+        builder.append_block_params_for_function_params(block);
+        builder.switch_to_block(block);
+
+        let params = builder.block_params(block).to_vec();
+        let base_ptr = params[0];
+        let indices_ptr = params[1];
+        let values_ptr = params[2];
+        let mask_ptr = params[3];
+
+        let indices = builder.ins().load(I64X8, MemFlags::trusted(), indices_ptr, 0);
+        let values = builder.ins().load(I64X8, MemFlags::trusted(), values_ptr, 0);
+        let mask = builder.ins().load(I64X8, MemFlags::trusted(), mask_ptr, 0);
+
+        // Note: scale and offset are immediate values, not Value types
+        builder.ins().x86_simd_scatter(
+            MemFlags::trusted(),
+            mask,
+            values,
+            base_ptr,
+            indices,
+            1u8,   // scale: Uimm8 immediate
+            0i32,  // offset: Offset32 immediate
+        );
+
+        builder.ins().return_(&[]);
+
+        builder.seal_all_blocks();
+        builder.finalize();
+    }
+
+    compiler.ctx.set_disasm(true);
+    compiler
+        .module
+        .define_function(func_id, &mut compiler.ctx)
+        .expect("Failed to define function");
+
+    if let Some(compiled) = compiler.ctx.compiled_code() {
+        if let Some(disasm) = &compiled.vcode {
+            println!("=== VCode for i64x8_scatter_qq ===\n{}", disasm);
+            assert!(
+                disasm.contains("vpscatterqq"),
+                "Expected VPSCATTERQQ instruction"
+            );
+        }
+    }
+
+    compiler.module.clear_context(&mut compiler.ctx);
+    compiler.module.finalize_definitions().unwrap();
+
+    let code = compiler.module.get_finalized_function(func_id);
+
+    #[repr(C, align(64))]
+    struct DataArray([i64; 16]);
+    let mut data = DataArray([0; 16]);
+
+    // Scatter to positions 1, 3, 5, 7 (odd positions)
+    let indices = I64x8::new([8, 24, 40, 56, 0, 0, 0, 0]); // byte offsets
+    let values = I64x8::new([2001, 2003, 2005, 2007, 9999, 9999, 9999, 9999]);
+    // Mask: only first 4 lanes active
+    let mask = I64x8::new([-1, -1, -1, -1, 0, 0, 0, 0]);
+
+    type ScatterQQFn = unsafe extern "C" fn(*mut i64, *const I64x8, *const I64x8, *const I64x8);
+    let func: ScatterQQFn = unsafe { mem::transmute(code) };
+
+    unsafe {
+        func(data.0.as_mut_ptr(), &indices, &values, &mask);
+    }
+
+    assert_eq!(data.0[0], 0, "Position 0 should be unchanged");
+    assert_eq!(data.0[1], 2001, "Scattered to position 1");
+    assert_eq!(data.0[2], 0, "Position 2 should be unchanged");
+    assert_eq!(data.0[3], 2003, "Scattered to position 3");
+    assert_eq!(data.0[4], 0, "Position 4 should be unchanged");
+    assert_eq!(data.0[5], 2005, "Scattered to position 5");
+    assert_eq!(data.0[6], 0, "Position 6 should be unchanged");
+    assert_eq!(data.0[7], 2007, "Scattered to position 7");
+    println!("test_i64x8_scatter_qq: PASSED");
+}
+
+// =============================================================================
+// Tests: Vector Comparison producing vector mask (icmp → I32X16/I64X8)
+// =============================================================================
+//
+// This tests that icmp produces a vector mask (-1/0) that can be used for:
+// - VPBLENDMD/Q (bitselect)
+// - Conversion to k-register for VPCOMPRESSD/Q
+
+#[test]
+fn test_i32x16_icmp_gt_vector_mask() {
+    let Some(mut compiler) = TestCompiler::new() else {
+        println!("Skipping: AVX-512 not available");
+        return;
+    };
+
+    // icmp gt produces vector mask, then use it in bitselect (blend)
+    let code = compiler
+        .compile_binary_i32x16("i32x16_icmp_blend", |builder, a, threshold_vec| {
+            // Compare: a > threshold (element-wise)
+            let mask = builder.ins().icmp(IntCC::SignedGreaterThan, a, threshold_vec);
+            // Use mask to select: if a[i] > threshold then a[i] else 0
+            let zero = builder.ins().iconst(I32, 0);
+            let zero_vec = builder.ins().splat(I32X16, zero);
+            builder.ins().bitselect(mask, a, zero_vec)
+        })
+        .expect("Failed to compile");
+
+    let func: BinaryI32x16Fn = unsafe { mem::transmute(code) };
+
+    // Test: filter values > 100
+    let a = I32x16::new([50, 150, 99, 101, 200, 0, 100, 300, 75, 125, 100, 101, 50, 250, 80, 120]);
+    let threshold = I32x16::splat(100);
+    let mut result = I32x16::splat(0);
+
+    unsafe {
+        func(&a, &threshold, &mut result);
+    }
+
+    // Expected: keep values > 100, else 0
+    let expected = I32x16::new([0, 150, 0, 101, 200, 0, 0, 300, 0, 125, 0, 101, 0, 250, 0, 120]);
+    assert_eq!(result, expected);
+    println!("test_i32x16_icmp_gt_vector_mask: PASSED");
+}
+
+#[test]
+fn test_i64x8_icmp_eq_vector_mask() {
+    let Some(mut compiler) = TestCompiler::new() else {
+        println!("Skipping: AVX-512 not available");
+        return;
+    };
+
+    let code = compiler
+        .compile_binary_i64x8("i64x8_icmp_eq_blend", |builder, a, b| {
+            let mask = builder.ins().icmp(IntCC::Equal, a, b);
+            let neg_one = builder.ins().iconst(I64, -1i64 as i64);
+            let neg_one_vec = builder.ins().splat(I64X8, neg_one);
+            let zero = builder.ins().iconst(I64, 0);
+            let zero_vec = builder.ins().splat(I64X8, zero);
+            builder.ins().bitselect(mask, neg_one_vec, zero_vec)
+        })
+        .expect("Failed to compile");
+
+    let func: BinaryI64x8Fn = unsafe { mem::transmute(code) };
+
+    let a = I64x8::new([1, 2, 3, 4, 5, 6, 7, 8]);
+    let b = I64x8::new([1, 99, 3, 99, 5, 99, 7, 99]);
+    let mut result = I64x8::splat(0);
+
+    unsafe {
+        func(&a, &b, &mut result);
+    }
+
+    // Where equal: -1, else 0
+    let expected = I64x8::new([-1, 0, -1, 0, -1, 0, -1, 0]);
+    assert_eq!(result, expected);
+    println!("test_i64x8_icmp_eq_vector_mask: PASSED");
+}
+
+// =============================================================================
+// Tests: Horizontal Reduction (for aggregate final step)
+// =============================================================================
+//
+// Pattern for SUM aggregate:
+//   1. Masked accumulation across batches (VPADDD {k})
+//   2. Final horizontal reduce:
+//      - VEXTRACTI64X4 ymm, zmm, 1  (extract upper 256 bits)
+//      - VPADDD ymm, ymm, ymm
+//      - VEXTRACTI128 xmm, ymm, 1
+//      - VPADDD xmm, xmm, xmm
+//      - PSHUFD + PADDD (32-bit pairs)
+//      - MOVD eax, xmm
+
+#[test]
+#[ignore = "CLIF ireduce doesn't support vector types - need dedicated horizontal sum instruction"]
+fn test_i32x16_horizontal_sum() {
+    let Some(mut compiler) = TestCompiler::new() else {
+        println!("Skipping: AVX-512 not available");
+        return;
+    };
+
+    let mut sig = compiler.module.make_signature();
+    let ptr_type = compiler.module.target_config().pointer_type();
+    sig.params.push(AbiParam::new(ptr_type)); // values ptr
+    sig.returns.push(AbiParam::new(I32));
+    sig.call_conv = CallConv::SystemV;
+
+    let func_id = compiler
+        .module
+        .declare_function("i32x16_hsum", Linkage::Local, &sig)
+        .unwrap();
+
+    compiler.ctx.func =
+        Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), sig);
+
+    {
+        let mut builder = FunctionBuilder::new(&mut compiler.ctx.func, &mut compiler.func_ctx);
+        let block = builder.create_block();
+        builder.append_block_params_for_function_params(block);
+        builder.switch_to_block(block);
+
+        let params = builder.block_params(block).to_vec();
+        let values_ptr = params[0];
+
+        let vec = builder.ins().load(I32X16, MemFlags::trusted(), values_ptr, 0);
+
+        // Horizontal sum using vector_reduce_iadd_ordered
+        let sum = builder.ins().ireduce(I32, vec);
+
+        builder.ins().return_(&[sum]);
+
+        builder.seal_all_blocks();
+        builder.finalize();
+    }
+
+    compiler.ctx.set_disasm(true);
+    compiler
+        .module
+        .define_function(func_id, &mut compiler.ctx)
+        .expect("Failed to define function");
+
+    if let Some(compiled) = compiler.ctx.compiled_code() {
+        if let Some(disasm) = &compiled.vcode {
+            println!("=== VCode for i32x16_hsum ===\n{}", disasm);
+        }
+    }
+
+    compiler.module.clear_context(&mut compiler.ctx);
+    compiler.module.finalize_definitions().unwrap();
+
+    let code = compiler.module.get_finalized_function(func_id);
+    type HSumI32x16Fn = unsafe extern "C" fn(*const I32x16) -> i32;
+    let func: HSumI32x16Fn = unsafe { mem::transmute(code) };
+
+    // Test with known sum
+    let values = I32x16::new([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]);
+    let result = unsafe { func(&values) };
+
+    // Sum of 1..16 = 136
+    assert_eq!(result, 136, "Horizontal sum should be 136");
+    println!("test_i32x16_horizontal_sum: PASSED");
+}
+
+#[test]
+#[ignore = "CLIF ireduce doesn't support vector types - need dedicated horizontal sum instruction"]
+fn test_i64x8_horizontal_sum() {
+    let Some(mut compiler) = TestCompiler::new() else {
+        println!("Skipping: AVX-512 not available");
+        return;
+    };
+
+    let mut sig = compiler.module.make_signature();
+    let ptr_type = compiler.module.target_config().pointer_type();
+    sig.params.push(AbiParam::new(ptr_type));
+    sig.returns.push(AbiParam::new(I64));
+    sig.call_conv = CallConv::SystemV;
+
+    let func_id = compiler
+        .module
+        .declare_function("i64x8_hsum", Linkage::Local, &sig)
+        .unwrap();
+
+    compiler.ctx.func =
+        Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), sig);
+
+    {
+        let mut builder = FunctionBuilder::new(&mut compiler.ctx.func, &mut compiler.func_ctx);
+        let block = builder.create_block();
+        builder.append_block_params_for_function_params(block);
+        builder.switch_to_block(block);
+
+        let params = builder.block_params(block).to_vec();
+        let values_ptr = params[0];
+
+        let vec = builder.ins().load(I64X8, MemFlags::trusted(), values_ptr, 0);
+        let sum = builder.ins().ireduce(I64, vec);
+
+        builder.ins().return_(&[sum]);
+
+        builder.seal_all_blocks();
+        builder.finalize();
+    }
+
+    compiler.ctx.set_disasm(true);
+    compiler
+        .module
+        .define_function(func_id, &mut compiler.ctx)
+        .expect("Failed to define function");
+
+    if let Some(compiled) = compiler.ctx.compiled_code() {
+        if let Some(disasm) = &compiled.vcode {
+            println!("=== VCode for i64x8_hsum ===\n{}", disasm);
+        }
+    }
+
+    compiler.module.clear_context(&mut compiler.ctx);
+    compiler.module.finalize_definitions().unwrap();
+
+    let code = compiler.module.get_finalized_function(func_id);
+    type HSumI64x8Fn = unsafe extern "C" fn(*const I64x8) -> i64;
+    let func: HSumI64x8Fn = unsafe { mem::transmute(code) };
+
+    let values = I64x8::new([100, 200, 300, 400, 500, 600, 700, 800]);
+    let result = unsafe { func(&values) };
+
+    assert_eq!(result, 3600, "Horizontal sum should be 3600");
+    println!("test_i64x8_horizontal_sum: PASSED");
+}
+
+// =============================================================================
+// Tests: Complete Filter-Compress-Count Pattern
+// =============================================================================
+//
+// This tests the complete vectorized filter pattern:
+// 1. Load column batch (VMOVDQU32)
+// 2. Compare with threshold (VPCMPD → k-register internally)
+// 3. Create index vector [0,1,2,...,15]
+// 4. Compress indices (VPCOMPRESSD)
+// 5. Count survivors (POPCNT of original mask)
+
+#[test]
+#[ignore = "CLIF ireduce doesn't support vector types - need dedicated horizontal sum or VPMOVMSKB+POPCNT pattern"]
+fn test_filter_compress_pattern() {
+    let Some(mut compiler) = TestCompiler::new() else {
+        println!("Skipping: AVX-512 not available");
+        return;
+    };
+
+    let mut sig = compiler.module.make_signature();
+    let ptr_type = compiler.module.target_config().pointer_type();
+    sig.params.push(AbiParam::new(ptr_type)); // values ptr
+    sig.params.push(AbiParam::new(I32));       // threshold
+    sig.params.push(AbiParam::new(ptr_type)); // output indices ptr
+    sig.returns.push(AbiParam::new(I32));      // count of survivors
+    sig.call_conv = CallConv::SystemV;
+
+    let func_id = compiler
+        .module
+        .declare_function("filter_compress", Linkage::Local, &sig)
+        .unwrap();
+
+    compiler.ctx.func =
+        Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), sig);
+
+    {
+        let mut builder = FunctionBuilder::new(&mut compiler.ctx.func, &mut compiler.func_ctx);
+        let block = builder.create_block();
+        builder.append_block_params_for_function_params(block);
+        builder.switch_to_block(block);
+
+        let params = builder.block_params(block).to_vec();
+        let values_ptr = params[0];
+        let threshold = params[1];
+        let output_ptr = params[2];
+
+        // Load values
+        let values = builder.ins().load(I32X16, MemFlags::trusted(), values_ptr, 0);
+
+        // Create threshold vector
+        let threshold_vec = builder.ins().splat(I32X16, threshold);
+
+        // Compare: values > threshold (produces mask)
+        let mask = builder
+            .ins()
+            .icmp(IntCC::SignedGreaterThan, values, threshold_vec);
+
+        // Create index vector [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+        let indices = {
+            let c0 = builder.ins().iconst(I32, 0);
+            let c1 = builder.ins().iconst(I32, 1);
+            let c2 = builder.ins().iconst(I32, 2);
+            let c3 = builder.ins().iconst(I32, 3);
+            let c4 = builder.ins().iconst(I32, 4);
+            let c5 = builder.ins().iconst(I32, 5);
+            let c6 = builder.ins().iconst(I32, 6);
+            let c7 = builder.ins().iconst(I32, 7);
+            let c8 = builder.ins().iconst(I32, 8);
+            let c9 = builder.ins().iconst(I32, 9);
+            let c10 = builder.ins().iconst(I32, 10);
+            let c11 = builder.ins().iconst(I32, 11);
+            let c12 = builder.ins().iconst(I32, 12);
+            let c13 = builder.ins().iconst(I32, 13);
+            let c14 = builder.ins().iconst(I32, 14);
+            let c15 = builder.ins().iconst(I32, 15);
+            let v = builder.ins().scalar_to_vector(I32X16, c0);
+            let v = builder.ins().insertlane(v, c1, 1);
+            let v = builder.ins().insertlane(v, c2, 2);
+            let v = builder.ins().insertlane(v, c3, 3);
+            let v = builder.ins().insertlane(v, c4, 4);
+            let v = builder.ins().insertlane(v, c5, 5);
+            let v = builder.ins().insertlane(v, c6, 6);
+            let v = builder.ins().insertlane(v, c7, 7);
+            let v = builder.ins().insertlane(v, c8, 8);
+            let v = builder.ins().insertlane(v, c9, 9);
+            let v = builder.ins().insertlane(v, c10, 10);
+            let v = builder.ins().insertlane(v, c11, 11);
+            let v = builder.ins().insertlane(v, c12, 12);
+            let v = builder.ins().insertlane(v, c13, 13);
+            let v = builder.ins().insertlane(v, c14, 14);
+            builder.ins().insertlane(v, c15, 15)
+        };
+
+        // Compress indices based on mask
+        // First argument is the result type
+        let compressed = builder.ins().x86_simd_compress(I32X16, mask, indices);
+
+        // Store compressed indices
+        builder
+            .ins()
+            .store(MemFlags::trusted(), compressed, output_ptr, 0);
+
+        // Count survivors via popcnt on mask
+        // First reduce mask to scalar by summing (each -1 becomes 1, 0 stays 0)
+        // Actually use a different approach: negate mask (-1 → 1, 0 → 0) then sum
+        let neg_mask = builder.ins().ineg(mask);
+        let count = builder.ins().ireduce(I32, neg_mask);
+
+        builder.ins().return_(&[count]);
+
+        builder.seal_all_blocks();
+        builder.finalize();
+    }
+
+    compiler.ctx.set_disasm(true);
+    compiler
+        .module
+        .define_function(func_id, &mut compiler.ctx)
+        .expect("Failed to define function");
+
+    if let Some(compiled) = compiler.ctx.compiled_code() {
+        if let Some(disasm) = &compiled.vcode {
+            println!("=== VCode for filter_compress ===\n{}", disasm);
+            // Should see VPCMPD, VPCOMPRESSD
+            assert!(
+                disasm.contains("vpcmp") || disasm.contains("vpcompressd"),
+                "Expected filter/compress instructions"
+            );
+        }
+    }
+
+    compiler.module.clear_context(&mut compiler.ctx);
+    compiler.module.finalize_definitions().unwrap();
+
+    let code = compiler.module.get_finalized_function(func_id);
+    type FilterCompressFn = unsafe extern "C" fn(*const I32x16, i32, *mut I32x16) -> i32;
+    let func: FilterCompressFn = unsafe { mem::transmute(code) };
+
+    // Test: filter values > 100
+    let values = I32x16::new([50, 150, 99, 101, 200, 0, 100, 300, 75, 125, 100, 101, 50, 250, 80, 120]);
+    let mut output = I32x16::splat(-1);
+
+    let count = unsafe { func(&values, 100, &mut output) };
+
+    // Survivors: indices 1 (150), 3 (101), 4 (200), 7 (300), 9 (125), 11 (101), 13 (250), 15 (120)
+    assert_eq!(count, 8, "Should have 8 survivors");
+    assert_eq!(output.0[0], 1, "First survivor at index 1");
+    assert_eq!(output.0[1], 3, "Second survivor at index 3");
+    assert_eq!(output.0[2], 4, "Third survivor at index 4");
+    assert_eq!(output.0[3], 7, "Fourth survivor at index 7");
+    assert_eq!(output.0[4], 9, "Fifth survivor at index 9");
+    assert_eq!(output.0[5], 11, "Sixth survivor at index 11");
+    assert_eq!(output.0[6], 13, "Seventh survivor at index 13");
+    assert_eq!(output.0[7], 15, "Eighth survivor at index 15");
+    println!("test_filter_compress_pattern: PASSED");
+}
+
+// =============================================================================
+// Tests: Masked Accumulation (for aggregate SUM with predicate)
+// =============================================================================
+//
+// Pattern for masked SUM:
+//   acc = vpaddd {k}, acc, values  ; only add where mask is set
+//
+// Using merge-masking mode (not zeroing), accumulator values are preserved
+// for lanes where mask is 0.
+
+#[test]
+fn test_i32x16_masked_accumulate() {
+    let Some(mut compiler) = TestCompiler::new() else {
+        println!("Skipping: AVX-512 not available");
+        return;
+    };
+
+    // This tests bitselect(mask, acc+values, acc) which should fuse to masked add
+    let mut sig = compiler.module.make_signature();
+    let ptr_type = compiler.module.target_config().pointer_type();
+    sig.params.push(AbiParam::new(ptr_type)); // accumulator ptr
+    sig.params.push(AbiParam::new(ptr_type)); // values ptr
+    sig.params.push(AbiParam::new(ptr_type)); // mask ptr
+    sig.params.push(AbiParam::new(ptr_type)); // output ptr
+    sig.call_conv = CallConv::SystemV;
+
+    let func_id = compiler
+        .module
+        .declare_function("i32x16_masked_acc", Linkage::Local, &sig)
+        .unwrap();
+
+    compiler.ctx.func =
+        Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), sig);
+
+    {
+        let mut builder = FunctionBuilder::new(&mut compiler.ctx.func, &mut compiler.func_ctx);
+        let block = builder.create_block();
+        builder.append_block_params_for_function_params(block);
+        builder.switch_to_block(block);
+
+        let params = builder.block_params(block).to_vec();
+        let acc_ptr = params[0];
+        let values_ptr = params[1];
+        let mask_ptr = params[2];
+        let out_ptr = params[3];
+
+        let acc = builder.ins().load(I32X16, MemFlags::trusted(), acc_ptr, 0);
+        let values = builder.ins().load(I32X16, MemFlags::trusted(), values_ptr, 0);
+        let mask = builder.ins().load(I32X16, MemFlags::trusted(), mask_ptr, 0);
+
+        // acc + values where mask is set, else acc
+        let sum = builder.ins().iadd(acc, values);
+        let result = builder.ins().bitselect(mask, sum, acc);
+
+        builder.ins().store(MemFlags::trusted(), result, out_ptr, 0);
+        builder.ins().return_(&[]);
+
+        builder.seal_all_blocks();
+        builder.finalize();
+    }
+
+    compiler.ctx.set_disasm(true);
+    compiler
+        .module
+        .define_function(func_id, &mut compiler.ctx)
+        .expect("Failed to define function");
+
+    if let Some(compiled) = compiler.ctx.compiled_code() {
+        if let Some(disasm) = &compiled.vcode {
+            println!("=== VCode for i32x16_masked_acc ===\n{}", disasm);
+            // Should see fused masked VPADDD or VPBLENDMD
+        }
+    }
+
+    compiler.module.clear_context(&mut compiler.ctx);
+    compiler.module.finalize_definitions().unwrap();
+
+    let code = compiler.module.get_finalized_function(func_id);
+    type MaskedAccFn =
+        unsafe extern "C" fn(*const I32x16, *const I32x16, *const I32x16, *mut I32x16);
+    let func: MaskedAccFn = unsafe { mem::transmute(code) };
+
+    let acc = I32x16::new([100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100, 100]);
+    let values = I32x16::new([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]);
+    // Mask: active for even indices only
+    let mask = I32x16::new([-1, 0, -1, 0, -1, 0, -1, 0, -1, 0, -1, 0, -1, 0, -1, 0]);
+    let mut result = I32x16::splat(0);
+
+    unsafe {
+        func(&acc, &values, &mask, &mut result);
+    }
+
+    // Even indices: acc + values, odd indices: acc unchanged
+    let expected = I32x16::new([101, 100, 103, 100, 105, 100, 107, 100, 109, 100, 111, 100, 113, 100, 115, 100]);
+    assert_eq!(result, expected);
+    println!("test_i32x16_masked_accumulate: PASSED");
+}
+
+// =============================================================================
+// Tests: GermanString Pre-filter Pattern (Gather both halves)
+// =============================================================================
+//
+// For GermanString (16-byte values), we need to:
+// 1. Gather low 64 bits (contains prefix[4] + len_tag[4] or inline data[8])
+// 2. Gather high 64 bits (contains inline data[6] + tag[1] or ptr[7] + tag[1])
+// 3. Extract length from either location based on tag
+// 4. Compare length and prefix
+
+#[test]
+fn test_germanstring_gather_pattern() {
+    let Some(mut compiler) = TestCompiler::new() else {
+        println!("Skipping: AVX-512 not available");
+        return;
+    };
+
+    // Simulate GermanString layout with 16-byte structs
+    // We'll gather low64 and high64 separately using VPGATHERQQ
+
+    let mut sig = compiler.module.make_signature();
+    let ptr_type = compiler.module.target_config().pointer_type();
+    sig.params.push(AbiParam::new(ptr_type)); // base ptr (array of 16-byte GermanStrings)
+    sig.params.push(AbiParam::new(ptr_type)); // row indices ptr (I64X8, pre-scaled by 16)
+    sig.params.push(AbiParam::new(ptr_type)); // output low64 ptr
+    sig.params.push(AbiParam::new(ptr_type)); // output high64 ptr
+    sig.call_conv = CallConv::SystemV;
+
+    let func_id = compiler
+        .module
+        .declare_function("germanstring_gather", Linkage::Local, &sig)
+        .unwrap();
+
+    compiler.ctx.func =
+        Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), sig);
+
+    {
+        let mut builder = FunctionBuilder::new(&mut compiler.ctx.func, &mut compiler.func_ctx);
+        let block = builder.create_block();
+        builder.append_block_params_for_function_params(block);
+        builder.switch_to_block(block);
+
+        let params = builder.block_params(block).to_vec();
+        let base_ptr = params[0];
+        let indices_ptr = params[1];
+        let low64_ptr = params[2];
+        let high64_ptr = params[3];
+
+        // Load byte-offset indices (pre-scaled by 16 for GermanString stride)
+        let indices = builder.ins().load(I64X8, MemFlags::trusted(), indices_ptr, 0);
+
+        // Gather low 64 bits
+        // First argument is the result type, then MemFlags, then base, indices, scale, offset
+        let low64 = builder.ins().x86_simd_gather(
+            I64X8,             // result type
+            MemFlags::trusted(),
+            base_ptr,
+            indices,
+            1u8,   // scale: Uimm8 immediate
+            0i32,  // offset: Offset32 immediate (low half at offset 0)
+        );
+
+        // Gather high 64 bits (offset by 8 bytes)
+        let high64 = builder.ins().x86_simd_gather(
+            I64X8,             // result type
+            MemFlags::trusted(),
+            base_ptr,
+            indices,
+            1u8,   // scale: Uimm8 immediate
+            8i32,  // offset: Offset32 immediate (high half at offset 8)
+        );
+
+        builder.ins().store(MemFlags::trusted(), low64, low64_ptr, 0);
+        builder.ins().store(MemFlags::trusted(), high64, high64_ptr, 0);
+        builder.ins().return_(&[]);
+
+        builder.seal_all_blocks();
+        builder.finalize();
+    }
+
+    compiler.ctx.set_disasm(true);
+    compiler
+        .module
+        .define_function(func_id, &mut compiler.ctx)
+        .expect("Failed to define function");
+
+    if let Some(compiled) = compiler.ctx.compiled_code() {
+        if let Some(disasm) = &compiled.vcode {
+            println!("=== VCode for germanstring_gather ===\n{}", disasm);
+            // Should see two VPGATHERQQ instructions
+            let gather_count = disasm.matches("vpgatherqq").count();
+            assert!(
+                gather_count >= 2,
+                "Expected at least 2 VPGATHERQQ instructions, found {}",
+                gather_count
+            );
+        }
+    }
+
+    compiler.module.clear_context(&mut compiler.ctx);
+    compiler.module.finalize_definitions().unwrap();
+
+    let code = compiler.module.get_finalized_function(func_id);
+
+    // Create test data: 16-byte "GermanStrings"
+    #[repr(C, align(64))]
+    struct GermanStringArray([[u8; 16]; 16]);
+
+    let mut data = GermanStringArray([[0u8; 16]; 16]);
+    // Fill with recognizable patterns
+    for i in 0..16 {
+        // Low 8 bytes: 0x1000 + i as prefix pattern
+        let low_val = 0x1000u64 + i as u64;
+        let high_val = 0x2000u64 + i as u64;
+        data.0[i][0..8].copy_from_slice(&low_val.to_le_bytes());
+        data.0[i][8..16].copy_from_slice(&high_val.to_le_bytes());
+    }
+
+    // Indices: gather rows 0, 2, 4, 6, 8, 10, 12, 14 (byte offsets for 16-byte stride)
+    let indices = I64x8::new([0, 32, 64, 96, 128, 160, 192, 224]);
+    let mut low64_result = I64x8::splat(0);
+    let mut high64_result = I64x8::splat(0);
+
+    type GatherGermanStringFn =
+        unsafe extern "C" fn(*const u8, *const I64x8, *mut I64x8, *mut I64x8);
+    let func: GatherGermanStringFn = unsafe { mem::transmute(code) };
+
+    unsafe {
+        func(
+            data.0.as_ptr() as *const u8,
+            &indices,
+            &mut low64_result,
+            &mut high64_result,
+        );
+    }
+
+    // Verify we gathered the correct data
+    assert_eq!(low64_result.0[0] as u64, 0x1000, "Row 0 low64");
+    assert_eq!(low64_result.0[1] as u64, 0x1002, "Row 2 low64");
+    assert_eq!(low64_result.0[2] as u64, 0x1004, "Row 4 low64");
+    assert_eq!(high64_result.0[0] as u64, 0x2000, "Row 0 high64");
+    assert_eq!(high64_result.0[1] as u64, 0x2002, "Row 2 high64");
+    println!("test_germanstring_gather_pattern: PASSED");
+}
+
+// =============================================================================
+// Tests: F64X8 Floating-Point Operations (for aggregate functions)
+// =============================================================================
+
+#[test]
+fn test_f64x8_fadd() {
+    let Some(mut compiler) = TestCompiler::new() else {
+        println!("Skipping: AVX-512 not available");
+        return;
+    };
+
+    let code = compiler
+        .compile_binary_f64x8("f64x8_fadd", |builder, a, b| builder.ins().fadd(a, b))
+        .expect("Failed to compile");
+
+    let func: BinaryF64x8Fn = unsafe { mem::transmute(code) };
+
+    let a = F64x8::new([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]);
+    let b = F64x8::new([0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5]);
+    let mut result = F64x8::splat(0.0);
+
+    unsafe {
+        func(&a, &b, &mut result);
+    }
+
+    let expected = F64x8::new([1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5, 8.5]);
+    assert_eq!(result, expected);
+    println!("test_f64x8_fadd: PASSED");
+}
+
+#[test]
+fn test_f64x8_fmul() {
+    let Some(mut compiler) = TestCompiler::new() else {
+        println!("Skipping: AVX-512 not available");
+        return;
+    };
+
+    let code = compiler
+        .compile_binary_f64x8("f64x8_fmul", |builder, a, b| builder.ins().fmul(a, b))
+        .expect("Failed to compile");
+
+    let func: BinaryF64x8Fn = unsafe { mem::transmute(code) };
+
+    let a = F64x8::new([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]);
+    let b = F64x8::new([2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0]);
+    let mut result = F64x8::splat(0.0);
+
+    unsafe {
+        func(&a, &b, &mut result);
+    }
+
+    let expected = F64x8::new([2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0]);
+    assert_eq!(result, expected);
+    println!("test_f64x8_fmul: PASSED");
+}
+
+#[test]
+fn test_f64x8_fdiv() {
+    let Some(mut compiler) = TestCompiler::new() else {
+        println!("Skipping: AVX-512 not available");
+        return;
+    };
+
+    let code = compiler
+        .compile_binary_f64x8("f64x8_fdiv", |builder, a, b| builder.ins().fdiv(a, b))
+        .expect("Failed to compile");
+
+    let func: BinaryF64x8Fn = unsafe { mem::transmute(code) };
+
+    let a = F64x8::new([10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0]);
+    let b = F64x8::new([2.0, 4.0, 5.0, 8.0, 10.0, 6.0, 7.0, 8.0]);
+    let mut result = F64x8::splat(0.0);
+
+    unsafe {
+        func(&a, &b, &mut result);
+    }
+
+    let expected = F64x8::new([5.0, 5.0, 6.0, 5.0, 5.0, 10.0, 10.0, 10.0]);
+    assert_eq!(result, expected);
+    println!("test_f64x8_fdiv: PASSED");
+}
+
+// =============================================================================
+// Tests: F32X16 Floating-Point Operations
+// =============================================================================
+
+#[test]
+fn test_f32x16_fadd() {
+    let Some(mut compiler) = TestCompiler::new() else {
+        println!("Skipping: AVX-512 not available");
+        return;
+    };
+
+    let code = compiler
+        .compile_binary_f32x16("f32x16_fadd", |builder, a, b| builder.ins().fadd(a, b))
+        .expect("Failed to compile");
+
+    let func: BinaryF32x16Fn = unsafe { mem::transmute(code) };
+
+    let a = F32x16::new([
+        1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0,
+    ]);
+    let b = F32x16::splat(0.5);
+    let mut result = F32x16::splat(0.0);
+
+    unsafe {
+        func(&a, &b, &mut result);
+    }
+
+    let expected = F32x16::new([
+        1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5, 8.5, 9.5, 10.5, 11.5, 12.5, 13.5, 14.5, 15.5, 16.5,
+    ]);
+    assert_eq!(result, expected);
+    println!("test_f32x16_fadd: PASSED");
+}
+
+#[test]
+fn test_f32x16_fmul() {
+    let Some(mut compiler) = TestCompiler::new() else {
+        println!("Skipping: AVX-512 not available");
+        return;
+    };
+
+    let code = compiler
+        .compile_binary_f32x16("f32x16_fmul", |builder, a, b| builder.ins().fmul(a, b))
+        .expect("Failed to compile");
+
+    let func: BinaryF32x16Fn = unsafe { mem::transmute(code) };
+
+    let a = F32x16::new([
+        1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0,
+    ]);
+    let b = F32x16::splat(2.0);
+    let mut result = F32x16::splat(0.0);
+
+    unsafe {
+        func(&a, &b, &mut result);
+    }
+
+    let expected = F32x16::new([
+        2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0, 20.0, 22.0, 24.0, 26.0, 28.0, 30.0, 32.0,
+    ]);
+    assert_eq!(result, expected);
+    println!("test_f32x16_fmul: PASSED");
+}
+
+// =============================================================================
+// Tests: VPBLENDMD/Q for CASE/COALESCE patterns
+// =============================================================================
+
+#[test]
+fn test_i32x16_blend_case_pattern() {
+    let Some(mut compiler) = TestCompiler::new() else {
+        println!("Skipping: AVX-512 not available");
+        return;
+    };
+
+    // CASE WHEN x > 0 THEN x ELSE -x END (abs via blend)
+    let code = compiler
+        .compile_unary_i32x16("i32x16_blend_abs", |builder, x| {
+            let zero = builder.ins().iconst(I32, 0);
+            let zero_vec = builder.ins().splat(I32X16, zero);
+            // mask = x > 0
+            let mask = builder.ins().icmp(IntCC::SignedGreaterThan, x, zero_vec);
+            // neg_x = -x
+            let neg_x = builder.ins().ineg(x);
+            // result = mask ? x : neg_x
+            builder.ins().bitselect(mask, x, neg_x)
+        })
+        .expect("Failed to compile");
+
+    type UnaryI32x16Fn = unsafe extern "C" fn(*const I32x16, *mut I32x16);
+    let func: UnaryI32x16Fn = unsafe { mem::transmute(code) };
+
+    let x = I32x16::new([
+        -5, 5, -10, 10, 0, -100, 100, -1, 1, -50, 50, i32::MIN, i32::MAX, -42, 42, 0,
+    ]);
+    let mut result = I32x16::splat(0);
+
+    unsafe {
+        func(&x, &mut result);
+    }
+
+    // Note: -i32::MIN overflows, but that's expected behavior
+    let expected = I32x16::new([
+        5,
+        5,
+        10,
+        10,
+        0,
+        100,
+        100,
+        1,
+        1,
+        50,
+        50,
+        i32::MIN, // overflow: -MIN = MIN
+        i32::MAX,
+        42,
+        42,
+        0,
+    ]);
+    assert_eq!(result, expected);
+    println!("test_i32x16_blend_case_pattern: PASSED");
+}
+
+#[test]
+fn test_i64x8_coalesce_pattern() {
+    let Some(mut compiler) = TestCompiler::new() else {
+        println!("Skipping: AVX-512 not available");
+        return;
+    };
+
+    // COALESCE(a, b): return a if a != NULL_MARKER, else b
+    // Using 0 as NULL marker for this test
+    let code = compiler
+        .compile_binary_i64x8("i64x8_coalesce", |builder, a, b| {
+            let zero = builder.ins().iconst(I64, 0);
+            let zero_vec = builder.ins().splat(I64X8, zero);
+            // mask = a != 0 (a is not null)
+            let mask = builder.ins().icmp(IntCC::NotEqual, a, zero_vec);
+            // result = mask ? a : b
+            builder.ins().bitselect(mask, a, b)
+        })
+        .expect("Failed to compile");
+
+    let func: BinaryI64x8Fn = unsafe { mem::transmute(code) };
+
+    let a = I64x8::new([100, 0, 300, 0, 500, 0, 700, 0]); // 0 = null
+    let b = I64x8::new([1, 2, 3, 4, 5, 6, 7, 8]); // fallback values
+    let mut result = I64x8::splat(0);
+
+    unsafe {
+        func(&a, &b, &mut result);
+    }
+
+    // Where a is non-null (!=0), use a; else use b
+    let expected = I64x8::new([100, 2, 300, 4, 500, 6, 700, 8]);
+    assert_eq!(result, expected);
+    println!("test_i64x8_coalesce_pattern: PASSED");
+}
+
+// =============================================================================
+// Tests: POPCNT via scalar fallback (for counting survivors)
+// =============================================================================
+//
+// Note: Cranelift's `popcnt` on vectors returns per-lane popcnt, not total.
+// For counting survivors from a mask, we use ireduce (horizontal sum) on
+// the negated mask (-1 → 1, 0 → 0).
+
+#[test]
+#[ignore = "CLIF ireduce doesn't support vector types - need VPMOVMSKB + POPCNT pattern"]
+fn test_count_mask_bits() {
+    let Some(mut compiler) = TestCompiler::new() else {
+        println!("Skipping: AVX-512 not available");
+        return;
+    };
+
+    let mut sig = compiler.module.make_signature();
+    let ptr_type = compiler.module.target_config().pointer_type();
+    sig.params.push(AbiParam::new(ptr_type)); // mask ptr (I32X16 with -1/0)
+    sig.returns.push(AbiParam::new(I32)); // count
+    sig.call_conv = CallConv::SystemV;
+
+    let func_id = compiler
+        .module
+        .declare_function("count_mask", Linkage::Local, &sig)
+        .unwrap();
+
+    compiler.ctx.func =
+        Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), sig);
+
+    {
+        let mut builder = FunctionBuilder::new(&mut compiler.ctx.func, &mut compiler.func_ctx);
+        let block = builder.create_block();
+        builder.append_block_params_for_function_params(block);
+        builder.switch_to_block(block);
+
+        let params = builder.block_params(block).to_vec();
+        let mask_ptr = params[0];
+
+        let mask = builder.ins().load(I32X16, MemFlags::trusted(), mask_ptr, 0);
+
+        // -mask turns -1 → 1, 0 → 0
+        let ones = builder.ins().ineg(mask);
+
+        // Horizontal sum of ones = popcount of original mask
+        let count = builder.ins().ireduce(I32, ones);
+
+        builder.ins().return_(&[count]);
+
+        builder.seal_all_blocks();
+        builder.finalize();
+    }
+
+    compiler.ctx.set_disasm(true);
+    compiler
+        .module
+        .define_function(func_id, &mut compiler.ctx)
+        .expect("Failed to define function");
+
+    if let Some(compiled) = compiler.ctx.compiled_code() {
+        if let Some(disasm) = &compiled.vcode {
+            println!("=== VCode for count_mask ===\n{}", disasm);
+        }
+    }
+
+    compiler.module.clear_context(&mut compiler.ctx);
+    compiler.module.finalize_definitions().unwrap();
+
+    let code = compiler.module.get_finalized_function(func_id);
+    type CountMaskFn = unsafe extern "C" fn(*const I32x16) -> i32;
+    let func: CountMaskFn = unsafe { mem::transmute(code) };
+
+    // Test: 7 bits set
+    let mask = I32x16::new([-1, 0, -1, -1, 0, 0, -1, 0, -1, 0, 0, -1, 0, 0, 0, -1]);
+    let count = unsafe { func(&mask) };
+
+    assert_eq!(count, 7, "Should count 7 set bits");
+    println!("test_count_mask_bits: PASSED");
+}

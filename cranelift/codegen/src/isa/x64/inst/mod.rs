@@ -133,6 +133,10 @@ impl Inst {
             | Inst::TurinMaskLogic { .. }
             | Inst::TurinKmov { .. }
             | Inst::TurinKortest { .. }
+            | Inst::TurinMaskShift { .. }
+            | Inst::TurinMaskUnpack { .. }
+            | Inst::TurinMaskAdd { .. }
+            | Inst::TurinMaskTest { .. }
             | Inst::TurinGather { .. }
             | Inst::TurinScatter { .. }
             | Inst::TurinVmovmsk32 { .. }
@@ -149,11 +153,19 @@ impl Inst {
             | Inst::TurinAvx512Ternlog { .. }
             | Inst::TurinAvx512ImmRotate { .. }
             | Inst::TurinAvx512ImmShuffle { .. }
+            | Inst::TurinAvx512LaneShuffle { .. }
             | Inst::TurinAvx512Vnni { .. }
             | Inst::TurinVp2Intersect { .. }
             | Inst::TurinAvx512FpCmp { .. }
             | Inst::TurinAvx512Extract { .. }
+            | Inst::TurinAvx512Insert { .. }
             | Inst::TurinAvx512FpSpecial { .. } => emit_info.avx512f(),
+
+            // AVX-512BW required for byte/word mask operations
+            Inst::TurinVmovmsk8 { .. }
+            | Inst::TurinVmovmsk16 { .. }
+            | Inst::TurinMovm2b { .. }
+            | Inst::TurinMovm2w { .. } => emit_info.avx512bw(),
 
             Inst::External { inst } => inst.is_available(&emit_info),
         }
@@ -981,6 +993,32 @@ impl PrettyPrint for Inst {
                 format!("kortestw {src1}, {src2}")
             }
 
+            Inst::TurinMaskShift { op, dst, src, imm8 } => {
+                let dst = pretty_print_reg(dst.to_reg(), 8);
+                let src = pretty_print_reg(*src, 8);
+                format!("{} {dst}, {src}, {imm8}", op.name())
+            }
+
+            Inst::TurinMaskUnpack { op, dst, src1, src2 } => {
+                let dst = pretty_print_reg(dst.to_reg(), 8);
+                let src1 = pretty_print_reg(*src1, 8);
+                let src2 = pretty_print_reg(*src2, 8);
+                format!("{} {dst}, {src1}, {src2}", op.name())
+            }
+
+            Inst::TurinMaskAdd { op, dst, src1, src2 } => {
+                let dst = pretty_print_reg(dst.to_reg(), 8);
+                let src1 = pretty_print_reg(*src1, 8);
+                let src2 = pretty_print_reg(*src2, 8);
+                format!("{} {dst}, {src1}, {src2}", op.name())
+            }
+
+            Inst::TurinMaskTest { op, src1, src2 } => {
+                let src1 = pretty_print_reg(*src1, 8);
+                let src2 = pretty_print_reg(*src2, 8);
+                format!("{} {src1}, {src2}", op.name())
+            }
+
             Inst::TurinGather { op, dst, base, index, scale, disp, mask } => {
                 let dst = pretty_print_reg(dst.to_reg(), 64);
                 let base = pretty_print_reg(*base, 8);
@@ -1036,6 +1074,30 @@ impl PrettyPrint for Inst {
                 let dst = pretty_print_reg(dst.to_reg().to_reg(), 64);
                 let src = pretty_print_reg(*src, 8);
                 format!("vpmovm2q {dst}, {src}")
+            }
+
+            Inst::TurinVmovmsk8 { dst, src } => {
+                let dst = pretty_print_reg(dst.to_reg(), 8);
+                let src = pretty_print_reg(src.to_reg(), 64);
+                format!("vpmovb2m {dst}, {src}")
+            }
+
+            Inst::TurinVmovmsk16 { dst, src } => {
+                let dst = pretty_print_reg(dst.to_reg(), 8);
+                let src = pretty_print_reg(src.to_reg(), 64);
+                format!("vpmovw2m {dst}, {src}")
+            }
+
+            Inst::TurinMovm2b { dst, src } => {
+                let dst = pretty_print_reg(dst.to_reg().to_reg(), 64);
+                let src = pretty_print_reg(*src, 8);
+                format!("vpmovm2b {dst}, {src}")
+            }
+
+            Inst::TurinMovm2w { dst, src } => {
+                let dst = pretty_print_reg(dst.to_reg().to_reg(), 64);
+                let src = pretty_print_reg(*src, 8);
+                format!("vpmovm2w {dst}, {src}")
             }
 
             Inst::TurinBroadcastd { dst, src } => {
@@ -1295,6 +1357,32 @@ impl PrettyPrint for Inst {
                 format!("{op_name} {src}, $0x{imm8:02x}, {dst}{mask_str}")
             }
 
+            Inst::TurinAvx512LaneShuffle {
+                op,
+                dst,
+                src1,
+                src2,
+                imm8,
+                mask,
+                merge,
+            } => {
+                let dst = pretty_print_reg(dst.to_reg(), 64);
+                let src1 = pretty_print_reg(*src1, 64);
+                let src2 = src2.pretty_print(64);
+                let op_name = op.name();
+                let mask_str = if let Some(m) = mask {
+                    let m_str = pretty_print_reg(m.to_reg(), 8);
+                    let merge_str = match merge {
+                        turin::MergeMode::Zeroing => "z",
+                        turin::MergeMode::Merging => "",
+                    };
+                    format!(" {{{m_str}}}{merge_str}")
+                } else {
+                    String::new()
+                };
+                format!("{op_name} {src1}, {src2}, $0x{imm8:02x}, {dst}{mask_str}")
+            }
+
             Inst::TurinAvx512FpCmp {
                 size,
                 dst,
@@ -1325,6 +1413,32 @@ impl PrettyPrint for Inst {
                 let src = pretty_print_reg(*src, 64);
                 let op_name = op.name();
                 format!("{op_name} {src}, ${lane}, {dst}")
+            }
+
+            Inst::TurinAvx512Insert {
+                op,
+                dst,
+                src1,
+                src2,
+                lane,
+                mask,
+                merge,
+            } => {
+                let dst = pretty_print_reg(dst.to_reg(), 64);
+                let src1 = pretty_print_reg(*src1, 64);
+                let src2 = src2.pretty_print(16); // 128-bit XMM source
+                let op_name = op.name();
+                let mask_str = if let Some(m) = mask {
+                    let m_str = pretty_print_reg(m.to_reg(), 8);
+                    let merge_str = match merge {
+                        turin::MergeMode::Zeroing => "z",
+                        turin::MergeMode::Merging => "",
+                    };
+                    format!(" {{{m_str}}}{merge_str}")
+                } else {
+                    String::new()
+                };
+                format!("{op_name} {src1}, {src2}, ${lane}, {dst}{mask_str}")
             }
 
             Inst::TurinAvx512FpSpecial {
@@ -1735,10 +1849,15 @@ fn x64_get_operands(inst: &mut Inst, collector: &mut impl OperandVisitor) {
 
         Inst::TurinAvx512Cmp { dst, src1, src2, mask, .. } => {
             collector.reg_use(src1);
-            collector.reg_def(dst);
+            // dst is a k-register - if physical, mark as nonallocatable
+            if let Some(rreg) = dst.to_reg().to_real_reg() {
+                collector.reg_fixed_nonallocatable(rreg.into());
+            }
             src2.get_operands(collector);
             if let Some(m) = mask {
-                collector.reg_use(m);
+                if let Some(rreg) = m.to_real_reg() {
+                    collector.reg_fixed_nonallocatable(rreg.into());
+                }
             }
         }
 
@@ -1797,6 +1916,32 @@ fn x64_get_operands(inst: &mut Inst, collector: &mut impl OperandVisitor) {
             collector.reg_fixed_nonallocatable(src2.to_real_reg().unwrap().into());
         }
 
+        Inst::TurinMaskShift { dst, src, .. } => {
+            // K-register shift: dst and src are k-registers (physical)
+            collector.reg_fixed_nonallocatable(dst.to_reg().to_real_reg().unwrap().into());
+            collector.reg_fixed_nonallocatable(src.to_real_reg().unwrap().into());
+        }
+
+        Inst::TurinMaskUnpack { dst, src1, src2, .. } => {
+            // K-register unpack: all operands are k-registers (physical)
+            collector.reg_fixed_nonallocatable(dst.to_reg().to_real_reg().unwrap().into());
+            collector.reg_fixed_nonallocatable(src1.to_real_reg().unwrap().into());
+            collector.reg_fixed_nonallocatable(src2.to_real_reg().unwrap().into());
+        }
+
+        Inst::TurinMaskAdd { dst, src1, src2, .. } => {
+            // K-register add: all operands are k-registers (physical)
+            collector.reg_fixed_nonallocatable(dst.to_reg().to_real_reg().unwrap().into());
+            collector.reg_fixed_nonallocatable(src1.to_real_reg().unwrap().into());
+            collector.reg_fixed_nonallocatable(src2.to_real_reg().unwrap().into());
+        }
+
+        Inst::TurinMaskTest { src1, src2, .. } => {
+            // K-register test: both operands are k-registers (physical)
+            collector.reg_fixed_nonallocatable(src1.to_real_reg().unwrap().into());
+            collector.reg_fixed_nonallocatable(src2.to_real_reg().unwrap().into());
+        }
+
         Inst::TurinGather { dst, base, index, mask, .. } => {
             collector.reg_def(dst);
             collector.reg_use(base);
@@ -1814,37 +1959,83 @@ fn x64_get_operands(inst: &mut Inst, collector: &mut impl OperandVisitor) {
         Inst::TurinCompressReg { dst, src, mask, .. } => {
             collector.reg_def(dst);
             collector.reg_use(src);
-            collector.reg_use(mask);
+            // mask is a k-register - if physical, mark as nonallocatable
+            if let Some(rreg) = mask.to_real_reg() {
+                collector.reg_fixed_nonallocatable(rreg.into());
+            }
         }
 
         Inst::TurinExpandReg { dst, src, mask, .. } => {
             collector.reg_def(dst);
             collector.reg_use(src);
-            collector.reg_use(mask);
+            // mask is a k-register - if physical, mark as nonallocatable
+            if let Some(rreg) = mask.to_real_reg() {
+                collector.reg_fixed_nonallocatable(rreg.into());
+            }
         }
 
         Inst::TurinVmovmsk32 { dst, src } => {
-            // dst is a fixed k-register (physical register), mark as nonallocatable
-            collector.reg_fixed_nonallocatable(dst.to_reg().to_real_reg().unwrap().into());
+            // dst is a k-register - if physical, mark as nonallocatable
+            if let Some(rreg) = dst.to_reg().to_real_reg() {
+                collector.reg_fixed_nonallocatable(rreg.into());
+            }
             collector.reg_use(src);
         }
 
         Inst::TurinVmovmsk64 { dst, src } => {
-            // dst is a fixed k-register (physical register), mark as nonallocatable
-            collector.reg_fixed_nonallocatable(dst.to_reg().to_real_reg().unwrap().into());
+            // dst is a k-register - if physical, mark as nonallocatable
+            if let Some(rreg) = dst.to_reg().to_real_reg() {
+                collector.reg_fixed_nonallocatable(rreg.into());
+            }
             collector.reg_use(src);
         }
 
         Inst::TurinMovm2d { dst, src } => {
             collector.reg_def(dst);
-            // src is a fixed k-register (physical register), mark as nonallocatable
-            collector.reg_fixed_nonallocatable(src.to_real_reg().unwrap().into());
+            // src is a k-register - if physical, mark as nonallocatable
+            if let Some(rreg) = src.to_real_reg() {
+                collector.reg_fixed_nonallocatable(rreg.into());
+            }
         }
 
         Inst::TurinMovm2q { dst, src } => {
             collector.reg_def(dst);
-            // src is a fixed k-register (physical register), mark as nonallocatable
-            collector.reg_fixed_nonallocatable(src.to_real_reg().unwrap().into());
+            // src is a k-register - if physical, mark as nonallocatable
+            if let Some(rreg) = src.to_real_reg() {
+                collector.reg_fixed_nonallocatable(rreg.into());
+            }
+        }
+
+        Inst::TurinVmovmsk8 { dst, src } => {
+            // dst is a k-register - if physical, mark as nonallocatable
+            if let Some(rreg) = dst.to_reg().to_real_reg() {
+                collector.reg_fixed_nonallocatable(rreg.into());
+            }
+            collector.reg_use(src);
+        }
+
+        Inst::TurinVmovmsk16 { dst, src } => {
+            // dst is a k-register - if physical, mark as nonallocatable
+            if let Some(rreg) = dst.to_reg().to_real_reg() {
+                collector.reg_fixed_nonallocatable(rreg.into());
+            }
+            collector.reg_use(src);
+        }
+
+        Inst::TurinMovm2b { dst, src } => {
+            collector.reg_def(dst);
+            // src is a k-register - if physical, mark as nonallocatable
+            if let Some(rreg) = src.to_real_reg() {
+                collector.reg_fixed_nonallocatable(rreg.into());
+            }
+        }
+
+        Inst::TurinMovm2w { dst, src } => {
+            collector.reg_def(dst);
+            // src is a k-register - if physical, mark as nonallocatable
+            if let Some(rreg) = src.to_real_reg() {
+                collector.reg_fixed_nonallocatable(rreg.into());
+            }
         }
 
         Inst::TurinBroadcastd { dst, src } => {
@@ -2003,14 +2194,15 @@ fn x64_get_operands(inst: &mut Inst, collector: &mut impl OperandVisitor) {
             }
         }
 
-        Inst::TurinAvx512FpCmp {
+        Inst::TurinAvx512LaneShuffle {
             dst,
             src1,
             src2,
             mask,
             ..
         } => {
-            // VCMPPS/PD: dst (k-register) = compare(src1, src2, imm8)
+            // VSHUFF32X4/64X2/VSHUFI32X4/64X2: dst = lane_shuffle(src1, src2, imm8)
+            // 3-operand instruction with 2 inputs
             collector.reg_def(dst);
             collector.reg_use(src1);
             src2.get_operands(collector);
@@ -2019,10 +2211,47 @@ fn x64_get_operands(inst: &mut Inst, collector: &mut impl OperandVisitor) {
             }
         }
 
+        Inst::TurinAvx512FpCmp {
+            dst,
+            src1,
+            src2,
+            mask,
+            ..
+        } => {
+            // VCMPPS/PD: dst (k-register) = compare(src1, src2, imm8)
+            // dst is a k-register - if physical, mark as nonallocatable
+            if let Some(rreg) = dst.to_reg().to_real_reg() {
+                collector.reg_fixed_nonallocatable(rreg.into());
+            }
+            collector.reg_use(src1);
+            src2.get_operands(collector);
+            if let Some(m) = mask {
+                if let Some(rreg) = m.to_real_reg() {
+                    collector.reg_fixed_nonallocatable(rreg.into());
+                }
+            }
+        }
+
         Inst::TurinAvx512Extract { dst, src, .. } => {
             // VEXTRACTI32X4/64X2: extract 128-bit lane from 512-bit register
             collector.reg_def(dst);
             collector.reg_use(src);
+        }
+
+        Inst::TurinAvx512Insert {
+            dst,
+            src1,
+            src2,
+            mask,
+            ..
+        } => {
+            // VINSERTI32X4/64X2: insert 128-bit lane into 512-bit register
+            collector.reg_def(dst);
+            collector.reg_use(src1);
+            src2.get_operands(collector);
+            if let Some(m) = mask {
+                collector.reg_use(m);
+            }
         }
 
         Inst::TurinAvx512FpSpecial {
@@ -2425,6 +2654,10 @@ impl asm::AvailableFeatures for &EmitInfo {
 
     fn avx512vbmi(&self) -> bool {
         self.isa_flags.has_avx512vbmi()
+    }
+
+    fn avx512bw(&self) -> bool {
+        self.isa_flags.has_avx512bw()
     }
 }
 

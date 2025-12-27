@@ -17,7 +17,7 @@ use crate::ir::{
 use crate::isa::x64::X64Backend;
 use crate::isa::x64::inst::{ReturnCallInfo, args::*, args::OptionReg, regs, turin};
 // Re-export Turin types for ISLE generated code
-pub(crate) use turin::{Avx512AluOp, Avx512AlignOp, Avx512Cond, Avx512CvtOp, Avx512ExtractOp, Avx512FmaOp, Avx512FpAluOp, Avx512FpSpecialOp, Avx512ImmShuffleOp, Avx512VnniOp, Vp2IntersectOp, GatherOp, MaskAluOp, MergeMode, ScatterOp};
+pub(crate) use turin::{Avx512AluOp, Avx512AlignOp, Avx512Cond, Avx512CvtOp, Avx512ExtractOp, Avx512FmaOp, Avx512FpAluOp, Avx512FpSpecialOp, Avx512ImmShuffleOp, Avx512InsertOp, Avx512LaneShuffleOp, Avx512VnniOp, Vp2IntersectOp, GatherOp, MaskAddOp, MaskAluOp, MaskShiftOp, MaskTestOp, MaskUnpackOp, MergeMode, ScatterOp};
 use crate::isa::x64::lower::{InsnInput, emit_vm_call};
 use crate::machinst::isle::*;
 use crate::machinst::{
@@ -284,6 +284,11 @@ impl Context for IsleContext<'_, '_, MInst, X64Backend> {
     #[inline]
     fn has_avx512_vpopcntdq(&mut self) -> bool {
         self.backend.x64_flags.has_avx512_vpopcntdq()
+    }
+
+    #[inline]
+    fn has_avx512bw(&mut self) -> bool {
+        self.backend.x64_flags.has_avx512bw()
     }
 
     // =========================================================================

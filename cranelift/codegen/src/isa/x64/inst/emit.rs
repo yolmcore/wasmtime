@@ -1913,6 +1913,22 @@ pub(crate) fn emit(
             turin::emit::emit_kortest(*src1, *src2, sink);
         }
 
+        Inst::TurinMaskShift { op, dst, src, imm8 } => {
+            turin::emit::emit_turin_mask_shift_inst(*op, *dst, *src, *imm8, sink);
+        }
+
+        Inst::TurinMaskUnpack { op, dst, src1, src2 } => {
+            turin::emit::emit_turin_mask_unpack_inst(*op, *dst, *src1, *src2, sink);
+        }
+
+        Inst::TurinMaskAdd { op, dst, src1, src2 } => {
+            turin::emit::emit_turin_mask_add_inst(*op, *dst, *src1, *src2, sink);
+        }
+
+        Inst::TurinMaskTest { op, src1, src2 } => {
+            turin::emit::emit_turin_mask_test_inst(*op, *src1, *src2, sink);
+        }
+
         Inst::TurinGather { op, dst, base, index, scale, disp, mask } => {
             turin::emit::emit_gather(*op, *dst, *base, *index, *scale, *disp, *mask, sink);
         }
@@ -1943,6 +1959,22 @@ pub(crate) fn emit(
 
         Inst::TurinMovm2q { dst, src } => {
             turin::emit::emit_movm2q(*dst, *src, sink);
+        }
+
+        Inst::TurinVmovmsk8 { dst, src } => {
+            turin::emit::emit_vmovmsk8(*dst, src.to_reg(), sink);
+        }
+
+        Inst::TurinVmovmsk16 { dst, src } => {
+            turin::emit::emit_vmovmsk16(*dst, src.to_reg(), sink);
+        }
+
+        Inst::TurinMovm2b { dst, src } => {
+            turin::emit::emit_movm2b(*dst, *src, sink);
+        }
+
+        Inst::TurinMovm2w { dst, src } => {
+            turin::emit::emit_movm2w(*dst, *src, sink);
         }
 
         Inst::TurinBroadcastd { dst, src } => {
@@ -2065,6 +2097,18 @@ pub(crate) fn emit(
             turin::emit::emit_turin_imm_shuffle_inst(*op, *dst, src, *imm8, *mask, *merge, sink);
         }
 
+        Inst::TurinAvx512LaneShuffle {
+            op,
+            dst,
+            src1,
+            src2,
+            imm8,
+            mask,
+            merge,
+        } => {
+            turin::emit::emit_turin_lane_shuffle_inst(*op, *dst, *src1, src2, *imm8, *mask, *merge, sink);
+        }
+
         Inst::TurinAvx512FpCmp {
             size,
             dst,
@@ -2078,6 +2122,18 @@ pub(crate) fn emit(
 
         Inst::TurinAvx512Extract { op, dst, src, lane } => {
             turin::emit::emit_avx512_extract(*op, *dst, *src, *lane, sink);
+        }
+
+        Inst::TurinAvx512Insert {
+            op,
+            dst,
+            src1,
+            src2,
+            lane,
+            mask,
+            merge,
+        } => {
+            turin::emit::emit_turin_insert_inst(*op, *dst, *src1, src2, *lane, *mask, *merge, sink);
         }
 
         Inst::TurinAvx512FpSpecial {

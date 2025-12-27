@@ -266,10 +266,11 @@ impl EvexPrefix {
         sink.put1(p0);
 
         // Byte 2 (P1): W vvvv 1 pp
-        // For gather/scatter, vvvv encodes the index register extension (bits 0-3 inverted)
-        // Note: In AVX-512 gather/scatter, the index register uses both X (bit 3) in P0
-        // and V' (bit 4) in P2 for full 5-bit encoding
-        let vvvv = !index_enc & 0x0F;
+        // For gather/scatter, vvvv is UNUSED and must be 1111b (0x0F).
+        // The index register is encoded only in the SIB byte and extended via:
+        // - EVEX.X (bit 3 of index_enc) in P0
+        // - EVEX.V' (bit 4 of index_enc) in P2
+        let vvvv = 0x0F; // Must be 1111b for gather/scatter
         let p1 = ((self.w as u8) << 7) | (vvvv << 3) | 0x04 | (self.pp & 0x03);
         sink.put1(p1);
 

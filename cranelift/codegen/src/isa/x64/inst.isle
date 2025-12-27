@@ -409,6 +409,29 @@
        (TurinKortest (src1 Reg)
                      (src2 Reg))
 
+       ;; KSHIFTL/R B/W/D/Q - shift k-register left/right by immediate
+       (TurinMaskShift (op MaskShiftOp)
+                       (dst WritableReg)
+                       (src Reg)
+                       (imm8 u8))
+
+       ;; KUNPCKBW/WD/DQ - unpack and interleave low halves of mask registers
+       (TurinMaskUnpack (op MaskUnpackOp)
+                        (dst WritableReg)
+                        (src1 Reg)
+                        (src2 Reg))
+
+       ;; KADDB/W/D/Q - add two mask registers
+       (TurinMaskAdd (op MaskAddOp)
+                     (dst WritableReg)
+                     (src1 Reg)
+                     (src2 Reg))
+
+       ;; KTESTB/W/D/Q - test two mask registers and set flags
+       (TurinMaskTest (op MaskTestOp)
+                      (src1 Reg)
+                      (src2 Reg))
+
        ;; VPGATHERDD/DQ/QD/QQ - gather load from non-contiguous memory
        ;; dst = gather(base + index*scale + disp) using mask
        (TurinGather (op GatherOp)
@@ -456,6 +479,22 @@
 
        ;; VPMOVM2Q - expand mask register to 64-bit vector elements
        (TurinMovm2q (dst WritableXmm)
+                    (src Reg))
+
+       ;; VPMOVB2M - extract high bits from 8-bit vector elements to mask register (AVX-512BW)
+       (TurinVmovmsk8 (dst WritableReg)
+                      (src Xmm))
+
+       ;; VPMOVW2M - extract high bits from 16-bit vector elements to mask register (AVX-512BW)
+       (TurinVmovmsk16 (dst WritableReg)
+                       (src Xmm))
+
+       ;; VPMOVM2B - expand mask register to 8-bit vector elements (AVX-512BW)
+       (TurinMovm2b (dst WritableXmm)
+                    (src Reg))
+
+       ;; VPMOVM2W - expand mask register to 16-bit vector elements (AVX-512BW)
+       (TurinMovm2w (dst WritableXmm)
                     (src Reg))
 
        ;; VPBROADCASTD - broadcast 32-bit element to all 16 lanes
@@ -562,12 +601,32 @@
                               (mask OptionMaskReg)
                               (merge MergeMode))
 
+       ;; AVX-512 Lane Shuffle operations (VSHUFF32X4, VSHUFF64X2, VSHUFI32X4, VSHUFI64X2)
+       ;; Shuffle entire 128-bit lanes between two 512-bit sources
+       (TurinAvx512LaneShuffle (op Avx512LaneShuffleOp)
+                               (dst WritableReg)
+                               (src1 Reg)
+                               (src2 RegMem)
+                               (imm8 u8)
+                               (mask OptionMaskReg)
+                               (merge MergeMode))
+
        ;; AVX-512 Extract operations (VEXTRACTI32X4, VEXTRACTI64X2, etc.)
        ;; Extract 128-bit or 256-bit lanes from a 512-bit vector
        (TurinAvx512Extract (op Avx512ExtractOp)
                            (dst WritableReg)
                            (src Reg)
                            (lane u8))
+
+       ;; AVX-512 Insert operations (VINSERTI32X4, VINSERTI64X2, etc.)
+       ;; Insert 128-bit or 256-bit lanes into a 512-bit vector
+       (TurinAvx512Insert (op Avx512InsertOp)
+                          (dst WritableReg)
+                          (src1 Reg)
+                          (src2 RegMem)
+                          (lane u8)
+                          (mask OptionMaskReg)
+                          (merge MergeMode))
 
        ;; AVX-512 FP Special operations (VRCP14PS/PD, VRSQRT14PS/PD)
        ;; Reciprocal and reciprocal sqrt approximations (~14 bits precision)
@@ -1030,7 +1089,26 @@
             Vpshuflw
             ;; Multiply-add operations
             Vpmaddwd
-            Vpmaddubsw))
+            Vpmaddubsw
+            ;; Byte/word arithmetic (AVX-512BW)
+            Vpaddb
+            Vpaddw
+            Vpsubb
+            Vpsubw
+            Vpminsb
+            Vpminub
+            Vpminsw
+            Vpminuw
+            Vpmaxsb
+            Vpmaxub
+            Vpmaxsw
+            Vpmaxuw
+            Vpabsb
+            Vpabsw
+            Vpcmpeqb
+            Vpcmpeqw
+            Vpcmpgtb
+            Vpcmpgtw))
 
 ;; YOLM FORK: Turin AVX-512 floating-point types
 (type Avx512FpAluOp extern
@@ -1165,6 +1243,12 @@
             Vpshufhw
             Vpshuflw))
 
+(type Avx512LaneShuffleOp extern
+      (enum Vshuff32x4
+            Vshuff64x2
+            Vshufi32x4
+            Vshufi64x2))
+
 (type MaskAluOp extern
       (enum Kand
             Kor
@@ -1172,6 +1256,33 @@
             Kxnor
             Knot
             Kandn))
+
+(type MaskShiftOp extern
+      (enum Kshiftlb
+            Kshiftlw
+            Kshiftld
+            Kshiftlq
+            Kshiftrb
+            Kshiftrw
+            Kshiftrd
+            Kshiftrq))
+
+(type MaskUnpackOp extern
+      (enum Kunpckbw
+            Kunpckwd
+            Kunpckdq))
+
+(type MaskAddOp extern
+      (enum Kaddb
+            Kaddw
+            Kaddd
+            Kaddq))
+
+(type MaskTestOp extern
+      (enum Ktestb
+            Ktestw
+            Ktestd
+            Ktestq))
 
 (type MergeMode extern
       (enum Merging
@@ -1195,6 +1306,12 @@
             Vextracti64x2
             Vextracti32x8
             Vextracti64x4))
+
+(type Avx512InsertOp extern
+      (enum Vinserti32x4
+            Vinserti64x2
+            Vinserti32x8
+            Vinserti64x4))
 
 ;; YOLM FORK: AVX-512 FP Special operations (reciprocal, rsqrt approximations)
 (type Avx512FpSpecialOp extern
@@ -1510,6 +1627,9 @@
 
 (decl pure has_avx512_vpopcntdq () bool)
 (extern constructor has_avx512_vpopcntdq has_avx512_vpopcntdq)
+
+(decl pure has_avx512bw () bool)
+(extern constructor has_avx512bw has_avx512bw)
 
 (decl pure has_lzcnt () bool)
 (extern constructor has_lzcnt has_lzcnt)
@@ -4686,6 +4806,9 @@
 (decl turin_vpxord (Xmm XmmMem) Xmm)
 (rule (turin_vpxord src1 src2) (turin_alu_d (Avx512AluOp.Vpxord) src1 src2))
 
+(decl turin_vpandnd (Xmm XmmMem) Xmm)
+(rule (turin_vpandnd src1 src2) (turin_alu_d (Avx512AluOp.Vpandnd) src1 src2))
+
 (decl turin_vpminsd (Xmm XmmMem) Xmm)
 (rule (turin_vpminsd src1 src2) (turin_alu_d (Avx512AluOp.Vpminsd) src1 src2))
 
@@ -4728,6 +4851,9 @@
 (decl turin_vpxorq (Xmm XmmMem) Xmm)
 (rule (turin_vpxorq src1 src2) (turin_alu_q (Avx512AluOp.Vpxorq) src1 src2))
 
+(decl turin_vpandnq (Xmm XmmMem) Xmm)
+(rule (turin_vpandnq src1 src2) (turin_alu_q (Avx512AluOp.Vpandnq) src1 src2))
+
 (decl turin_vpminsq (Xmm XmmMem) Xmm)
 (rule (turin_vpminsq src1 src2) (turin_alu_q (Avx512AluOp.Vpminsq) src1 src2))
 
@@ -4739,6 +4865,88 @@
 
 (decl turin_vpmaxuq (Xmm XmmMem) Xmm)
 (rule (turin_vpmaxuq src1 src2) (turin_alu_q (Avx512AluOp.Vpmaxuq) src1 src2))
+
+;; =============================================================================
+;; Byte/Word Operations (AVX-512BW) - I8X64 and I16X32
+;; =============================================================================
+
+;; Helper for creating Turin AVX-512 ALU instructions (unmasked, 8-bit elements)
+(decl turin_alu_b (Avx512AluOp Xmm XmmMem) Xmm)
+(rule (turin_alu_b op src1 src2)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (src2_rm RegMem (turin_xmm_mem_to_reg_mem src2))
+            (_ Unit (emit (MInst.TurinAvx512Alu op
+                                                (OperandSize.Size8)
+                                                dst
+                                                src1
+                                                src2_rm
+                                                (option_mask_reg_none)
+                                                (MergeMode.Zeroing)))))
+        dst))
+
+;; Helper for creating Turin AVX-512 ALU instructions (unmasked, 16-bit elements)
+(decl turin_alu_w (Avx512AluOp Xmm XmmMem) Xmm)
+(rule (turin_alu_w op src1 src2)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (src2_rm RegMem (turin_xmm_mem_to_reg_mem src2))
+            (_ Unit (emit (MInst.TurinAvx512Alu op
+                                                (OperandSize.Size16)
+                                                dst
+                                                src1
+                                                src2_rm
+                                                (option_mask_reg_none)
+                                                (MergeMode.Zeroing)))))
+        dst))
+
+;; Byte arithmetic (I8X64)
+(decl turin_vpaddb (Xmm XmmMem) Xmm)
+(rule (turin_vpaddb src1 src2) (turin_alu_b (Avx512AluOp.Vpaddb) src1 src2))
+
+(decl turin_vpsubb (Xmm XmmMem) Xmm)
+(rule (turin_vpsubb src1 src2) (turin_alu_b (Avx512AluOp.Vpsubb) src1 src2))
+
+(decl turin_vpminsb (Xmm XmmMem) Xmm)
+(rule (turin_vpminsb src1 src2) (turin_alu_b (Avx512AluOp.Vpminsb) src1 src2))
+
+(decl turin_vpminub (Xmm XmmMem) Xmm)
+(rule (turin_vpminub src1 src2) (turin_alu_b (Avx512AluOp.Vpminub) src1 src2))
+
+(decl turin_vpmaxsb (Xmm XmmMem) Xmm)
+(rule (turin_vpmaxsb src1 src2) (turin_alu_b (Avx512AluOp.Vpmaxsb) src1 src2))
+
+(decl turin_vpmaxub (Xmm XmmMem) Xmm)
+(rule (turin_vpmaxub src1 src2) (turin_alu_b (Avx512AluOp.Vpmaxub) src1 src2))
+
+(decl turin_vpcmpeqb (Xmm XmmMem) Xmm)
+(rule (turin_vpcmpeqb src1 src2) (turin_alu_b (Avx512AluOp.Vpcmpeqb) src1 src2))
+
+(decl turin_vpcmpgtb (Xmm XmmMem) Xmm)
+(rule (turin_vpcmpgtb src1 src2) (turin_alu_b (Avx512AluOp.Vpcmpgtb) src1 src2))
+
+;; Word arithmetic (I16X32)
+(decl turin_vpaddw (Xmm XmmMem) Xmm)
+(rule (turin_vpaddw src1 src2) (turin_alu_w (Avx512AluOp.Vpaddw) src1 src2))
+
+(decl turin_vpsubw (Xmm XmmMem) Xmm)
+(rule (turin_vpsubw src1 src2) (turin_alu_w (Avx512AluOp.Vpsubw) src1 src2))
+
+(decl turin_vpminsw (Xmm XmmMem) Xmm)
+(rule (turin_vpminsw src1 src2) (turin_alu_w (Avx512AluOp.Vpminsw) src1 src2))
+
+(decl turin_vpminuw (Xmm XmmMem) Xmm)
+(rule (turin_vpminuw src1 src2) (turin_alu_w (Avx512AluOp.Vpminuw) src1 src2))
+
+(decl turin_vpmaxsw (Xmm XmmMem) Xmm)
+(rule (turin_vpmaxsw src1 src2) (turin_alu_w (Avx512AluOp.Vpmaxsw) src1 src2))
+
+(decl turin_vpmaxuw (Xmm XmmMem) Xmm)
+(rule (turin_vpmaxuw src1 src2) (turin_alu_w (Avx512AluOp.Vpmaxuw) src1 src2))
+
+(decl turin_vpcmpeqw (Xmm XmmMem) Xmm)
+(rule (turin_vpcmpeqw src1 src2) (turin_alu_w (Avx512AluOp.Vpcmpeqw) src1 src2))
+
+(decl turin_vpcmpgtw (Xmm XmmMem) Xmm)
+(rule (turin_vpcmpgtw src1 src2) (turin_alu_w (Avx512AluOp.Vpcmpgtw) src1 src2))
 
 ;; =============================================================================
 ;; YOLM FORK: Turin AVX-512 Masked Operations
@@ -4961,27 +5169,27 @@
 
 (decl turin_vpcmpd (Avx512Cond Xmm XmmMem) Reg)
 (rule (turin_vpcmpd cond src1 src2)
-      (let ((dst WritableReg (temp_writable_reg $I64))
+      (let ((k1 Reg (k1_reg))
             (src2_rm RegMem (turin_xmm_mem_to_reg_mem src2))
             (_ Unit (emit (MInst.TurinAvx512Cmp (OperandSize.Size32)
-                                                 dst
+                                                 (reg_to_writable_reg k1)
                                                  src1
                                                  src2_rm
                                                  cond
                                                  (option_mask_reg_none)))))
-        dst))
+        k1))
 
 (decl turin_vpcmpq (Avx512Cond Xmm XmmMem) Reg)
 (rule (turin_vpcmpq cond src1 src2)
-      (let ((dst WritableReg (temp_writable_reg $I64))
+      (let ((k1 Reg (k1_reg))
             (src2_rm RegMem (turin_xmm_mem_to_reg_mem src2))
             (_ Unit (emit (MInst.TurinAvx512Cmp (OperandSize.Size64)
-                                                 dst
+                                                 (reg_to_writable_reg k1)
                                                  src1
                                                  src2_rm
                                                  cond
                                                  (option_mask_reg_none)))))
-        dst))
+        k1))
 
 ;; Specific comparison helpers for common conditions (I32X16)
 (decl turin_vpcmpeqd (Xmm XmmMem) Reg)
@@ -5193,6 +5401,32 @@
       (SideEffectNoResult.Inst
         (MInst.Turin512Store (OperandSize.Size32) src addr)))
 
+;; VMOVDQU8 - load 512-bit I8X64 from memory
+(decl turin_load_i8x64 (SyntheticAmode) Xmm)
+(rule (turin_load_i8x64 addr)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.Turin512Load (OperandSize.Size8) dst addr))))
+        dst))
+
+;; VMOVDQU16 - load 512-bit I16X32 from memory
+(decl turin_load_i16x32 (SyntheticAmode) Xmm)
+(rule (turin_load_i16x32 addr)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.Turin512Load (OperandSize.Size16) dst addr))))
+        dst))
+
+;; VMOVDQU8 - store 512-bit I8X64 to memory
+(decl turin_store_i8x64 (SyntheticAmode Xmm) SideEffectNoResult)
+(rule (turin_store_i8x64 addr src)
+      (SideEffectNoResult.Inst
+        (MInst.Turin512Store (OperandSize.Size8) src addr)))
+
+;; VMOVDQU16 - store 512-bit I16X32 to memory
+(decl turin_store_i16x32 (SyntheticAmode Xmm) SideEffectNoResult)
+(rule (turin_store_i16x32 addr src)
+      (SideEffectNoResult.Inst
+        (MInst.Turin512Store (OperandSize.Size16) src addr)))
+
 ;; =============================================================================
 ;; Helper functions for AVX-512 IR operations
 ;; =============================================================================
@@ -5266,6 +5500,42 @@
 (rule (turin_kreg_to_vec_mask_64 kreg)
       (let ((dst WritableXmm (temp_writable_xmm))
             (_ Unit (emit (MInst.TurinMovm2q dst kreg))))
+        dst))
+
+;; Convert a vector mask (0/-1 per element) to a k-register mask using VPMOVB2M (AVX-512BW)
+;; Input: 512-bit vector with 8-bit elements where each element is 0 or -1
+;; Output: k-register with 64 mask bits corresponding to the sign bits
+(decl turin_vec_mask_to_kreg_8 (Xmm) Reg)
+(rule (turin_vec_mask_to_kreg_8 vec_mask)
+      (let ((k1 Reg (k1_reg))
+            (_ Unit (emit (MInst.TurinVmovmsk8 (reg_to_writable_reg k1) vec_mask))))
+        k1))
+
+;; Convert a vector mask (0/-1 per element) to a k-register mask using VPMOVW2M (AVX-512BW)
+;; Input: 512-bit vector with 16-bit elements where each element is 0 or -1
+;; Output: k-register with 32 mask bits corresponding to the sign bits
+(decl turin_vec_mask_to_kreg_16 (Xmm) Reg)
+(rule (turin_vec_mask_to_kreg_16 vec_mask)
+      (let ((k1 Reg (k1_reg))
+            (_ Unit (emit (MInst.TurinVmovmsk16 (reg_to_writable_reg k1) vec_mask))))
+        k1))
+
+;; Convert a k-register mask to a vector mask (0/-1 per element) using VPMOVM2B (AVX-512BW)
+;; Input: k-register with mask bits
+;; Output: 512-bit vector with 8-bit elements (0 or -1)
+(decl turin_kreg_to_vec_mask_8 (Reg) Xmm)
+(rule (turin_kreg_to_vec_mask_8 kreg)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinMovm2b dst kreg))))
+        dst))
+
+;; Convert a k-register mask to a vector mask (0/-1 per element) using VPMOVM2W (AVX-512BW)
+;; Input: k-register with mask bits
+;; Output: 512-bit vector with 16-bit elements (0 or -1)
+(decl turin_kreg_to_vec_mask_16 (Reg) Xmm)
+(rule (turin_kreg_to_vec_mask_16 kreg)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (_ Unit (emit (MInst.TurinMovm2w dst kreg))))
         dst))
 
 ;; =============================================================================
@@ -6189,44 +6459,58 @@
 ;; =============================================================================
 
 ;; VPCOMPRESSD register form - compress 32-bit elements based on mask
+;; Input mask is a vector of 0/-1, needs conversion to k-register
+;; Note: We emit vpmovd2m first, then use k1_reg() directly in compress instruction
+;; to ensure the physical k1 register is used (avoiding ISLE virtualizing the return value)
 (decl turin_vpcompressd_reg (Reg Xmm) Xmm)
-(rule (turin_vpcompressd_reg mask src)
-      (let ((dst WritableXmm (temp_writable_xmm))
+(rule (turin_vpcompressd_reg vec_mask src)
+      (let ((k1 Reg (k1_reg))
+            (_ Unit (emit (MInst.TurinVmovmsk32 (reg_to_writable_reg k1) (xmm_new vec_mask))))
+            (dst WritableXmm (temp_writable_xmm))
             (_ Unit (emit (MInst.TurinCompressReg (OperandSize.Size32)
                                                    dst
                                                    src
-                                                   mask))))
+                                                   (k1_reg)))))
         dst))
 
 ;; VPCOMPRESSQ register form - compress 64-bit elements based on mask
+;; Input mask is a vector of 0/-1, needs conversion to k-register
 (decl turin_vpcompressq_reg (Reg Xmm) Xmm)
-(rule (turin_vpcompressq_reg mask src)
-      (let ((dst WritableXmm (temp_writable_xmm))
+(rule (turin_vpcompressq_reg vec_mask src)
+      (let ((k1 Reg (k1_reg))
+            (_ Unit (emit (MInst.TurinVmovmsk64 (reg_to_writable_reg k1) (xmm_new vec_mask))))
+            (dst WritableXmm (temp_writable_xmm))
             (_ Unit (emit (MInst.TurinCompressReg (OperandSize.Size64)
                                                    dst
                                                    src
-                                                   mask))))
+                                                   (k1_reg)))))
         dst))
 
 ;; VPEXPANDD register form - expand 32-bit elements based on mask
+;; Input mask is a vector of 0/-1, needs conversion to k-register
 (decl turin_vpexpandd_reg (Reg Xmm) Xmm)
-(rule (turin_vpexpandd_reg mask src)
-      (let ((dst WritableXmm (temp_writable_xmm))
+(rule (turin_vpexpandd_reg vec_mask src)
+      (let ((k1 Reg (k1_reg))
+            (_ Unit (emit (MInst.TurinVmovmsk32 (reg_to_writable_reg k1) (xmm_new vec_mask))))
+            (dst WritableXmm (temp_writable_xmm))
             (_ Unit (emit (MInst.TurinExpandReg (OperandSize.Size32)
                                                  dst
                                                  src
-                                                 mask
+                                                 (k1_reg)
                                                  (MergeMode.Zeroing)))))
         dst))
 
 ;; VPEXPANDQ register form - expand 64-bit elements based on mask
+;; Input mask is a vector of 0/-1, needs conversion to k-register
 (decl turin_vpexpandq_reg (Reg Xmm) Xmm)
-(rule (turin_vpexpandq_reg mask src)
-      (let ((dst WritableXmm (temp_writable_xmm))
+(rule (turin_vpexpandq_reg vec_mask src)
+      (let ((k1 Reg (k1_reg))
+            (_ Unit (emit (MInst.TurinVmovmsk64 (reg_to_writable_reg k1) (xmm_new vec_mask))))
+            (dst WritableXmm (temp_writable_xmm))
             (_ Unit (emit (MInst.TurinExpandReg (OperandSize.Size64)
                                                  dst
                                                  src
-                                                 mask
+                                                 (k1_reg)
                                                  (MergeMode.Zeroing)))))
         dst))
 
@@ -6395,6 +6679,70 @@
         dst))
 
 ;; =============================================================================
+;; Lane Shuffle helpers (VSHUFF32X4, VSHUFF64X2, VSHUFI32X4, VSHUFI64X2)
+;; =============================================================================
+
+;; VSHUFF32X4 - Shuffle 128-bit lanes of packed single-precision FP
+;; imm8 selects which 128-bit lanes from src1/src2 go to each output lane
+(decl turin_vshuff32x4 (Xmm XmmMem u8) Xmm)
+(rule (turin_vshuff32x4 src1 src2 imm8)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (src2_rm RegMem (turin_xmm_mem_to_reg_mem src2))
+            (_ Unit (emit (MInst.TurinAvx512LaneShuffle (Avx512LaneShuffleOp.Vshuff32x4)
+                                                         dst
+                                                         src1
+                                                         src2_rm
+                                                         imm8
+                                                         (option_mask_reg_none)
+                                                         (MergeMode.Zeroing)))))
+        dst))
+
+;; VSHUFF64X2 - Shuffle 128-bit lanes of packed double-precision FP
+;; imm8 selects which 128-bit lanes from src1/src2 go to each output lane
+(decl turin_vshuff64x2 (Xmm XmmMem u8) Xmm)
+(rule (turin_vshuff64x2 src1 src2 imm8)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (src2_rm RegMem (turin_xmm_mem_to_reg_mem src2))
+            (_ Unit (emit (MInst.TurinAvx512LaneShuffle (Avx512LaneShuffleOp.Vshuff64x2)
+                                                         dst
+                                                         src1
+                                                         src2_rm
+                                                         imm8
+                                                         (option_mask_reg_none)
+                                                         (MergeMode.Zeroing)))))
+        dst))
+
+;; VSHUFI32X4 - Shuffle 128-bit lanes of packed 32-bit integers
+;; imm8 selects which 128-bit lanes from src1/src2 go to each output lane
+(decl turin_vshufi32x4 (Xmm XmmMem u8) Xmm)
+(rule (turin_vshufi32x4 src1 src2 imm8)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (src2_rm RegMem (turin_xmm_mem_to_reg_mem src2))
+            (_ Unit (emit (MInst.TurinAvx512LaneShuffle (Avx512LaneShuffleOp.Vshufi32x4)
+                                                         dst
+                                                         src1
+                                                         src2_rm
+                                                         imm8
+                                                         (option_mask_reg_none)
+                                                         (MergeMode.Zeroing)))))
+        dst))
+
+;; VSHUFI64X2 - Shuffle 128-bit lanes of packed 64-bit integers
+;; imm8 selects which 128-bit lanes from src1/src2 go to each output lane
+(decl turin_vshufi64x2 (Xmm XmmMem u8) Xmm)
+(rule (turin_vshufi64x2 src1 src2 imm8)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (src2_rm RegMem (turin_xmm_mem_to_reg_mem src2))
+            (_ Unit (emit (MInst.TurinAvx512LaneShuffle (Avx512LaneShuffleOp.Vshufi64x2)
+                                                         dst
+                                                         src1
+                                                         src2_rm
+                                                         imm8
+                                                         (option_mask_reg_none)
+                                                         (MergeMode.Zeroing)))))
+        dst))
+
+;; =============================================================================
 ;; FP Compare helpers (VCMPPS/VCMPPD)
 ;; =============================================================================
 
@@ -6402,29 +6750,29 @@
 ;; Returns the k-register containing the comparison result mask
 (decl turin_vcmpps (Xmm XmmMem u8) Reg)
 (rule (turin_vcmpps src1 src2 imm8)
-      (let ((dst WritableReg (temp_writable_reg $I64))
+      (let ((k1 Reg (k1_reg))
             (src2_rm RegMem (turin_xmm_mem_to_reg_mem src2))
             (_ Unit (emit (MInst.TurinAvx512FpCmp (OperandSize.Size32)
-                                                   dst
+                                                   (reg_to_writable_reg k1)
                                                    src1
                                                    src2_rm
                                                    imm8
                                                    (option_mask_reg_none)))))
-        dst))
+        k1))
 
 ;; VCMPPD - compare packed double-precision floats to k-mask
 ;; Returns the k-register containing the comparison result mask
 (decl turin_vcmppd (Xmm XmmMem u8) Reg)
 (rule (turin_vcmppd src1 src2 imm8)
-      (let ((dst WritableReg (temp_writable_reg $I64))
+      (let ((k1 Reg (k1_reg))
             (src2_rm RegMem (turin_xmm_mem_to_reg_mem src2))
             (_ Unit (emit (MInst.TurinAvx512FpCmp (OperandSize.Size64)
-                                                   dst
+                                                   (reg_to_writable_reg k1)
                                                    src1
                                                    src2_rm
                                                    imm8
                                                    (option_mask_reg_none)))))
-        dst))
+        k1))
 
 ;; =============================================================================
 ;; Pack/Unpack helpers (type narrowing/widening operations)
@@ -7125,6 +7473,58 @@
       (let ((dst WritableXmm (temp_writable_xmm))
             (_ Unit (emit (MInst.TurinAvx512Extract (Avx512ExtractOp.Vextracti64x2)
                                                      dst src lane))))
+        dst))
+
+;; =============================================================================
+;; AVX-512 Insert operations (VINSERTI32X4, VINSERTI64X2, etc.)
+;; =============================================================================
+
+;; VINSERTI32X4 - Insert 128-bit lane into 512-bit vector (as I32X4)
+;; lane: 0-3 selects which 128-bit lane to insert into
+(decl turin_vinserti32x4 (Xmm XmmMem u8) Xmm)
+(rule (turin_vinserti32x4 src1 src2 lane)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (src2_rm RegMem (turin_xmm_mem_to_reg_mem src2))
+            (_ Unit (emit (MInst.TurinAvx512Insert (Avx512InsertOp.Vinserti32x4)
+                                                    dst src1 src2_rm lane
+                                                    (option_mask_reg_none)
+                                                    (MergeMode.Zeroing)))))
+        dst))
+
+;; VINSERTI64X2 - Insert 128-bit lane into 512-bit vector (as I64X2)
+;; lane: 0-3 selects which 128-bit lane to insert into
+(decl turin_vinserti64x2 (Xmm XmmMem u8) Xmm)
+(rule (turin_vinserti64x2 src1 src2 lane)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (src2_rm RegMem (turin_xmm_mem_to_reg_mem src2))
+            (_ Unit (emit (MInst.TurinAvx512Insert (Avx512InsertOp.Vinserti64x2)
+                                                    dst src1 src2_rm lane
+                                                    (option_mask_reg_none)
+                                                    (MergeMode.Zeroing)))))
+        dst))
+
+;; VINSERTI32X8 - Insert 256-bit lane into 512-bit vector (as I32X8)
+;; lane: 0-1 selects which 256-bit lane to insert into
+(decl turin_vinserti32x8 (Xmm XmmMem u8) Xmm)
+(rule (turin_vinserti32x8 src1 src2 lane)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (src2_rm RegMem (turin_xmm_mem_to_reg_mem src2))
+            (_ Unit (emit (MInst.TurinAvx512Insert (Avx512InsertOp.Vinserti32x8)
+                                                    dst src1 src2_rm lane
+                                                    (option_mask_reg_none)
+                                                    (MergeMode.Zeroing)))))
+        dst))
+
+;; VINSERTI64X4 - Insert 256-bit lane into 512-bit vector (as I64X4)
+;; lane: 0-1 selects which 256-bit lane to insert into
+(decl turin_vinserti64x4 (Xmm XmmMem u8) Xmm)
+(rule (turin_vinserti64x4 src1 src2 lane)
+      (let ((dst WritableXmm (temp_writable_xmm))
+            (src2_rm RegMem (turin_xmm_mem_to_reg_mem src2))
+            (_ Unit (emit (MInst.TurinAvx512Insert (Avx512InsertOp.Vinserti64x4)
+                                                    dst src1 src2_rm lane
+                                                    (option_mask_reg_none)
+                                                    (MergeMode.Zeroing)))))
         dst))
 
 ;; =============================================================================
