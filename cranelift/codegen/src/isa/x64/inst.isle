@@ -327,93 +327,41 @@
        (External (inst AssemblerInst))
 
        ;; =================================================================
-       ;; AVX-512: (Zen 5) AVX-512 instructions
-       ;; Implementation: isa/x64/inst/avx512/
+       ;; AVX-512: Instructions requiring manual implementation
+       ;; (VSIB addressing, dual-output, or spill/fill not supported by DSL)
        ;; =================================================================
 
-       ;; AVX-512 ALU operations (VPADDD, VPADDQ, VPSUBD, VPSUBQ, etc.)
-       (Avx512Avx512Alu (op Avx512AluOp)
-                       (size OperandSize)
-                       (dst WritableReg)
-                       (src1 Reg)
-                       (src2 RegMem)
-                       (mask OptionMaskReg)
-                       (merge MergeMode))
+       ;; VPGATHERDD/DQ/QD/QQ - gather load from non-contiguous memory
+       ;; dst = gather(base + index*scale + disp) using mask
+       ;; Requires VSIB (Vector Scale Index Base) addressing
+       (Avx512Gather (op GatherOp)
+                    (dst WritableReg)
+                    (base Reg)
+                    (index Reg)
+                    (scale u8)
+                    (disp i32)
+                    (mask Reg))
 
-       ;; AVX-512 comparison operations (VPCMPD, VPCMPQ) - result goes to k-register
-       (Avx512Avx512Cmp (size OperandSize)
-                       (dst WritableReg)
-                       (src1 Reg)
-                       (src2 RegMem)
-                       (cond Avx512Cond)
-                       (mask OptionMaskReg))
+       ;; VPSCATTERDD/DQ/QD/QQ - scatter store to non-contiguous memory
+       ;; scatter(base + index*scale + disp) = src using mask
+       ;; Requires VSIB (Vector Scale Index Base) addressing
+       (Avx512Scatter (op ScatterOp)
+                     (src Reg)
+                     (base Reg)
+                     (index Reg)
+                     (scale u8)
+                     (disp i32)
+                     (mask Reg))
 
-       ;; AVX-512 FP comparison operations (VCMPPS, VCMPPD) - result goes to k-register
-       ;; imm8 specifies the comparison predicate:
-       ;;   0=EQ_OQ, 1=LT_OS, 2=LE_OS, 3=UNORD_Q, 4=NEQ_UQ, 5=NLT_US, 6=NLE_US, 7=ORD_Q, etc.
-       (Avx512Avx512FpCmp (size OperandSize)  ;; Size32=PS (single), Size64=PD (double)
-                         (dst WritableReg)   ;; k-register destination
-                         (src1 Reg)          ;; first XMM source
-                         (src2 RegMem)       ;; second XMM source or memory
-                         (imm8 u8)           ;; comparison predicate
-                         (mask OptionMaskReg))  ;; optional input mask
+       ;; VP2INTERSECT - Hash join acceleration
+       ;; Compares two vectors and outputs TWO consecutive mask registers
+       ;; Requires dual k-register output (not supported by DSL)
+       (Avx512Vp2Intersect (op Vp2IntersectOp)
+                          (dst_k WritableReg)
+                          (src1 Reg)
+                          (src2 RegMem))
 
-       ;; VPCOMPRESSD/VPCOMPRESSQ - compress store for columnar output
-       (Avx512CompressStore (size OperandSize)
-                           (src Reg)
-                           (addr SyntheticAmode)
-                           (mask Reg))
-
-       ;; VPEXPANDD/VPEXPANDQ - expand load for sparse access
-       (Avx512ExpandLoad (size OperandSize)
-                        (dst WritableReg)
-                        (addr SyntheticAmode)
-                        (mask Reg)
-                        (merge MergeMode))
-
-       ;; VMOVDQU32/VMOVDQU64 - masked load (fault-suppressing)
-       (Avx512MaskedLoad (size OperandSize)
-                        (dst WritableReg)
-                        (addr SyntheticAmode)
-                        (mask Reg)
-                        (merge MergeMode))
-
-       ;; VMOVDQU32/VMOVDQU64 - masked store
-       (Avx512MaskedStore (size OperandSize)
-                         (src Reg)
-                         (addr SyntheticAmode)
-                         (mask Reg))
-
-       ;; VMOVDQU32/VMOVDQU64 - unmasked 512-bit load
-       (Avx512512Load (size OperandSize)
-                     (dst WritableXmm)
-                     (addr SyntheticAmode))
-
-       ;; VMOVDQU32/VMOVDQU64 - unmasked 256-bit load
-       (Avx512256Load (size OperandSize)
-                     (dst WritableXmm)
-                     (addr SyntheticAmode))
-
-       ;; VMOVDQU32/VMOVDQU64 - unmasked 512-bit store
-       (Avx512512Store (size OperandSize)
-                      (src Xmm)
-                      (addr SyntheticAmode))
-
-       ;; VMOVDQU32/VMOVDQU64 - unmasked 256-bit store
-       (Avx512256Store (size OperandSize)
-                      (src Xmm)
-                      (addr SyntheticAmode))
-
-       ;; Mask register logic (KAND, KOR, KXOR, KNOT, KANDN)
-       (Avx512MaskLogic (op MaskAluOp)
-                       (dst WritableReg)
-                       (src1 Reg)
-                       (src2 OptionReg))
-
-       ;; KMOVQ - move between k-register and GPR/memory
-       (Avx512Kmov (dst WritableReg)
-                  (src Reg)
-                  (to_gpr bool))
+       ;; K-register spill/fill instructions (used by regalloc, not exposed to ISLE rules)
 
        ;; KMOVQ k, k - move between k-registers (used for register allocation)
        (Avx512KmovKK (dst WritableReg)
@@ -425,238 +373,7 @@
 
        ;; KMOVQ m64, k - store k-register to memory (used for spill/fill)
        (Avx512KmovStore (src Reg)
-                       (addr SyntheticAmode))
-
-       ;; KORTESTW/KORTESTQ - test mask and set flags
-       (Avx512Kortest (src1 Reg)
-                     (src2 Reg))
-
-       ;; KSHIFTL/R B/W/D/Q - shift k-register left/right by immediate
-       (Avx512MaskShift (op MaskShiftOp)
-                       (dst WritableReg)
-                       (src Reg)
-                       (imm8 u8))
-
-       ;; KUNPCKBW/WD/DQ - unpack and interleave low halves of mask registers
-       (Avx512MaskUnpack (op MaskUnpackOp)
-                        (dst WritableReg)
-                        (src1 Reg)
-                        (src2 Reg))
-
-       ;; KADDB/W/D/Q - add two mask registers
-       (Avx512MaskAdd (op MaskAddOp)
-                     (dst WritableReg)
-                     (src1 Reg)
-                     (src2 Reg))
-
-       ;; KTESTB/W/D/Q - test two mask registers and set flags
-       (Avx512MaskTest (op MaskTestOp)
-                      (src1 Reg)
-                      (src2 Reg))
-
-       ;; VPGATHERDD/DQ/QD/QQ - gather load from non-contiguous memory
-       ;; dst = gather(base + index*scale + disp) using mask
-       (Avx512Gather (op GatherOp)
-                    (dst WritableReg)
-                    (base Reg)
-                    (index Reg)
-                    (scale u8)
-                    (disp i32)
-                    (mask Reg))
-
-       ;; VPSCATTERDD/DQ/QD/QQ - scatter store to non-contiguous memory
-       ;; scatter(base + index*scale + disp) = src using mask
-       (Avx512Scatter (op ScatterOp)
-                     (src Reg)
-                     (base Reg)
-                     (index Reg)
-                     (scale u8)
-                     (disp i32)
-                     (mask Reg))
-
-       ;; VPCOMPRESSD/Q register form - compress and write to register
-       (Avx512CompressReg (size OperandSize)
-                         (dst WritableXmm)
-                         (src Xmm)
-                         (mask Reg))
-
-       ;; VPEXPANDD/Q register form - expand from register
-       (Avx512ExpandReg (size OperandSize)
-                       (dst WritableXmm)
-                       (src Xmm)
-                       (mask Reg)
-                       (merge MergeMode))
-
-       ;; VPMOVD2M - extract high bits from 32-bit vector elements to mask register
-       (Avx512Vmovmsk32 (dst WritableReg)
-                       (src Xmm))
-
-       ;; VPMOVQ2M - extract high bits from 64-bit vector elements to mask register
-       (Avx512Vmovmsk64 (dst WritableReg)
-                       (src Xmm))
-
-       ;; VPMOVM2D - expand mask register to 32-bit vector elements
-       (Avx512Movm2d (dst WritableXmm)
-                    (src Reg))
-
-       ;; VPMOVM2Q - expand mask register to 64-bit vector elements
-       (Avx512Movm2q (dst WritableXmm)
-                    (src Reg))
-
-       ;; VPMOVB2M - extract high bits from 8-bit vector elements to mask register (AVX-512BW)
-       (Avx512Vmovmsk8 (dst WritableReg)
-                      (src Xmm))
-
-       ;; VPMOVW2M - extract high bits from 16-bit vector elements to mask register (AVX-512BW)
-       (Avx512Vmovmsk16 (dst WritableReg)
-                       (src Xmm))
-
-       ;; VPMOVM2B - expand mask register to 8-bit vector elements (AVX-512BW)
-       (Avx512Movm2b (dst WritableXmm)
-                    (src Reg))
-
-       ;; VPMOVM2W - expand mask register to 16-bit vector elements (AVX-512BW)
-       (Avx512Movm2w (dst WritableXmm)
-                    (src Reg))
-
-       ;; VPBROADCASTD - broadcast 32-bit element to all 16 lanes
-       (Avx512Broadcastd (dst WritableXmm)
-                        (src RegMem))
-
-       ;; VPBROADCASTQ - broadcast 64-bit element to all 8 lanes
-       (Avx512Broadcastq (dst WritableXmm)
-                        (src RegMem))
-
-       ;; AVX-512 FP ALU operations (VADDPS/PD, VSUBPS/PD, VMULPS/PD, VDIVPS/PD, etc.)
-       (Avx512Avx512FpAlu (op Avx512FpAluOp)
-                         (dst WritableReg)
-                         (src1 Reg)
-                         (src2 RegMem)
-                         (mask OptionMaskReg)
-                         (merge MergeMode))
-
-       ;; AVX-512 FP square root (VSQRTPS/PD)
-       (Avx512Avx512FpSqrt (op Avx512FpAluOp)
-                          (dst WritableReg)
-                          (src RegMem)
-                          (mask OptionMaskReg)
-                          (merge MergeMode))
-
-       ;; AVX-512 FMA (Fused Multiply-Add): VFMADD213PS/PD, etc.
-       ;; For fma(x, y, z) = x * y + z:
-       ;; VFMADD213: dst = src2 * src1 + src3 where src1 is tied to dst
-       (Avx512Avx512Fma (op Avx512FmaOp)
-                       (dst WritableReg)
-                       (src1 Reg)
-                       (src2 Reg)
-                       (src3 RegMem)
-                       (mask OptionMaskReg)
-                       (merge MergeMode))
-
-       ;; AVX-512 VNNI (Vector Neural Network Instructions)
-       ;; These are accumulating dot-product operations: dst = dst + dot(src1, src2)
-       ;; dst/acc is the accumulator, src1 and src2 are the multiplicands
-       (Avx512Avx512Vnni (op Avx512VnniOp)
-                        (dst WritableReg)
-                        (acc Reg)  ;; Tied to dst - the accumulator
-                        (src1 Reg)
-                        (src2 RegMem)
-                        (mask OptionMaskReg)
-                        (merge MergeMode))
-
-       ;; VP2INTERSECT - Hash join acceleration
-       ;; Compares two vectors and outputs TWO consecutive mask registers:
-       ;; - dst_k: For each element in src1, set bit if matches ANY element in src2
-       ;; - dst_k+1: For each element in src2, set bit if matches ANY element in src1
-       ;; The dst register MUST be an even k-register (k0, k2, k4, k6) and both
-       ;; dst and dst+1 are written.
-       (Avx512Vp2Intersect (op Vp2IntersectOp)
-                          (dst_k WritableReg)    ;; First output k-register (even)
-                          (src1 Reg)             ;; First ZMM source
-                          (src2 RegMem))         ;; Second ZMM source (can be memory)
-
-       ;; AVX-512 Type Conversion operations (VCVTDQ2PS, VCVTPS2DQ, etc.)
-       (Avx512Avx512Cvt (op Avx512CvtOp)
-                       (dst WritableReg)
-                       (src RegMem)
-                       (mask OptionMaskReg)
-                       (merge MergeMode))
-
-       ;; AVX-512 Vector Alignment operations (VALIGND, VALIGNQ)
-       ;; These require an immediate byte operand
-       (Avx512Avx512Align (op Avx512AlignOp)
-                         (dst WritableReg)
-                         (src1 Reg)
-                         (src2 RegMem)
-                         (imm8 u8)
-                         (mask OptionMaskReg)
-                         (merge MergeMode))
-
-       ;; AVX-512 Ternary Logic operations (VPTERNLOGD, VPTERNLOGQ)
-       ;; These compute arbitrary 3-input boolean functions based on an 8-bit truth table
-       ;; For each bit position: result[i] = truth_table[(src1[i] << 2) | (src2[i] << 1) | src3[i]]
-       (Avx512Avx512Ternlog (size OperandSize)
-                           (dst WritableReg)
-                           (src1 Reg)
-                           (src2 Reg)
-                           (src3 RegMem)
-                           (imm8 u8)
-                           (mask OptionMaskReg)
-                           (merge MergeMode))
-
-       ;; AVX-512 Immediate Rotate operations (VPROLD, VPROLQ, VPRORD, VPRORQ)
-       ;; Rotate each element left or right by an immediate value
-       (Avx512Avx512ImmRotate (size OperandSize)
-                             (dst WritableReg)
-                             (src RegMem)
-                             (imm8 u8)
-                             (is_left bool)  ;; true = rotate left, false = rotate right
-                             (mask OptionMaskReg)
-                             (merge MergeMode))
-
-       ;; AVX-512 Immediate Shuffle operations (VPSHUFD, VPSHUFHW, VPSHUFLW)
-       ;; Shuffle elements according to an 8-bit immediate
-       (Avx512Avx512ImmShuffle (op Avx512ImmShuffleOp)
-                              (dst WritableReg)
-                              (src RegMem)
-                              (imm8 u8)
-                              (mask OptionMaskReg)
-                              (merge MergeMode))
-
-       ;; AVX-512 Lane Shuffle operations (VSHUFF32X4, VSHUFF64X2, VSHUFI32X4, VSHUFI64X2)
-       ;; Shuffle entire 128-bit lanes between two 512-bit sources
-       (Avx512Avx512LaneShuffle (op Avx512LaneShuffleOp)
-                               (dst WritableReg)
-                               (src1 Reg)
-                               (src2 RegMem)
-                               (imm8 u8)
-                               (mask OptionMaskReg)
-                               (merge MergeMode))
-
-       ;; AVX-512 Extract operations (VEXTRACTI32X4, VEXTRACTI64X2, etc.)
-       ;; Extract 128-bit or 256-bit lanes from a 512-bit vector
-       (Avx512Avx512Extract (op Avx512ExtractOp)
-                           (dst WritableReg)
-                           (src Reg)
-                           (lane u8))
-
-       ;; AVX-512 Insert operations (VINSERTI32X4, VINSERTI64X2, etc.)
-       ;; Insert 128-bit or 256-bit lanes into a 512-bit vector
-       (Avx512Avx512Insert (op Avx512InsertOp)
-                          (dst WritableReg)
-                          (src1 Reg)
-                          (src2 RegMem)
-                          (lane u8)
-                          (mask OptionMaskReg)
-                          (merge MergeMode))
-
-       ;; AVX-512 FP Special operations (VRCP14PS/PD, VRSQRT14PS/PD)
-       ;; Reciprocal and reciprocal sqrt approximations (~14 bits precision)
-       (Avx512Avx512FpSpecial (op Avx512FpSpecialOp)
-                             (dst WritableReg)
-                             (src RegMem)
-                             (mask OptionMaskReg)
-                             (merge MergeMode))))
+                       (addr SyntheticAmode))))
 
 (type AssemblerInst extern (enum))
 
@@ -1034,228 +751,7 @@
 (type Kmask (primitive Kmask))
 (type WritableKmask (primitive WritableKmask))
 
-;; AVX-512 types
-(type Avx512AluOp extern
-      (enum Vpaddd
-            Vpaddq
-            Vpsubd
-            Vpsubq
-            Vpmulld
-            Vpmullq
-            Vpmuludq
-            Vpmuldq
-            Vpandd
-            Vpandq
-            Vpord
-            Vporq
-            Vpxord
-            Vpxorq
-            Vpandnd
-            Vpandnq
-            Vpslld
-            Vpsllq
-            Vpsrld
-            Vpsrlq
-            Vpsrad
-            Vpsraq
-            Vpsllvd
-            Vpsllvq
-            Vpsrlvd
-            Vpsrlvq
-            Vpsravd
-            Vpsravq
-            Vprolvd
-            Vprolvq
-            Vpopcntd
-            Vpopcntq
-            Vpminsd
-            Vpminsq
-            Vpmaxsd
-            Vpmaxsq
-            Vpminud
-            Vpminuq
-            Vpmaxud
-            Vpmaxuq
-            Vpabsd
-            Vpabsq
-            Vpbroadcastd
-            Vpbroadcastq
-            Vpblendmd
-            Vpblendmq
-            Vpermd
-            Vpermq
-            Vpermi2d
-            Vpermi2q
-            Vpermt2d
-            Vpermt2q
-            Vpconflictd
-            Vpconflictq
-            Vplzcntd
-            Vplzcntq
-            Vpternlogd
-            Vpternlogq
-            ;; Pack operations
-            Vpackssdw
-            Vpackusdw
-            Vpacksswb
-            Vpackuswb
-            ;; Unpack operations
-            Vpunpcklbw
-            Vpunpckhbw
-            Vpunpcklwd
-            Vpunpckhwd
-            Vpunpckldq
-            Vpunpckhdq
-            Vpunpcklqdq
-            Vpunpckhqdq
-            ;; Shuffle operations
-            Vpshufb
-            Vpshufd
-            Vpshufhw
-            Vpshuflw
-            ;; Multiply-add operations
-            Vpmaddwd
-            Vpmaddubsw
-            ;; Byte/word arithmetic (AVX-512BW)
-            Vpaddb
-            Vpaddw
-            Vpsubb
-            Vpsubw
-            Vpminsb
-            Vpminub
-            Vpminsw
-            Vpminuw
-            Vpmaxsb
-            Vpmaxub
-            Vpmaxsw
-            Vpmaxuw
-            Vpabsb
-            Vpabsw
-            Vpcmpeqb
-            Vpcmpeqw
-            Vpcmpgtb
-            Vpcmpgtw))
-
-;; AVX-512 floating-point types
-(type Avx512FpAluOp extern
-      (enum Vaddps
-            Vaddpd
-            Vsubps
-            Vsubpd
-            Vmulps
-            Vmulpd
-            Vdivps
-            Vdivpd
-            Vminps
-            Vminpd
-            Vmaxps
-            Vmaxpd
-            Vsqrtps
-            Vsqrtpd
-            Vandps
-            Vandpd
-            Vxorps
-            Vxorpd
-            Vorps
-            Vorpd
-            Vandnps
-            Vandnpd))
-
-;; AVX-512 FMA (Fused Multiply-Add) operations
-(type Avx512FmaOp extern
-      (enum Vfmadd132ps
-            Vfmadd132pd
-            Vfmadd213ps
-            Vfmadd213pd
-            Vfmadd231ps
-            Vfmadd231pd
-            Vfmsub132ps
-            Vfmsub132pd
-            Vfmsub213ps
-            Vfmsub213pd
-            Vfmsub231ps
-            Vfmsub231pd
-            Vfnmadd132ps
-            Vfnmadd132pd
-            Vfnmadd213ps
-            Vfnmadd213pd
-            Vfnmadd231ps
-            Vfnmadd231pd
-            Vfnmsub132ps
-            Vfnmsub132pd
-            Vfnmsub213ps
-            Vfnmsub213pd
-            Vfnmsub231ps
-            Vfnmsub231pd))
-
-;; AVX-512 VNNI (Vector Neural Network Instructions)
-(type Avx512VnniOp extern
-      (enum Vpdpbusd
-            Vpdpbusds
-            Vpdpwssd
-            Vpdpwssds))
-
-;; AVX-512: VP2INTERSECT operations for hash join acceleration
-(type Vp2IntersectOp extern
-      (enum Vp2intersectd
-            Vp2intersectq))
-
-;; AVX-512 Type Conversion operations
-(type Avx512CvtOp extern
-      (enum Vcvtdq2ps
-            Vcvtqq2pd
-            Vcvtqq2ps
-            Vcvtps2dq
-            Vcvtpd2qq
-            Vcvtps2qq
-            Vcvttps2dq
-            Vcvttpd2qq
-            Vcvttps2qq
-            Vcvtps2pd
-            Vcvtpd2ps
-            ;; Integer-Double conversions
-            Vcvtdq2pd
-            Vcvtpd2dq
-            Vcvttpd2dq
-            ;; Zero-extend
-            Vpmovzxbd
-            Vpmovzxbq
-            Vpmovzxwd
-            Vpmovzxwq
-            Vpmovzxdq
-            ;; Sign-extend
-            Vpmovsxbd
-            Vpmovsxbq
-            Vpmovsxwd
-            Vpmovsxwq
-            Vpmovsxdq
-            ;; Truncation (no saturation)
-            Vpmovdb
-            Vpmovdw
-            Vpmovqb
-            Vpmovqd
-            Vpmovqw
-            Vpmovwb
-            ;; Truncation with signed saturation
-            Vpmovsdb
-            Vpmovsdw
-            Vpmovsqb
-            Vpmovsqd
-            Vpmovsqw
-            Vpmovswb
-            ;; Truncation with unsigned saturation
-            Vpmovusdb
-            Vpmovusdw
-            Vpmovusqb
-            Vpmovusqd
-            Vpmovusqw
-            Vpmovuswb))
-
-;; AVX-512 Vector Alignment operations
-(type Avx512AlignOp extern
-      (enum Valignd
-            Valignq))
-
+;; AVX-512 comparison conditions (used by DSL-generated instructions)
 (type Avx512Cond extern
       (enum Eq
             Lt
@@ -1268,87 +764,24 @@
 (decl avx512_cond_to_u8 (Avx512Cond) u8)
 (extern constructor avx512_cond_to_u8 avx512_cond_to_u8)
 
-(type Avx512ImmShuffleOp extern
-      (enum Vpshufd
-            Vpshufhw
-            Vpshuflw))
+;; AVX-512: VP2INTERSECT operations for hash join acceleration (manual MInst)
+(type Vp2IntersectOp extern
+      (enum Vp2intersectd
+            Vp2intersectq))
 
-(type Avx512LaneShuffleOp extern
-      (enum Vshuff32x4
-            Vshuff64x2
-            Vshufi32x4
-            Vshufi64x2))
-
-(type MaskAluOp extern
-      (enum Kand
-            Kor
-            Kxor
-            Kxnor
-            Knot
-            Kandn))
-
-(type MaskShiftOp extern
-      (enum Kshiftlb
-            Kshiftlw
-            Kshiftld
-            Kshiftlq
-            Kshiftrb
-            Kshiftrw
-            Kshiftrd
-            Kshiftrq))
-
-(type MaskUnpackOp extern
-      (enum Kunpckbw
-            Kunpckwd
-            Kunpckdq))
-
-(type MaskAddOp extern
-      (enum Kaddb
-            Kaddw
-            Kaddd
-            Kaddq))
-
-(type MaskTestOp extern
-      (enum Ktestb
-            Ktestw
-            Ktestd
-            Ktestq))
-
-(type MergeMode extern
-      (enum Merging
-            Zeroing))
-
+;; AVX-512 Gather operations (manual MInst - requires VSIB addressing)
 (type GatherOp extern
       (enum Vpgatherdd
             Vpgatherdq
             Vpgatherqd
             Vpgatherqq))
 
+;; AVX-512 Scatter operations (manual MInst - requires VSIB addressing)
 (type ScatterOp extern
       (enum Vpscatterdd
             Vpscatterdq
             Vpscatterqd
             Vpscatterqq))
-
-;; AVX-512 Extract operations for lane extraction
-(type Avx512ExtractOp extern
-      (enum Vextracti32x4
-            Vextracti64x2
-            Vextracti32x8
-            Vextracti64x4))
-
-(type Avx512InsertOp extern
-      (enum Vinserti32x4
-            Vinserti64x2
-            Vinserti32x8
-            Vinserti64x4))
-
-;; AVX-512 FP Special operations (reciprocal, rsqrt approximations)
-(type Avx512FpSpecialOp extern
-      (enum Vrcp14ps
-            Vrcp14pd
-            Vrsqrt14ps
-            Vrsqrt14pd))
 
 (type OptionMaskReg (primitive OptionMaskReg))
 (type OptionReg (primitive OptionReg))

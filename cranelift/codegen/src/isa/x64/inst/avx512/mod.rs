@@ -1,30 +1,19 @@
 // cranelift/codegen/src/isa/x64/inst/avx512/mod.rs
 //
-// AVX-512: (Zen 5) AVX-512 instruction support.
+// AVX-512: Manual implementations for AVX-512 instructions.
 //
-// This module provides native 512-bit SIMD instruction emission for AMD EPYC
-// 5th Gen (Avx512) and Ryzen 9000 series (Zen 5) processors with full AVX-512
-// support.
+// Most AVX-512 instructions are now DSL-generated in assembler-x64.
+// This module contains manual implementations for instructions that
+// require special handling:
 //
-// ## Modules
-// - `defs`: Instruction definitions (opcodes, enums, metadata)
-// - `emit`: EVEX instruction emission functions
+// - `defs`: Type definitions (opcodes, enums) for manual instructions
+// - `emit`: EVEX emission for gather/scatter (VSIB), vp2intersect, k-register spill/fill
 // - `encoding`: EVEX prefix encoding utilities
 // - `regs`: K-register utilities
-//
-// ## Supported Instructions
-// - ALU: VPADDD/Q, VPSUBD/Q, VPMULLD/Q, VPAND/OR/XOR, shifts, min/max
-// - Compare: VPCMPD/Q with result to k-register
-// - Compress/Expand: VPCOMPRESSD/Q, VPEXPANDD/Q
-// - Masked Load/Store: VMOVDQU32/64 with fault suppression
-// - Gather/Scatter: VPGATHERD/Q, VPSCATTERD/Q
-// - K-register ops: KAND, KOR, KXOR, KNOT, KANDN, KMOV, KORTEST
 
 pub mod defs;
 pub mod emit;
 pub mod encoding;
 pub mod regs;
-#[cfg(test)]
-mod runtime_tests;
 
 pub use defs::*;

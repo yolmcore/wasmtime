@@ -16,8 +16,8 @@ use crate::ir::{
 };
 use crate::isa::x64::X64Backend;
 use crate::isa::x64::inst::{ReturnCallInfo, args::*, args::OptionReg, regs, avx512};
-// Re-export Avx512 types for ISLE generated code
-pub(crate) use avx512::{Avx512AluOp, Avx512AlignOp, Avx512Cond, Avx512CvtOp, Avx512ExtractOp, Avx512FmaOp, Avx512FpAluOp, Avx512FpSpecialOp, Avx512ImmShuffleOp, Avx512InsertOp, Avx512LaneShuffleOp, Avx512VnniOp, Vp2IntersectOp, GatherOp, MaskAddOp, MaskAluOp, MaskShiftOp, MaskTestOp, MaskUnpackOp, MergeMode, ScatterOp};
+// Re-export Avx512 types for ISLE generated code (only types still used by manual implementations)
+pub(crate) use avx512::{Avx512Cond, Vp2IntersectOp, GatherOp, ScatterOp};
 use crate::isa::x64::lower::{InsnInput, emit_vm_call};
 use crate::machinst::isle::*;
 use crate::machinst::{

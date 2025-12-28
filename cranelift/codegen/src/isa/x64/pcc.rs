@@ -213,57 +213,14 @@ pub(crate) fn check(
 
         Inst::SequencePoint { .. } => Ok(()),
 
-        // AVX-512 instructions
+        // AVX-512 instructions (manual implementations)
         // For now, we don't perform PCC verification on SIMD operations
-        Inst::Avx512Avx512Alu { .. }
-        | Inst::Avx512Avx512Cmp { .. }
-        | Inst::Avx512CompressStore { .. }
-        | Inst::Avx512ExpandLoad { .. }
-        | Inst::Avx512MaskedLoad { .. }
-        | Inst::Avx512MaskedStore { .. }
-        | Inst::Avx512512Load { .. }
-        | Inst::Avx512256Load { .. }
-        | Inst::Avx512512Store { .. }
-        | Inst::Avx512256Store { .. }
-        | Inst::Avx512MaskLogic { .. }
-        | Inst::Avx512Kmov { .. }
-        | Inst::Avx512KmovKK { .. }
+        Inst::Avx512KmovKK { .. }
         | Inst::Avx512KmovLoad { .. }
         | Inst::Avx512KmovStore { .. }
-        | Inst::Avx512Kortest { .. }
-        | Inst::Avx512MaskShift { .. }
-        | Inst::Avx512MaskUnpack { .. }
-        | Inst::Avx512MaskAdd { .. }
-        | Inst::Avx512MaskTest { .. }
         | Inst::Avx512Gather { .. }
         | Inst::Avx512Scatter { .. }
-        | Inst::Avx512CompressReg { .. }
-        | Inst::Avx512ExpandReg { .. }
-        | Inst::Avx512Vmovmsk32 { .. }
-        | Inst::Avx512Vmovmsk64 { .. }
-        | Inst::Avx512Movm2d { .. }
-        | Inst::Avx512Movm2q { .. }
-        | Inst::Avx512Vmovmsk8 { .. }
-        | Inst::Avx512Vmovmsk16 { .. }
-        | Inst::Avx512Movm2b { .. }
-        | Inst::Avx512Movm2w { .. }
-        | Inst::Avx512Broadcastd { .. }
-        | Inst::Avx512Broadcastq { .. }
-        | Inst::Avx512Avx512FpAlu { .. }
-        | Inst::Avx512Avx512FpSqrt { .. }
-        | Inst::Avx512Avx512Fma { .. }
-        | Inst::Avx512Avx512Cvt { .. }
-        | Inst::Avx512Avx512Align { .. }
-        | Inst::Avx512Avx512Ternlog { .. }
-        | Inst::Avx512Avx512ImmRotate { .. }
-        | Inst::Avx512Avx512ImmShuffle { .. }
-        | Inst::Avx512Avx512LaneShuffle { .. }
-        | Inst::Avx512Avx512Vnni { .. }
-        | Inst::Avx512Vp2Intersect { .. }
-        | Inst::Avx512Avx512FpCmp { .. }
-        | Inst::Avx512Avx512Extract { .. }
-        | Inst::Avx512Avx512Insert { .. }
-        | Inst::Avx512Avx512FpSpecial { .. } => Ok(()),
+        | Inst::Avx512Vp2Intersect { .. } => Ok(()),
 
         Inst::External { .. } => Ok(()), // TODO: unsure what to do about this!
     }
