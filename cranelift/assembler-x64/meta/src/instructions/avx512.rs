@@ -901,11 +901,13 @@ pub fn list() -> Vec<Inst> {
 
         // VMOVDQU32 - Masked store dwords
         // EVEX.512.F3.0F.W0 7F /r with k-mask
-        inst("vmovdqu32", fmt("Zs_km", [r(k1), w(m512), r(zmm1)]), evex(L512, Full)._f3()._0f().w0().op(0x7F).r().zero_mask(), (_64b | compat) & avx512f),
+        // Note: Stores use merge_mask (z=0) because there's no destination register to zero
+        inst("vmovdqu32", fmt("Zs_km", [r(k1), w(m512), r(zmm1)]), evex(L512, Full)._f3()._0f().w0().op(0x7F).r().merge_mask(), (_64b | compat) & avx512f),
 
         // VMOVDQU64 - Masked store qwords
         // EVEX.512.F3.0F.W1 7F /r with k-mask
-        inst("vmovdqu64", fmt("Zs_km", [r(k1), w(m512), r(zmm1)]), evex(L512, Full)._f3()._0f().w1().op(0x7F).r().zero_mask(), (_64b | compat) & avx512f),
+        // Note: Stores use merge_mask (z=0) because there's no destination register to zero
+        inst("vmovdqu64", fmt("Zs_km", [r(k1), w(m512), r(zmm1)]), evex(L512, Full)._f3()._0f().w1().op(0x7F).r().merge_mask(), (_64b | compat) & avx512f),
 
         // VMOVDQU32 - Move unaligned packed dwords 256-bit (load)
         // EVEX.256.F3.0F.W0 6F /r
@@ -1105,9 +1107,11 @@ pub fn list() -> Vec<Inst> {
 
         // Memory compress/expand with masking
         // VPCOMPRESSD memory form with mask - store compressed dwords to memory
-        inst("vpcompressd", fmt("Zs_km_c", [r(k1), w(m512), r(zmm1)]), evex(L512, Full)._66()._0f38().w0().op(0x8B).r().zero_mask(), (_64b | compat) & avx512f),
+        // Note: Stores use merge_mask (z=0) because there's no destination register to zero
+        inst("vpcompressd", fmt("Zs_km_c", [r(k1), w(m512), r(zmm1)]), evex(L512, Full)._66()._0f38().w0().op(0x8B).r().merge_mask(), (_64b | compat) & avx512f),
         // VPCOMPRESSQ memory form with mask - store compressed qwords to memory
-        inst("vpcompressq", fmt("Zs_km_c", [r(k1), w(m512), r(zmm1)]), evex(L512, Full)._66()._0f38().w1().op(0x8B).r().zero_mask(), (_64b | compat) & avx512f),
+        // Note: Stores use merge_mask (z=0) because there's no destination register to zero
+        inst("vpcompressq", fmt("Zs_km_c", [r(k1), w(m512), r(zmm1)]), evex(L512, Full)._66()._0f38().w1().op(0x8B).r().merge_mask(), (_64b | compat) & avx512f),
         // VPEXPANDD memory form with mask - load and expand dwords from memory
         inst("vpexpandd", fmt("Zl_km_e", [w(zmm1), r(k1), r(m512)]), evex(L512, Full)._66()._0f38().w0().op(0x89).r().zero_mask(), (_64b | compat) & avx512f),
         // VPEXPANDQ memory form with mask - load and expand qwords from memory

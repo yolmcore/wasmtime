@@ -285,12 +285,15 @@ impl dsl::Inst {
                             fmtln!(f, "let {location} = {to_string};");
                         }
                         // Check if this instruction has EVEX encoding with masking
-                        let has_masking = match &self.encoding {
-                            crate::dsl::Encoding::Evex(evex) => evex.supports_masking(),
-                            _ => false,
+                        let (has_masking, uses_zeroing) = match &self.encoding {
+                            crate::dsl::Encoding::Evex(evex) => {
+                                (evex.supports_masking(), evex.uses_zeroing())
+                            }
+                            _ => (false, false),
                         };
-                        let ordered_ops =
-                            self.format.generate_att_style_operands_with_masking(has_masking);
+                        let ordered_ops = self
+                            .format
+                            .generate_att_style_operands_with_masking(has_masking, uses_zeroing);
                         let mut implicit_ops = self.format.generate_implicit_operands();
                         if self.has_trap {
                             fmtln!(f, "let trap = self.trap;");

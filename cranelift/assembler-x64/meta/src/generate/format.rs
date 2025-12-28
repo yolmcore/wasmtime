@@ -55,12 +55,19 @@ impl dsl::Format {
     /// (TODO).
     #[must_use]
     pub(crate) fn generate_att_style_operands(&self) -> String {
-        self.generate_att_style_operands_with_masking(false)
+        self.generate_att_style_operands_with_masking(false, false)
     }
 
     /// Generate AT&T-style operand string, with optional masking support.
+    ///
+    /// If `has_masking` is true and a mask operand is found, it will be appended
+    /// to the destination. If `uses_zeroing` is also true, `{z}` will be added.
     #[must_use]
-    pub(crate) fn generate_att_style_operands_with_masking(&self, has_masking: bool) -> String {
+    pub(crate) fn generate_att_style_operands_with_masking(
+        &self,
+        has_masking: bool,
+        uses_zeroing: bool,
+    ) -> String {
         // A mask operand is a read-only k-register, but ONLY if:
         // 1. The encoding supports masking (has_masking is true)
         // 2. The k-register is read-only
@@ -110,7 +117,12 @@ impl dsl::Format {
                 // - }} → literal }
                 // To produce {{{k1}}} in the output string, we need 6 braces on each side
                 // because format! interprets {{ as literal {
-                *last = format!("{last} {{{{{{{mask_loc}}}}}}}");
+                if uses_zeroing {
+                    // Add {z} for zeroing-masking mode
+                    *last = format!("{last} {{{{{{{mask_loc}}}}}}} {{{{z}}}}");
+                } else {
+                    *last = format!("{last} {{{{{{{mask_loc}}}}}}}");
+                }
             }
         }
 
