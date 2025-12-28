@@ -5253,17 +5253,19 @@
 ;; VPCOMPRESSD register form - compress 32-bit elements based on mask
 ;; Input mask is a vector of 0/-1, needs conversion to k-register
 ;; Uses DSL-generated constructor with vpmovd2m for mask conversion
+;; Note: Constructor signature is (src kmask) to match Intel encoding (src in ModRM.reg)
 (decl x64_512_vpcompressd_reg (Reg Xmm) Xmm)
 (rule (x64_512_vpcompressd_reg vec_mask src)
       (let ((kmask Kmask (x64_vpmovd2m_kz (xmm_new vec_mask))))
-        (x64_vpcompressd_z_km_c kmask src)))
+        (x64_vpcompressd_z_km_c src kmask)))
 
 ;; VPCOMPRESSQ register form - compress 64-bit elements based on mask
 ;; Input mask is a vector of 0/-1, needs conversion to k-register
+;; Note: Constructor signature is (src kmask) to match Intel encoding (src in ModRM.reg)
 (decl x64_512_vpcompressq_reg (Reg Xmm) Xmm)
 (rule (x64_512_vpcompressq_reg vec_mask src)
       (let ((kmask Kmask (x64_vpmovq2m_kz (xmm_new vec_mask))))
-        (x64_vpcompressq_z_km_c kmask src)))
+        (x64_vpcompressq_z_km_c src kmask)))
 
 ;; VPEXPANDD register form - expand 32-bit elements based on mask
 ;; Input mask is a vector of 0/-1, needs conversion to k-register

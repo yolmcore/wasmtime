@@ -1095,9 +1095,11 @@ pub fn list() -> Vec<Inst> {
 
         // VPCOMPRESSD register form with mask - compress src elements where mask=1 to consecutive dst positions
         // EVEX.512.66.0F38.W0 8B /r  (same opcode, but reg-to-reg form)
-        inst("vpcompressd", fmt("Z_km_c", [w(zmm1), r(k1), r(zmm2)]), evex(L512, Full)._66()._0f38().w0().op(0x8B).r().zero_mask(), (_64b | compat) & avx512f),
+        // Note: Intel encoding is Op/En A: ModRM:r/m (w), ModRM:reg (r) - dst in rm, src in reg
+        // We put src first so it goes into ModRM.reg (pattern matching puts first operand in reg)
+        inst("vpcompressd", fmt("Z_km_c", [r(zmm2), r(k1), w(zmm1)]), evex(L512, Full)._66()._0f38().w0().op(0x8B).r().zero_mask(), (_64b | compat) & avx512f),
         // VPCOMPRESSQ register form with mask
-        inst("vpcompressq", fmt("Z_km_c", [w(zmm1), r(k1), r(zmm2)]), evex(L512, Full)._66()._0f38().w1().op(0x8B).r().zero_mask(), (_64b | compat) & avx512f),
+        inst("vpcompressq", fmt("Z_km_c", [r(zmm2), r(k1), w(zmm1)]), evex(L512, Full)._66()._0f38().w1().op(0x8B).r().zero_mask(), (_64b | compat) & avx512f),
 
         // VPEXPANDD register form with mask - expand consecutive src elements to dst positions where mask=1
         // EVEX.512.66.0F38.W0 89 /r  (same opcode, but reg-to-reg form)

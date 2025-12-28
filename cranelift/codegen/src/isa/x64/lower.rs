@@ -42,9 +42,13 @@ impl Lower<'_, Inst> {
 
     #[inline]
     pub fn temp_writable_kmask(&mut self) -> WritableMask {
-        // K-mask registers share the Vector register class with XMM/ZMM.
-        // We use F64 as a placeholder type since there's no dedicated k-mask type.
-        WritableMask::from_writable_reg(self.alloc_tmp(types::F64).only_reg().unwrap()).unwrap()
+        // K-mask registers (k0-k7) are physical registers in the Vector class.
+        // They are not virtualized by regalloc2, so we use fixed registers.
+        // k1 is used as a scratch register for temporaries.
+        // (k0 is special - it means "no masking" in AVX-512)
+        use crate::machinst::isle::WritableReg;
+        let k1 = super::inst::regs::k1();
+        WritableMask::from_writable_reg(WritableReg::from_reg(k1)).unwrap()
     }
 }
 

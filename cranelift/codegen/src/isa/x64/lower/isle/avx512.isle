@@ -463,6 +463,160 @@
         (x64_512_kreg_to_vec_mask_64 kreg)))
 
 ;; =============================================================================
+;; 512-bit Floating-Point Comparison (fcmp)
+;; =============================================================================
+;;
+;; AVX-512 FP comparisons use VCMPPS/VCMPPD which produce a k-register mask.
+;; We then convert the k-register to a vector mask (0/-1 per element) using
+;; VPMOVM2D/VPMOVM2Q to match the expected IR semantics.
+;;
+;; The flow is: fcmp -> VCMPPS/PD -> k-register -> VPMOVM2D/Q -> vector mask
+
+;; F32X16 Equal
+(rule 20 (lower (fcmp (FloatCC.Equal) x @ (value_type (multi_lane 32 16)) y))
+      (if-let true (has_avx512f))
+      (let ((kreg Reg (x64_512_vcmpps (put_in_xmm x) (put_in_xmm_mem y) (encode_fcmp_imm (FcmpImm.Equal)))))
+        (x64_512_kreg_to_vec_mask_32 kreg)))
+
+;; F32X16 Not Equal
+(rule 20 (lower (fcmp (FloatCC.NotEqual) x @ (value_type (multi_lane 32 16)) y))
+      (if-let true (has_avx512f))
+      (let ((kreg Reg (x64_512_vcmpps (put_in_xmm x) (put_in_xmm_mem y) (encode_fcmp_imm (FcmpImm.NotEqual)))))
+        (x64_512_kreg_to_vec_mask_32 kreg)))
+
+;; F32X16 Less Than
+(rule 20 (lower (fcmp (FloatCC.LessThan) x @ (value_type (multi_lane 32 16)) y))
+      (if-let true (has_avx512f))
+      (let ((kreg Reg (x64_512_vcmpps (put_in_xmm x) (put_in_xmm_mem y) (encode_fcmp_imm (FcmpImm.LessThan)))))
+        (x64_512_kreg_to_vec_mask_32 kreg)))
+
+;; F32X16 Less Than Or Equal
+(rule 20 (lower (fcmp (FloatCC.LessThanOrEqual) x @ (value_type (multi_lane 32 16)) y))
+      (if-let true (has_avx512f))
+      (let ((kreg Reg (x64_512_vcmpps (put_in_xmm x) (put_in_xmm_mem y) (encode_fcmp_imm (FcmpImm.LessThanOrEqual)))))
+        (x64_512_kreg_to_vec_mask_32 kreg)))
+
+;; F32X16 Ordered
+(rule 20 (lower (fcmp (FloatCC.Ordered) x @ (value_type (multi_lane 32 16)) y))
+      (if-let true (has_avx512f))
+      (let ((kreg Reg (x64_512_vcmpps (put_in_xmm x) (put_in_xmm_mem y) (encode_fcmp_imm (FcmpImm.Ordered)))))
+        (x64_512_kreg_to_vec_mask_32 kreg)))
+
+;; F32X16 Unordered
+(rule 20 (lower (fcmp (FloatCC.Unordered) x @ (value_type (multi_lane 32 16)) y))
+      (if-let true (has_avx512f))
+      (let ((kreg Reg (x64_512_vcmpps (put_in_xmm x) (put_in_xmm_mem y) (encode_fcmp_imm (FcmpImm.Unordered)))))
+        (x64_512_kreg_to_vec_mask_32 kreg)))
+
+;; F32X16 Unordered Or Greater Than
+(rule 20 (lower (fcmp (FloatCC.UnorderedOrGreaterThan) x @ (value_type (multi_lane 32 16)) y))
+      (if-let true (has_avx512f))
+      (let ((kreg Reg (x64_512_vcmpps (put_in_xmm x) (put_in_xmm_mem y) (encode_fcmp_imm (FcmpImm.UnorderedOrGreaterThan)))))
+        (x64_512_kreg_to_vec_mask_32 kreg)))
+
+;; F32X16 Unordered Or Greater Than Or Equal
+(rule 20 (lower (fcmp (FloatCC.UnorderedOrGreaterThanOrEqual) x @ (value_type (multi_lane 32 16)) y))
+      (if-let true (has_avx512f))
+      (let ((kreg Reg (x64_512_vcmpps (put_in_xmm x) (put_in_xmm_mem y) (encode_fcmp_imm (FcmpImm.UnorderedOrGreaterThanOrEqual)))))
+        (x64_512_kreg_to_vec_mask_32 kreg)))
+
+;; F32X16 Greater Than (swap operands)
+(rule 20 (lower (fcmp (FloatCC.GreaterThan) x @ (value_type (multi_lane 32 16)) y))
+      (if-let true (has_avx512f))
+      (let ((kreg Reg (x64_512_vcmpps (put_in_xmm y) (put_in_xmm_mem x) (encode_fcmp_imm (FcmpImm.LessThan)))))
+        (x64_512_kreg_to_vec_mask_32 kreg)))
+
+;; F32X16 Greater Than Or Equal (swap operands)
+(rule 20 (lower (fcmp (FloatCC.GreaterThanOrEqual) x @ (value_type (multi_lane 32 16)) y))
+      (if-let true (has_avx512f))
+      (let ((kreg Reg (x64_512_vcmpps (put_in_xmm y) (put_in_xmm_mem x) (encode_fcmp_imm (FcmpImm.LessThanOrEqual)))))
+        (x64_512_kreg_to_vec_mask_32 kreg)))
+
+;; F32X16 Unordered Or Less Than (swap operands)
+(rule 20 (lower (fcmp (FloatCC.UnorderedOrLessThan) x @ (value_type (multi_lane 32 16)) y))
+      (if-let true (has_avx512f))
+      (let ((kreg Reg (x64_512_vcmpps (put_in_xmm y) (put_in_xmm_mem x) (encode_fcmp_imm (FcmpImm.UnorderedOrGreaterThan)))))
+        (x64_512_kreg_to_vec_mask_32 kreg)))
+
+;; F32X16 Unordered Or Less Than Or Equal (swap operands)
+(rule 20 (lower (fcmp (FloatCC.UnorderedOrLessThanOrEqual) x @ (value_type (multi_lane 32 16)) y))
+      (if-let true (has_avx512f))
+      (let ((kreg Reg (x64_512_vcmpps (put_in_xmm y) (put_in_xmm_mem x) (encode_fcmp_imm (FcmpImm.UnorderedOrGreaterThanOrEqual)))))
+        (x64_512_kreg_to_vec_mask_32 kreg)))
+
+;; F64X8 Equal
+(rule 20 (lower (fcmp (FloatCC.Equal) x @ (value_type (multi_lane 64 8)) y))
+      (if-let true (has_avx512f))
+      (let ((kreg Reg (x64_512_vcmppd (put_in_xmm x) (put_in_xmm_mem y) (encode_fcmp_imm (FcmpImm.Equal)))))
+        (x64_512_kreg_to_vec_mask_64 kreg)))
+
+;; F64X8 Not Equal
+(rule 20 (lower (fcmp (FloatCC.NotEqual) x @ (value_type (multi_lane 64 8)) y))
+      (if-let true (has_avx512f))
+      (let ((kreg Reg (x64_512_vcmppd (put_in_xmm x) (put_in_xmm_mem y) (encode_fcmp_imm (FcmpImm.NotEqual)))))
+        (x64_512_kreg_to_vec_mask_64 kreg)))
+
+;; F64X8 Less Than
+(rule 20 (lower (fcmp (FloatCC.LessThan) x @ (value_type (multi_lane 64 8)) y))
+      (if-let true (has_avx512f))
+      (let ((kreg Reg (x64_512_vcmppd (put_in_xmm x) (put_in_xmm_mem y) (encode_fcmp_imm (FcmpImm.LessThan)))))
+        (x64_512_kreg_to_vec_mask_64 kreg)))
+
+;; F64X8 Less Than Or Equal
+(rule 20 (lower (fcmp (FloatCC.LessThanOrEqual) x @ (value_type (multi_lane 64 8)) y))
+      (if-let true (has_avx512f))
+      (let ((kreg Reg (x64_512_vcmppd (put_in_xmm x) (put_in_xmm_mem y) (encode_fcmp_imm (FcmpImm.LessThanOrEqual)))))
+        (x64_512_kreg_to_vec_mask_64 kreg)))
+
+;; F64X8 Ordered
+(rule 20 (lower (fcmp (FloatCC.Ordered) x @ (value_type (multi_lane 64 8)) y))
+      (if-let true (has_avx512f))
+      (let ((kreg Reg (x64_512_vcmppd (put_in_xmm x) (put_in_xmm_mem y) (encode_fcmp_imm (FcmpImm.Ordered)))))
+        (x64_512_kreg_to_vec_mask_64 kreg)))
+
+;; F64X8 Unordered
+(rule 20 (lower (fcmp (FloatCC.Unordered) x @ (value_type (multi_lane 64 8)) y))
+      (if-let true (has_avx512f))
+      (let ((kreg Reg (x64_512_vcmppd (put_in_xmm x) (put_in_xmm_mem y) (encode_fcmp_imm (FcmpImm.Unordered)))))
+        (x64_512_kreg_to_vec_mask_64 kreg)))
+
+;; F64X8 Unordered Or Greater Than
+(rule 20 (lower (fcmp (FloatCC.UnorderedOrGreaterThan) x @ (value_type (multi_lane 64 8)) y))
+      (if-let true (has_avx512f))
+      (let ((kreg Reg (x64_512_vcmppd (put_in_xmm x) (put_in_xmm_mem y) (encode_fcmp_imm (FcmpImm.UnorderedOrGreaterThan)))))
+        (x64_512_kreg_to_vec_mask_64 kreg)))
+
+;; F64X8 Unordered Or Greater Than Or Equal
+(rule 20 (lower (fcmp (FloatCC.UnorderedOrGreaterThanOrEqual) x @ (value_type (multi_lane 64 8)) y))
+      (if-let true (has_avx512f))
+      (let ((kreg Reg (x64_512_vcmppd (put_in_xmm x) (put_in_xmm_mem y) (encode_fcmp_imm (FcmpImm.UnorderedOrGreaterThanOrEqual)))))
+        (x64_512_kreg_to_vec_mask_64 kreg)))
+
+;; F64X8 Greater Than (swap operands)
+(rule 20 (lower (fcmp (FloatCC.GreaterThan) x @ (value_type (multi_lane 64 8)) y))
+      (if-let true (has_avx512f))
+      (let ((kreg Reg (x64_512_vcmppd (put_in_xmm y) (put_in_xmm_mem x) (encode_fcmp_imm (FcmpImm.LessThan)))))
+        (x64_512_kreg_to_vec_mask_64 kreg)))
+
+;; F64X8 Greater Than Or Equal (swap operands)
+(rule 20 (lower (fcmp (FloatCC.GreaterThanOrEqual) x @ (value_type (multi_lane 64 8)) y))
+      (if-let true (has_avx512f))
+      (let ((kreg Reg (x64_512_vcmppd (put_in_xmm y) (put_in_xmm_mem x) (encode_fcmp_imm (FcmpImm.LessThanOrEqual)))))
+        (x64_512_kreg_to_vec_mask_64 kreg)))
+
+;; F64X8 Unordered Or Less Than (swap operands)
+(rule 20 (lower (fcmp (FloatCC.UnorderedOrLessThan) x @ (value_type (multi_lane 64 8)) y))
+      (if-let true (has_avx512f))
+      (let ((kreg Reg (x64_512_vcmppd (put_in_xmm y) (put_in_xmm_mem x) (encode_fcmp_imm (FcmpImm.UnorderedOrGreaterThan)))))
+        (x64_512_kreg_to_vec_mask_64 kreg)))
+
+;; F64X8 Unordered Or Less Than Or Equal (swap operands)
+(rule 20 (lower (fcmp (FloatCC.UnorderedOrLessThanOrEqual) x @ (value_type (multi_lane 64 8)) y))
+      (if-let true (has_avx512f))
+      (let ((kreg Reg (x64_512_vcmppd (put_in_xmm y) (put_in_xmm_mem x) (encode_fcmp_imm (FcmpImm.UnorderedOrGreaterThanOrEqual)))))
+        (x64_512_kreg_to_vec_mask_64 kreg)))
+
+;; =============================================================================
 ;; 512-bit Splat/Broadcast (splat)
 ;; =============================================================================
 ;;

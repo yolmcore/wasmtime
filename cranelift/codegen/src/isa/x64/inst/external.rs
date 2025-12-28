@@ -326,10 +326,16 @@ fn enc_xmm(xmm: &Xmm) -> u8 {
 }
 
 /// A helper method for extracting the hardware encoding of a mask register.
+/// K-registers are defined with PReg index 32+enc (k0=32, k1=33, etc.) to avoid
+/// conflicting with XMM/ZMM registers (0-31) in the Vector class.
+/// We subtract 32 to get the actual hardware encoding (0-7).
 #[inline]
 fn enc_mask(mask: &Mask) -> u8 {
     if let Some(real) = mask.to_reg().to_real_reg() {
-        real.hw_enc()
+        let hw_enc = real.hw_enc();
+        // K-registers use PReg index 32-39, but actual hw encoding is 0-7
+        debug_assert!(hw_enc >= 32 && hw_enc < 40, "invalid k-register hw_enc: {hw_enc}");
+        hw_enc - 32
     } else {
         unreachable!()
     }
