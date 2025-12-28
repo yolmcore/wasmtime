@@ -383,7 +383,7 @@ fn add_annotation_constraints(
             tree.next_type_var += 1;
 
             // If constant is known, add the value to the tree. Useful for
-            // capturing isleTypes
+            // capavx512g isleTypes
             tree.type_var_to_val_map.insert(t, c.value);
             (e, t)
         }
@@ -1448,7 +1448,7 @@ fn add_rule_constraints(
         }
         TypeVarConstruct::Const(i) => {
             // If constant is known, add the value to the tree. Useful for
-            // capturing isleTypes
+            // capavx512g isleTypes
             tree.type_var_to_val_map.insert(curr.type_var, *i);
 
             Some(veri_ir::Expr::Terminal(veri_ir::Terminal::Const(
@@ -1458,7 +1458,7 @@ fn add_rule_constraints(
         }
         TypeVarConstruct::Bool(val) => {
             // If constant is known, add the value to the tree. Useful for
-            // capturing isleTypes
+            // capavx512g isleTypes
             tree.type_var_to_val_map
                 .insert(curr.type_var, i128::from(*val));
 

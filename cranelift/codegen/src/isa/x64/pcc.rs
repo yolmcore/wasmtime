@@ -213,52 +213,57 @@ pub(crate) fn check(
 
         Inst::SequencePoint { .. } => Ok(()),
 
-        // YOLM FORK: Turin AVX-512 instructions
+        // AVX-512 instructions
         // For now, we don't perform PCC verification on SIMD operations
-        Inst::TurinAvx512Alu { .. }
-        | Inst::TurinAvx512Cmp { .. }
-        | Inst::TurinCompressStore { .. }
-        | Inst::TurinExpandLoad { .. }
-        | Inst::TurinMaskedLoad { .. }
-        | Inst::TurinMaskedStore { .. }
-        | Inst::Turin512Load { .. }
-        | Inst::Turin512Store { .. }
-        | Inst::TurinMaskLogic { .. }
-        | Inst::TurinKmov { .. }
-        | Inst::TurinKortest { .. }
-        | Inst::TurinMaskShift { .. }
-        | Inst::TurinMaskUnpack { .. }
-        | Inst::TurinMaskAdd { .. }
-        | Inst::TurinMaskTest { .. }
-        | Inst::TurinGather { .. }
-        | Inst::TurinScatter { .. }
-        | Inst::TurinCompressReg { .. }
-        | Inst::TurinExpandReg { .. }
-        | Inst::TurinVmovmsk32 { .. }
-        | Inst::TurinVmovmsk64 { .. }
-        | Inst::TurinMovm2d { .. }
-        | Inst::TurinMovm2q { .. }
-        | Inst::TurinVmovmsk8 { .. }
-        | Inst::TurinVmovmsk16 { .. }
-        | Inst::TurinMovm2b { .. }
-        | Inst::TurinMovm2w { .. }
-        | Inst::TurinBroadcastd { .. }
-        | Inst::TurinBroadcastq { .. }
-        | Inst::TurinAvx512FpAlu { .. }
-        | Inst::TurinAvx512FpSqrt { .. }
-        | Inst::TurinAvx512Fma { .. }
-        | Inst::TurinAvx512Cvt { .. }
-        | Inst::TurinAvx512Align { .. }
-        | Inst::TurinAvx512Ternlog { .. }
-        | Inst::TurinAvx512ImmRotate { .. }
-        | Inst::TurinAvx512ImmShuffle { .. }
-        | Inst::TurinAvx512LaneShuffle { .. }
-        | Inst::TurinAvx512Vnni { .. }
-        | Inst::TurinVp2Intersect { .. }
-        | Inst::TurinAvx512FpCmp { .. }
-        | Inst::TurinAvx512Extract { .. }
-        | Inst::TurinAvx512Insert { .. }
-        | Inst::TurinAvx512FpSpecial { .. } => Ok(()),
+        Inst::Avx512Avx512Alu { .. }
+        | Inst::Avx512Avx512Cmp { .. }
+        | Inst::Avx512CompressStore { .. }
+        | Inst::Avx512ExpandLoad { .. }
+        | Inst::Avx512MaskedLoad { .. }
+        | Inst::Avx512MaskedStore { .. }
+        | Inst::Avx512512Load { .. }
+        | Inst::Avx512256Load { .. }
+        | Inst::Avx512512Store { .. }
+        | Inst::Avx512256Store { .. }
+        | Inst::Avx512MaskLogic { .. }
+        | Inst::Avx512Kmov { .. }
+        | Inst::Avx512KmovKK { .. }
+        | Inst::Avx512KmovLoad { .. }
+        | Inst::Avx512KmovStore { .. }
+        | Inst::Avx512Kortest { .. }
+        | Inst::Avx512MaskShift { .. }
+        | Inst::Avx512MaskUnpack { .. }
+        | Inst::Avx512MaskAdd { .. }
+        | Inst::Avx512MaskTest { .. }
+        | Inst::Avx512Gather { .. }
+        | Inst::Avx512Scatter { .. }
+        | Inst::Avx512CompressReg { .. }
+        | Inst::Avx512ExpandReg { .. }
+        | Inst::Avx512Vmovmsk32 { .. }
+        | Inst::Avx512Vmovmsk64 { .. }
+        | Inst::Avx512Movm2d { .. }
+        | Inst::Avx512Movm2q { .. }
+        | Inst::Avx512Vmovmsk8 { .. }
+        | Inst::Avx512Vmovmsk16 { .. }
+        | Inst::Avx512Movm2b { .. }
+        | Inst::Avx512Movm2w { .. }
+        | Inst::Avx512Broadcastd { .. }
+        | Inst::Avx512Broadcastq { .. }
+        | Inst::Avx512Avx512FpAlu { .. }
+        | Inst::Avx512Avx512FpSqrt { .. }
+        | Inst::Avx512Avx512Fma { .. }
+        | Inst::Avx512Avx512Cvt { .. }
+        | Inst::Avx512Avx512Align { .. }
+        | Inst::Avx512Avx512Ternlog { .. }
+        | Inst::Avx512Avx512ImmRotate { .. }
+        | Inst::Avx512Avx512ImmShuffle { .. }
+        | Inst::Avx512Avx512LaneShuffle { .. }
+        | Inst::Avx512Avx512Vnni { .. }
+        | Inst::Avx512Vp2Intersect { .. }
+        | Inst::Avx512Avx512FpCmp { .. }
+        | Inst::Avx512Avx512Extract { .. }
+        | Inst::Avx512Avx512Insert { .. }
+        | Inst::Avx512Avx512FpSpecial { .. } => Ok(()),
 
         Inst::External { .. } => Ok(()), // TODO: unsure what to do about this!
     }

@@ -6,7 +6,7 @@
 //! 3. The correct AVX-512 instructions are selected (via VCode inspection)
 //!
 //! These tests are designed to validate all operations needed for a columnar
-//! database engine using AVX-512 on AMD EPYC Turin (Zen 5) processors.
+//! database engine using AVX-512 on AMD EPYC Avx512 (Zen 5) processors.
 
 use cranelift_codegen::ir::condcodes::IntCC;
 use cranelift_codegen::ir::types::*;
@@ -2303,7 +2303,7 @@ fn test_vcode_load_store_512bit() {
     println!("test_vcode_load_store_512bit: PASSED - verified VMOVDQU64/32");
 }
 
-// NOTE: VPOPCNTD/Q tests are disabled because Cranelift lacks the has_avx512_vpopcntdq
+// NOTE: VPOPCNTD/Q tests are disabled because Cranelift lacks the has_x64_512_vpopcntdq
 // ISA flag. The instructions require AVX-512 VPOPCNTDQ extension which needs to be
 // added to the ISA flags before these tests can be enabled.
 
@@ -2311,7 +2311,7 @@ fn test_vcode_load_store_512bit() {
 // Tests: Count Leading Zeros (VPLZCNTD / VPLZCNTQ)
 // =============================================================================
 // NOTE: Vector clz (VPLZCNTD/Q) is not currently exposed in CLIF IR for I64X8/I32X16.
-// The underlying instructions are implemented (TurinAvx512Alu with Vplzcntd/Vplzcntq),
+// The underlying instructions are implemented (Avx512Avx512Alu with Vplzcntd/Vplzcntq),
 // but CLIF verifier rejects clz on vector types. A future enhancement could add
 // vector clz support to CLIF IR.
 //
@@ -6057,7 +6057,7 @@ fn test_i32x16_band_not() {
 // To enable these tests, we would need to either:
 // 1. Modify CLIF's Narrower constraint to support vector types (F32X8, F64X8)
 // 2. Add x86-specific opcodes (x86_vcvtps2pd, x86_vcvtpd2ps) that bypass the constraint
-// The lowering rules in turin.isle are ready; this is purely a CLIF type constraint issue.
+// The lowering rules in avx512.isle are ready; this is purely a CLIF type constraint issue.
 
 #[test]
 #[ignore = "CLIF Narrower constraint doesn't support 512-bit vector types (F32X8, F64X8)"]
@@ -6434,6 +6434,93 @@ fn test_i32x16_expand() {
     assert_eq!(result.0[7], 107, "Expanded to position 7");
     assert_eq!(result.0[1], 0, "Unset position should be 0");
     println!("test_i32x16_expand: PASSED");
+}
+
+// =============================================================================
+// Test: 256-bit Load/Store through JIT (I32X8)
+// =============================================================================
+
+#[test]
+fn test_i32x8_load_store() {
+    let Some(mut compiler) = TestCompiler::new() else {
+        println!("Skipping: AVX-512 not available");
+        return;
+    };
+
+    // Build function: load I32X8, add 1 to each element, store
+    let mut sig = compiler.module.make_signature();
+    let ptr_type = compiler.module.target_config().pointer_type();
+    sig.params.push(AbiParam::new(ptr_type)); // src ptr
+    sig.params.push(AbiParam::new(ptr_type)); // dst ptr
+    sig.call_conv = CallConv::SystemV;
+
+    let func_id = compiler
+        .module
+        .declare_function("i32x8_load_store", Linkage::Local, &sig)
+        .unwrap();
+
+    compiler.ctx.func =
+        Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), sig);
+
+    {
+        let mut builder = FunctionBuilder::new(&mut compiler.ctx.func, &mut compiler.func_ctx);
+        let block = builder.create_block();
+        builder.append_block_params_for_function_params(block);
+        builder.switch_to_block(block);
+
+        let params = builder.block_params(block).to_vec();
+        let src_ptr = params[0];
+        let dst_ptr = params[1];
+
+        // Load 256-bit vector (8 x i32)
+        let loaded = builder
+            .ins()
+            .load(I32X8, MemFlags::trusted(), src_ptr, 0);
+
+        // Store it back
+        builder.ins().store(MemFlags::trusted(), loaded, dst_ptr, 0);
+        builder.ins().return_(&[]);
+
+        builder.seal_all_blocks();
+        builder.finalize();
+    }
+
+    compiler.ctx.set_disasm(true);
+    compiler
+        .module
+        .define_function(func_id, &mut compiler.ctx)
+        .expect("Failed to define function");
+
+    if let Some(compiled) = compiler.ctx.compiled_code() {
+        if let Some(disasm) = &compiled.vcode {
+            println!("=== VCode for i32x8_load_store ===\n{}", disasm);
+            assert!(
+                disasm.contains("vmovdqu32"),
+                "Expected VMOVDQU32 instruction for I32X8"
+            );
+        }
+    }
+
+    compiler.module.clear_context(&mut compiler.ctx);
+    compiler.module.finalize_definitions().unwrap();
+
+    let code = compiler.module.get_finalized_function(func_id);
+
+    #[repr(C, align(32))]
+    struct I32x8([i32; 8]);
+
+    let src = I32x8([10, 20, 30, 40, 50, 60, 70, 80]);
+    let mut dst = I32x8([0; 8]);
+
+    type LoadStoreFn = unsafe extern "C" fn(*const I32x8, *mut I32x8);
+    let func: LoadStoreFn = unsafe { mem::transmute(code) };
+
+    unsafe {
+        func(&src, &mut dst);
+    }
+
+    assert_eq!(dst.0, [10, 20, 30, 40, 50, 60, 70, 80]);
+    println!("test_i32x8_load_store: PASSED");
 }
 
 // =============================================================================

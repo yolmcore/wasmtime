@@ -30,10 +30,10 @@ mod stack_switch;
 pub mod unwind;
 
 // =================================================================
-// YOLM FORK: Turin AVX-512 Extensions
+// AVX-512 Extensions
 // =================================================================
-pub mod turin;
-use turin::MergeMode;
+pub mod avx512;
+use avx512::MergeMode;
 
 use args::*;
 
@@ -119,53 +119,58 @@ impl Inst {
 
             Inst::Atomic128RmwSeq { .. } | Inst::Atomic128XchgSeq { .. } => emit_info.cmpxchg16b(),
 
-            // YOLM FORK: Turin AVX-512 instructions require AVX-512F
-            Inst::TurinAvx512Alu { .. }
-            | Inst::TurinAvx512Cmp { .. }
-            | Inst::TurinCompressStore { .. }
-            | Inst::TurinCompressReg { .. }
-            | Inst::TurinExpandLoad { .. }
-            | Inst::TurinExpandReg { .. }
-            | Inst::TurinMaskedLoad { .. }
-            | Inst::TurinMaskedStore { .. }
-            | Inst::Turin512Load { .. }
-            | Inst::Turin512Store { .. }
-            | Inst::TurinMaskLogic { .. }
-            | Inst::TurinKmov { .. }
-            | Inst::TurinKortest { .. }
-            | Inst::TurinMaskShift { .. }
-            | Inst::TurinMaskUnpack { .. }
-            | Inst::TurinMaskAdd { .. }
-            | Inst::TurinMaskTest { .. }
-            | Inst::TurinGather { .. }
-            | Inst::TurinScatter { .. }
-            | Inst::TurinVmovmsk32 { .. }
-            | Inst::TurinVmovmsk64 { .. }
-            | Inst::TurinMovm2d { .. }
-            | Inst::TurinMovm2q { .. }
-            | Inst::TurinBroadcastd { .. }
-            | Inst::TurinBroadcastq { .. }
-            | Inst::TurinAvx512FpAlu { .. }
-            | Inst::TurinAvx512FpSqrt { .. }
-            | Inst::TurinAvx512Fma { .. }
-            | Inst::TurinAvx512Cvt { .. }
-            | Inst::TurinAvx512Align { .. }
-            | Inst::TurinAvx512Ternlog { .. }
-            | Inst::TurinAvx512ImmRotate { .. }
-            | Inst::TurinAvx512ImmShuffle { .. }
-            | Inst::TurinAvx512LaneShuffle { .. }
-            | Inst::TurinAvx512Vnni { .. }
-            | Inst::TurinVp2Intersect { .. }
-            | Inst::TurinAvx512FpCmp { .. }
-            | Inst::TurinAvx512Extract { .. }
-            | Inst::TurinAvx512Insert { .. }
-            | Inst::TurinAvx512FpSpecial { .. } => emit_info.avx512f(),
+            // AVX-512 instructions require AVX-512F
+            Inst::Avx512Avx512Alu { .. }
+            | Inst::Avx512Avx512Cmp { .. }
+            | Inst::Avx512CompressStore { .. }
+            | Inst::Avx512CompressReg { .. }
+            | Inst::Avx512ExpandLoad { .. }
+            | Inst::Avx512ExpandReg { .. }
+            | Inst::Avx512MaskedLoad { .. }
+            | Inst::Avx512MaskedStore { .. }
+            | Inst::Avx512512Load { .. }
+            | Inst::Avx512256Load { .. }
+            | Inst::Avx512512Store { .. }
+            | Inst::Avx512256Store { .. }
+            | Inst::Avx512MaskLogic { .. }
+            | Inst::Avx512Kmov { .. }
+            | Inst::Avx512KmovKK { .. }
+            | Inst::Avx512KmovLoad { .. }
+            | Inst::Avx512KmovStore { .. }
+            | Inst::Avx512Kortest { .. }
+            | Inst::Avx512MaskShift { .. }
+            | Inst::Avx512MaskUnpack { .. }
+            | Inst::Avx512MaskAdd { .. }
+            | Inst::Avx512MaskTest { .. }
+            | Inst::Avx512Gather { .. }
+            | Inst::Avx512Scatter { .. }
+            | Inst::Avx512Vmovmsk32 { .. }
+            | Inst::Avx512Vmovmsk64 { .. }
+            | Inst::Avx512Movm2d { .. }
+            | Inst::Avx512Movm2q { .. }
+            | Inst::Avx512Broadcastd { .. }
+            | Inst::Avx512Broadcastq { .. }
+            | Inst::Avx512Avx512FpAlu { .. }
+            | Inst::Avx512Avx512FpSqrt { .. }
+            | Inst::Avx512Avx512Fma { .. }
+            | Inst::Avx512Avx512Cvt { .. }
+            | Inst::Avx512Avx512Align { .. }
+            | Inst::Avx512Avx512Ternlog { .. }
+            | Inst::Avx512Avx512ImmRotate { .. }
+            | Inst::Avx512Avx512ImmShuffle { .. }
+            | Inst::Avx512Avx512LaneShuffle { .. }
+            | Inst::Avx512Avx512Vnni { .. }
+            | Inst::Avx512Vp2Intersect { .. }
+            | Inst::Avx512Avx512FpCmp { .. }
+            | Inst::Avx512Avx512Extract { .. }
+            | Inst::Avx512Avx512Insert { .. }
+            | Inst::Avx512Avx512FpSpecial { .. } => emit_info.avx512f(),
 
             // AVX-512BW required for byte/word mask operations
-            Inst::TurinVmovmsk8 { .. }
-            | Inst::TurinVmovmsk16 { .. }
-            | Inst::TurinMovm2b { .. }
-            | Inst::TurinMovm2w { .. } => emit_info.avx512bw(),
+            Inst::Avx512Vmovmsk8 { .. }
+            | Inst::Avx512Vmovmsk16 { .. }
+            | Inst::Avx512Movm2b { .. }
+            | Inst::Avx512Movm2w { .. } => emit_info.avx512bw(),
 
             Inst::External { inst } => inst.is_available(&emit_info),
         }
@@ -379,7 +384,13 @@ impl Inst {
                 };
                 Inst::External { inst }
             }
-            RegClass::Vector => unreachable!(),
+            RegClass::Vector => {
+                // K-register load from memory
+                return Inst::Avx512KmovLoad {
+                    dst: to_reg,
+                    addr: from_addr.into(),
+                };
+            }
         }
     }
 
@@ -418,7 +429,13 @@ impl Inst {
                     _ => unimplemented!("unable to store type: {}", ty),
                 }
             }
-            RegClass::Vector => unreachable!(),
+            RegClass::Vector => {
+                // K-register store to memory
+                return Inst::Avx512KmovStore {
+                    src: from_reg,
+                    addr: to_addr,
+                };
+            }
         };
         Inst::External { inst }
     }
@@ -889,8 +906,8 @@ impl PrettyPrint for Inst {
                 format!("sequence_point")
             }
 
-            // YOLM FORK: Turin AVX-512 instruction pretty printing
-            Inst::TurinAvx512Alu {
+            // AVX-512 instruction pretty printing
+            Inst::Avx512Avx512Alu {
                 op,
                 size: _,
                 dst,
@@ -906,8 +923,8 @@ impl PrettyPrint for Inst {
                 let mask_str = if let Some(m) = mask {
                     let m_str = pretty_print_reg(m.to_reg(), 8);
                     let merge_str = match merge {
-                        turin::MergeMode::Zeroing => "z",
-                        turin::MergeMode::Merging => "",
+                        avx512::MergeMode::Zeroing => "z",
+                        avx512::MergeMode::Merging => "",
                     };
                     format!(" {{{m_str}}}{merge_str}")
                 } else {
@@ -916,40 +933,40 @@ impl PrettyPrint for Inst {
                 format!("{op_name} {src1}, {src2}, {dst}{mask_str}")
             }
 
-            Inst::TurinAvx512Cmp { dst, src1, src2, cond, mask: _, .. } => {
+            Inst::Avx512Avx512Cmp { dst, src1, src2, cond, mask: _, .. } => {
                 let dst = pretty_print_reg(dst.to_reg(), 8);
                 let src1 = pretty_print_reg(*src1, 64);
                 let src2 = src2.pretty_print(64);
                 format!("vpcmpd {src1}, {src2}, {dst}, {cond:?}")
             }
 
-            Inst::TurinCompressStore { src, addr, mask, .. } => {
+            Inst::Avx512CompressStore { src, addr, mask, .. } => {
                 let src = pretty_print_reg(*src, 64);
                 let mask = pretty_print_reg(*mask, 8);
                 format!("vpcompressd {src}, [{addr:?}] {{{mask}}}")
             }
 
-            Inst::TurinExpandLoad { dst, addr, mask, merge, .. } => {
+            Inst::Avx512ExpandLoad { dst, addr, mask, merge, .. } => {
                 let dst = pretty_print_reg(dst.to_reg(), 64);
                 let mask = pretty_print_reg(*mask, 8);
-                let z = if matches!(merge, turin::MergeMode::Zeroing) { "z" } else { "" };
+                let z = if matches!(merge, avx512::MergeMode::Zeroing) { "z" } else { "" };
                 format!("vpexpandd [{addr:?}], {dst} {{{mask}}}{z}")
             }
 
-            Inst::TurinMaskedLoad { dst, addr, mask, merge, .. } => {
+            Inst::Avx512MaskedLoad { dst, addr, mask, merge, .. } => {
                 let dst = pretty_print_reg(dst.to_reg(), 64);
                 let mask = pretty_print_reg(*mask, 8);
-                let z = if matches!(merge, turin::MergeMode::Zeroing) { "z" } else { "" };
+                let z = if matches!(merge, avx512::MergeMode::Zeroing) { "z" } else { "" };
                 format!("vmovdqu32 [{addr:?}], {dst} {{{mask}}}{z}")
             }
 
-            Inst::TurinMaskedStore { src, addr, mask, .. } => {
+            Inst::Avx512MaskedStore { src, addr, mask, .. } => {
                 let src = pretty_print_reg(*src, 64);
                 let mask = pretty_print_reg(*mask, 8);
                 format!("vmovdqu32 {src}, [{addr:?}] {{{mask}}}")
             }
 
-            Inst::Turin512Load { size, dst, addr } => {
+            Inst::Avx512512Load { size, dst, addr } => {
                 let dst = pretty_print_reg(dst.to_reg().to_reg(), 64);
                 let mnemonic = if matches!(size, OperandSize::Size64) {
                     "vmovdqu64"
@@ -959,7 +976,17 @@ impl PrettyPrint for Inst {
                 format!("{mnemonic} {dst}, [{addr:?}]")
             }
 
-            Inst::Turin512Store { size, src, addr } => {
+            Inst::Avx512256Load { size, dst, addr } => {
+                let dst = pretty_print_reg(dst.to_reg().to_reg(), 32);
+                let mnemonic = if matches!(size, OperandSize::Size64) {
+                    "vmovdqu64"
+                } else {
+                    "vmovdqu32"
+                };
+                format!("{mnemonic} {dst}, [{addr:?}]")
+            }
+
+            Inst::Avx512512Store { size, src, addr } => {
                 let src = pretty_print_reg(src.to_reg(), 64);
                 let mnemonic = if matches!(size, OperandSize::Size64) {
                     "vmovdqu64"
@@ -969,7 +996,17 @@ impl PrettyPrint for Inst {
                 format!("{mnemonic} [{addr:?}], {src}")
             }
 
-            Inst::TurinMaskLogic { op, dst, src1, src2 } => {
+            Inst::Avx512256Store { size, src, addr } => {
+                let src = pretty_print_reg(src.to_reg(), 32);
+                let mnemonic = if matches!(size, OperandSize::Size64) {
+                    "vmovdqu64"
+                } else {
+                    "vmovdqu32"
+                };
+                format!("{mnemonic} [{addr:?}], {src}")
+            }
+
+            Inst::Avx512MaskLogic { op, dst, src1, src2 } => {
                 let dst = pretty_print_reg(dst.to_reg(), 8);
                 let src1 = pretty_print_reg(*src1, 8);
                 let src2_str = if let Some(s) = src2 {
@@ -980,46 +1017,65 @@ impl PrettyPrint for Inst {
                 format!("{op:?} {src1}{src2_str}, {dst}")
             }
 
-            Inst::TurinKmov { dst, src, to_gpr: _ } => {
+            Inst::Avx512Kmov { dst, src, to_gpr: _ } => {
                 // kmovq dst, src - Intel syntax always has dst first
                 let dst = pretty_print_reg(dst.to_reg(), 8);
                 let src = pretty_print_reg(*src, 8);
                 format!("kmovq {dst}, {src}")
             }
 
-            Inst::TurinKortest { src1, src2 } => {
+            Inst::Avx512KmovKK { dst, src } => {
+                // kmovq k1, k2 - k-register to k-register move
+                let dst = pretty_print_reg(dst.to_reg(), 8);
+                let src = pretty_print_reg(*src, 8);
+                format!("kmovq {dst}, {src}")
+            }
+
+            Inst::Avx512KmovLoad { dst, addr } => {
+                let dst = pretty_print_reg(dst.to_reg(), 8);
+                let addr = addr.pretty_print(8);
+                format!("kmovq {dst}, {addr}")
+            }
+
+            Inst::Avx512KmovStore { src, addr } => {
+                let src = pretty_print_reg(*src, 8);
+                let addr = addr.pretty_print(8);
+                format!("kmovq {addr}, {src}")
+            }
+
+            Inst::Avx512Kortest { src1, src2 } => {
                 let src1 = pretty_print_reg(*src1, 8);
                 let src2 = pretty_print_reg(*src2, 8);
                 format!("kortestw {src1}, {src2}")
             }
 
-            Inst::TurinMaskShift { op, dst, src, imm8 } => {
+            Inst::Avx512MaskShift { op, dst, src, imm8 } => {
                 let dst = pretty_print_reg(dst.to_reg(), 8);
                 let src = pretty_print_reg(*src, 8);
                 format!("{} {dst}, {src}, {imm8}", op.name())
             }
 
-            Inst::TurinMaskUnpack { op, dst, src1, src2 } => {
+            Inst::Avx512MaskUnpack { op, dst, src1, src2 } => {
                 let dst = pretty_print_reg(dst.to_reg(), 8);
                 let src1 = pretty_print_reg(*src1, 8);
                 let src2 = pretty_print_reg(*src2, 8);
                 format!("{} {dst}, {src1}, {src2}", op.name())
             }
 
-            Inst::TurinMaskAdd { op, dst, src1, src2 } => {
+            Inst::Avx512MaskAdd { op, dst, src1, src2 } => {
                 let dst = pretty_print_reg(dst.to_reg(), 8);
                 let src1 = pretty_print_reg(*src1, 8);
                 let src2 = pretty_print_reg(*src2, 8);
                 format!("{} {dst}, {src1}, {src2}", op.name())
             }
 
-            Inst::TurinMaskTest { op, src1, src2 } => {
+            Inst::Avx512MaskTest { op, src1, src2 } => {
                 let src1 = pretty_print_reg(*src1, 8);
                 let src2 = pretty_print_reg(*src2, 8);
                 format!("{} {src1}, {src2}", op.name())
             }
 
-            Inst::TurinGather { op, dst, base, index, scale, disp, mask } => {
+            Inst::Avx512Gather { op, dst, base, index, scale, disp, mask } => {
                 let dst = pretty_print_reg(dst.to_reg(), 64);
                 let base = pretty_print_reg(*base, 8);
                 let index = pretty_print_reg(*index, 64);
@@ -1027,7 +1083,7 @@ impl PrettyPrint for Inst {
                 format!("{} {dst} {{{mask}}}, [{base} + {index}*{scale} + {disp}]", op.name())
             }
 
-            Inst::TurinScatter { op, src, base, index, scale, disp, mask } => {
+            Inst::Avx512Scatter { op, src, base, index, scale, disp, mask } => {
                 let src = pretty_print_reg(*src, 64);
                 let base = pretty_print_reg(*base, 8);
                 let index = pretty_print_reg(*index, 64);
@@ -1035,7 +1091,7 @@ impl PrettyPrint for Inst {
                 format!("{} [{base} + {index}*{scale} + {disp}] {{{mask}}}, {src}", op.name())
             }
 
-            Inst::TurinCompressReg { size, dst, src, mask } => {
+            Inst::Avx512CompressReg { size, dst, src, mask } => {
                 let size_name = if matches!(size, OperandSize::Size64) { "q" } else { "d" };
                 let dst = pretty_print_reg(dst.to_reg().to_reg(), 64);
                 let src = pretty_print_reg(src.to_reg(), 64);
@@ -1043,7 +1099,7 @@ impl PrettyPrint for Inst {
                 format!("vpcompress{size_name} {dst} {{{mask}}}, {src}")
             }
 
-            Inst::TurinExpandReg { size, dst, src, mask, merge } => {
+            Inst::Avx512ExpandReg { size, dst, src, mask, merge } => {
                 let size_name = if matches!(size, OperandSize::Size64) { "q" } else { "d" };
                 let dst = pretty_print_reg(dst.to_reg().to_reg(), 64);
                 let src = pretty_print_reg(src.to_reg(), 64);
@@ -1052,67 +1108,67 @@ impl PrettyPrint for Inst {
                 format!("vpexpand{size_name} {dst} {{{mask}}}{z}, {src}")
             }
 
-            Inst::TurinVmovmsk32 { dst, src } => {
+            Inst::Avx512Vmovmsk32 { dst, src } => {
                 let dst = pretty_print_reg(dst.to_reg(), 8);
                 let src = pretty_print_reg(src.to_reg(), 64);
                 format!("vpmovd2m {dst}, {src}")
             }
 
-            Inst::TurinVmovmsk64 { dst, src } => {
+            Inst::Avx512Vmovmsk64 { dst, src } => {
                 let dst = pretty_print_reg(dst.to_reg(), 8);
                 let src = pretty_print_reg(src.to_reg(), 64);
                 format!("vpmovq2m {dst}, {src}")
             }
 
-            Inst::TurinMovm2d { dst, src } => {
+            Inst::Avx512Movm2d { dst, src } => {
                 let dst = pretty_print_reg(dst.to_reg().to_reg(), 64);
                 let src = pretty_print_reg(*src, 8);
                 format!("vpmovm2d {dst}, {src}")
             }
 
-            Inst::TurinMovm2q { dst, src } => {
+            Inst::Avx512Movm2q { dst, src } => {
                 let dst = pretty_print_reg(dst.to_reg().to_reg(), 64);
                 let src = pretty_print_reg(*src, 8);
                 format!("vpmovm2q {dst}, {src}")
             }
 
-            Inst::TurinVmovmsk8 { dst, src } => {
+            Inst::Avx512Vmovmsk8 { dst, src } => {
                 let dst = pretty_print_reg(dst.to_reg(), 8);
                 let src = pretty_print_reg(src.to_reg(), 64);
                 format!("vpmovb2m {dst}, {src}")
             }
 
-            Inst::TurinVmovmsk16 { dst, src } => {
+            Inst::Avx512Vmovmsk16 { dst, src } => {
                 let dst = pretty_print_reg(dst.to_reg(), 8);
                 let src = pretty_print_reg(src.to_reg(), 64);
                 format!("vpmovw2m {dst}, {src}")
             }
 
-            Inst::TurinMovm2b { dst, src } => {
+            Inst::Avx512Movm2b { dst, src } => {
                 let dst = pretty_print_reg(dst.to_reg().to_reg(), 64);
                 let src = pretty_print_reg(*src, 8);
                 format!("vpmovm2b {dst}, {src}")
             }
 
-            Inst::TurinMovm2w { dst, src } => {
+            Inst::Avx512Movm2w { dst, src } => {
                 let dst = pretty_print_reg(dst.to_reg().to_reg(), 64);
                 let src = pretty_print_reg(*src, 8);
                 format!("vpmovm2w {dst}, {src}")
             }
 
-            Inst::TurinBroadcastd { dst, src } => {
+            Inst::Avx512Broadcastd { dst, src } => {
                 let dst = pretty_print_reg(dst.to_reg().to_reg(), 64);
                 let src = src.pretty_print(8);
                 format!("vpbroadcastd {dst}, {src}")
             }
 
-            Inst::TurinBroadcastq { dst, src } => {
+            Inst::Avx512Broadcastq { dst, src } => {
                 let dst = pretty_print_reg(dst.to_reg().to_reg(), 64);
                 let src = src.pretty_print(8);
                 format!("vpbroadcastq {dst}, {src}")
             }
 
-            Inst::TurinAvx512FpAlu {
+            Inst::Avx512Avx512FpAlu {
                 op,
                 dst,
                 src1,
@@ -1127,8 +1183,8 @@ impl PrettyPrint for Inst {
                 let mask_str = if let Some(m) = mask {
                     let m_str = pretty_print_reg(m.to_reg(), 8);
                     let merge_str = match merge {
-                        turin::MergeMode::Zeroing => "z",
-                        turin::MergeMode::Merging => "",
+                        avx512::MergeMode::Zeroing => "z",
+                        avx512::MergeMode::Merging => "",
                     };
                     format!(" {{{m_str}}}{merge_str}")
                 } else {
@@ -1137,7 +1193,7 @@ impl PrettyPrint for Inst {
                 format!("{op_name} {src1}, {src2}, {dst}{mask_str}")
             }
 
-            Inst::TurinAvx512FpSqrt {
+            Inst::Avx512Avx512FpSqrt {
                 op,
                 dst,
                 src,
@@ -1150,8 +1206,8 @@ impl PrettyPrint for Inst {
                 let mask_str = if let Some(m) = mask {
                     let m_str = pretty_print_reg(m.to_reg(), 8);
                     let merge_str = match merge {
-                        turin::MergeMode::Zeroing => "z",
-                        turin::MergeMode::Merging => "",
+                        avx512::MergeMode::Zeroing => "z",
+                        avx512::MergeMode::Merging => "",
                     };
                     format!(" {{{m_str}}}{merge_str}")
                 } else {
@@ -1160,7 +1216,7 @@ impl PrettyPrint for Inst {
                 format!("{op_name} {src}, {dst}{mask_str}")
             }
 
-            Inst::TurinAvx512Fma {
+            Inst::Avx512Avx512Fma {
                 op,
                 dst,
                 src1: _,
@@ -1176,8 +1232,8 @@ impl PrettyPrint for Inst {
                 let mask_str = if let Some(m) = mask {
                     let m_str = pretty_print_reg(m.to_reg(), 8);
                     let merge_str = match merge {
-                        turin::MergeMode::Zeroing => "z",
-                        turin::MergeMode::Merging => "",
+                        avx512::MergeMode::Zeroing => "z",
+                        avx512::MergeMode::Merging => "",
                     };
                     format!(" {{{m_str}}}{merge_str}")
                 } else {
@@ -1186,7 +1242,7 @@ impl PrettyPrint for Inst {
                 format!("{op_name} {src2}, {src3}, {dst}{mask_str}")
             }
 
-            Inst::TurinAvx512Vnni {
+            Inst::Avx512Avx512Vnni {
                 op,
                 dst,
                 acc: _,
@@ -1202,8 +1258,8 @@ impl PrettyPrint for Inst {
                 let mask_str = if let Some(m) = mask {
                     let m_str = pretty_print_reg(m.to_reg(), 8);
                     let merge_str = match merge {
-                        turin::MergeMode::Zeroing => "z",
-                        turin::MergeMode::Merging => "",
+                        avx512::MergeMode::Zeroing => "z",
+                        avx512::MergeMode::Merging => "",
                     };
                     format!(" {{{m_str}}}{merge_str}")
                 } else {
@@ -1212,7 +1268,7 @@ impl PrettyPrint for Inst {
                 format!("{op_name} {src1}, {src2}, {dst}{mask_str}")
             }
 
-            Inst::TurinVp2Intersect { op, dst_k, src1, src2 } => {
+            Inst::Avx512Vp2Intersect { op, dst_k, src1, src2 } => {
                 let dst = pretty_print_reg(dst_k.to_reg(), 8);
                 let src1 = pretty_print_reg(*src1, 64);
                 let src2 = src2.pretty_print(64);
@@ -1221,7 +1277,7 @@ impl PrettyPrint for Inst {
                 format!("{op_name} {src1}, {src2}, {dst}")
             }
 
-            Inst::TurinAvx512Cvt {
+            Inst::Avx512Avx512Cvt {
                 op,
                 dst,
                 src,
@@ -1234,8 +1290,8 @@ impl PrettyPrint for Inst {
                 let mask_str = if let Some(m) = mask {
                     let m_str = pretty_print_reg(m.to_reg(), 8);
                     let merge_str = match merge {
-                        turin::MergeMode::Zeroing => "z",
-                        turin::MergeMode::Merging => "",
+                        avx512::MergeMode::Zeroing => "z",
+                        avx512::MergeMode::Merging => "",
                     };
                     format!(" {{{m_str}}}{merge_str}")
                 } else {
@@ -1244,7 +1300,7 @@ impl PrettyPrint for Inst {
                 format!("{op_name} {src}, {dst}{mask_str}")
             }
 
-            Inst::TurinAvx512Align {
+            Inst::Avx512Avx512Align {
                 op,
                 dst,
                 src1,
@@ -1260,8 +1316,8 @@ impl PrettyPrint for Inst {
                 let mask_str = if let Some(m) = mask {
                     let m_str = pretty_print_reg(m.to_reg(), 8);
                     let merge_str = match merge {
-                        turin::MergeMode::Zeroing => "z",
-                        turin::MergeMode::Merging => "",
+                        avx512::MergeMode::Zeroing => "z",
+                        avx512::MergeMode::Merging => "",
                     };
                     format!(" {{{m_str}}}{merge_str}")
                 } else {
@@ -1270,7 +1326,7 @@ impl PrettyPrint for Inst {
                 format!("{op_name} {src1}, {src2}, ${imm8}, {dst}{mask_str}")
             }
 
-            Inst::TurinAvx512Ternlog {
+            Inst::Avx512Avx512Ternlog {
                 size,
                 dst,
                 src1,
@@ -1292,8 +1348,8 @@ impl PrettyPrint for Inst {
                 let mask_str = if let Some(m) = mask {
                     let m_str = pretty_print_reg(m.to_reg(), 8);
                     let merge_str = match merge {
-                        turin::MergeMode::Zeroing => "z",
-                        turin::MergeMode::Merging => "",
+                        avx512::MergeMode::Zeroing => "z",
+                        avx512::MergeMode::Merging => "",
                     };
                     format!(" {{{m_str}}}{merge_str}")
                 } else {
@@ -1302,7 +1358,7 @@ impl PrettyPrint for Inst {
                 format!("{op_name} {src1}, {src2}, {src3}, $0x{imm8:02x}, {dst}{mask_str}")
             }
 
-            Inst::TurinAvx512ImmRotate {
+            Inst::Avx512Avx512ImmRotate {
                 size,
                 dst,
                 src,
@@ -1323,8 +1379,8 @@ impl PrettyPrint for Inst {
                 let mask_str = if let Some(m) = mask {
                     let m_str = pretty_print_reg(m.to_reg(), 8);
                     let merge_str = match merge {
-                        turin::MergeMode::Zeroing => "z",
-                        turin::MergeMode::Merging => "",
+                        avx512::MergeMode::Zeroing => "z",
+                        avx512::MergeMode::Merging => "",
                     };
                     format!(" {{{m_str}}}{merge_str}")
                 } else {
@@ -1333,7 +1389,7 @@ impl PrettyPrint for Inst {
                 format!("{op_name} {src}, ${imm8}, {dst}{mask_str}")
             }
 
-            Inst::TurinAvx512ImmShuffle {
+            Inst::Avx512Avx512ImmShuffle {
                 op,
                 dst,
                 src,
@@ -1347,8 +1403,8 @@ impl PrettyPrint for Inst {
                 let mask_str = if let Some(m) = mask {
                     let m_str = pretty_print_reg(m.to_reg(), 8);
                     let merge_str = match merge {
-                        turin::MergeMode::Zeroing => "z",
-                        turin::MergeMode::Merging => "",
+                        avx512::MergeMode::Zeroing => "z",
+                        avx512::MergeMode::Merging => "",
                     };
                     format!(" {{{m_str}}}{merge_str}")
                 } else {
@@ -1357,7 +1413,7 @@ impl PrettyPrint for Inst {
                 format!("{op_name} {src}, $0x{imm8:02x}, {dst}{mask_str}")
             }
 
-            Inst::TurinAvx512LaneShuffle {
+            Inst::Avx512Avx512LaneShuffle {
                 op,
                 dst,
                 src1,
@@ -1373,8 +1429,8 @@ impl PrettyPrint for Inst {
                 let mask_str = if let Some(m) = mask {
                     let m_str = pretty_print_reg(m.to_reg(), 8);
                     let merge_str = match merge {
-                        turin::MergeMode::Zeroing => "z",
-                        turin::MergeMode::Merging => "",
+                        avx512::MergeMode::Zeroing => "z",
+                        avx512::MergeMode::Merging => "",
                     };
                     format!(" {{{m_str}}}{merge_str}")
                 } else {
@@ -1383,7 +1439,7 @@ impl PrettyPrint for Inst {
                 format!("{op_name} {src1}, {src2}, $0x{imm8:02x}, {dst}{mask_str}")
             }
 
-            Inst::TurinAvx512FpCmp {
+            Inst::Avx512Avx512FpCmp {
                 size,
                 dst,
                 src1,
@@ -1408,14 +1464,14 @@ impl PrettyPrint for Inst {
                 format!("{op_name} {src1}, {src2}, ${imm8}, {dst}{mask_str}")
             }
 
-            Inst::TurinAvx512Extract { op, dst, src, lane } => {
+            Inst::Avx512Avx512Extract { op, dst, src, lane } => {
                 let dst = pretty_print_reg(dst.to_reg(), 16); // 128-bit XMM result
                 let src = pretty_print_reg(*src, 64);
                 let op_name = op.name();
                 format!("{op_name} {src}, ${lane}, {dst}")
             }
 
-            Inst::TurinAvx512Insert {
+            Inst::Avx512Avx512Insert {
                 op,
                 dst,
                 src1,
@@ -1431,8 +1487,8 @@ impl PrettyPrint for Inst {
                 let mask_str = if let Some(m) = mask {
                     let m_str = pretty_print_reg(m.to_reg(), 8);
                     let merge_str = match merge {
-                        turin::MergeMode::Zeroing => "z",
-                        turin::MergeMode::Merging => "",
+                        avx512::MergeMode::Zeroing => "z",
+                        avx512::MergeMode::Merging => "",
                     };
                     format!(" {{{m_str}}}{merge_str}")
                 } else {
@@ -1441,7 +1497,7 @@ impl PrettyPrint for Inst {
                 format!("{op_name} {src1}, {src2}, ${lane}, {dst}{mask_str}")
             }
 
-            Inst::TurinAvx512FpSpecial {
+            Inst::Avx512Avx512FpSpecial {
                 op,
                 dst,
                 src,
@@ -1454,8 +1510,8 @@ impl PrettyPrint for Inst {
                 let mask_str = if let Some(m) = mask {
                     let m_str = pretty_print_reg(m.to_reg(), 8);
                     let merge_str = match merge {
-                        turin::MergeMode::Zeroing => "z",
-                        turin::MergeMode::Merging => "",
+                        avx512::MergeMode::Zeroing => "z",
+                        avx512::MergeMode::Merging => "",
                     };
                     format!(" {{{m_str}}}{merge_str}")
                 } else {
@@ -1831,8 +1887,8 @@ fn x64_get_operands(inst: &mut Inst, collector: &mut impl OperandVisitor) {
 
         Inst::SequencePoint { .. } => {}
 
-        // YOLM FORK: Turin AVX-512 register allocation
-        Inst::TurinAvx512Alu {
+        // AVX-512 register allocation
+        Inst::Avx512Avx512Alu {
             dst,
             src1,
             src2,
@@ -1847,7 +1903,7 @@ fn x64_get_operands(inst: &mut Inst, collector: &mut impl OperandVisitor) {
             }
         }
 
-        Inst::TurinAvx512Cmp { dst, src1, src2, mask, .. } => {
+        Inst::Avx512Avx512Cmp { dst, src1, src2, mask, .. } => {
             collector.reg_use(src1);
             // dst is a k-register - if physical, mark as nonallocatable
             if let Some(rreg) = dst.to_reg().to_real_reg() {
@@ -1861,41 +1917,51 @@ fn x64_get_operands(inst: &mut Inst, collector: &mut impl OperandVisitor) {
             }
         }
 
-        Inst::TurinCompressStore { src, addr, mask, .. } => {
+        Inst::Avx512CompressStore { src, addr, mask, .. } => {
             collector.reg_use(src);
             collector.reg_use(mask);
             addr.get_operands(collector);
         }
 
-        Inst::TurinExpandLoad { dst, addr, mask, .. } => {
+        Inst::Avx512ExpandLoad { dst, addr, mask, .. } => {
             collector.reg_def(dst);
             collector.reg_use(mask);
             addr.get_operands(collector);
         }
 
-        Inst::TurinMaskedLoad { dst, addr, mask, .. } => {
+        Inst::Avx512MaskedLoad { dst, addr, mask, .. } => {
             collector.reg_def(dst);
             collector.reg_use(mask);
             addr.get_operands(collector);
         }
 
-        Inst::TurinMaskedStore { src, addr, mask, .. } => {
+        Inst::Avx512MaskedStore { src, addr, mask, .. } => {
             collector.reg_use(src);
             collector.reg_use(mask);
             addr.get_operands(collector);
         }
 
-        Inst::Turin512Load { dst, addr, .. } => {
+        Inst::Avx512512Load { dst, addr, .. } => {
             collector.reg_def(dst);
             addr.get_operands(collector);
         }
 
-        Inst::Turin512Store { src, addr, .. } => {
+        Inst::Avx512256Load { dst, addr, .. } => {
+            collector.reg_def(dst);
+            addr.get_operands(collector);
+        }
+
+        Inst::Avx512512Store { src, addr, .. } => {
             collector.reg_use(src);
             addr.get_operands(collector);
         }
 
-        Inst::TurinMaskLogic { dst, src1, src2, .. } => {
+        Inst::Avx512256Store { src, addr, .. } => {
+            collector.reg_use(src);
+            addr.get_operands(collector);
+        }
+
+        Inst::Avx512MaskLogic { dst, src1, src2, .. } => {
             // All operands are k-registers (physical), mark as nonallocatable
             collector.reg_fixed_nonallocatable(dst.to_reg().to_real_reg().unwrap().into());
             collector.reg_fixed_nonallocatable(src1.to_real_reg().unwrap().into());
@@ -1904,59 +1970,77 @@ fn x64_get_operands(inst: &mut Inst, collector: &mut impl OperandVisitor) {
             }
         }
 
-        Inst::TurinKmov { dst, src, .. } => {
+        Inst::Avx512Kmov { dst, src, .. } => {
             // Both operands are k-registers (physical), mark as nonallocatable
             collector.reg_fixed_nonallocatable(dst.to_reg().to_real_reg().unwrap().into());
             collector.reg_fixed_nonallocatable(src.to_real_reg().unwrap().into());
         }
 
-        Inst::TurinKortest { src1, src2, .. } => {
+        Inst::Avx512KmovKK { dst, src } => {
+            // K-register to k-register move - used by register allocator
+            collector.reg_def(dst);
+            collector.reg_use(src);
+        }
+
+        Inst::Avx512KmovLoad { dst, addr } => {
+            // Load k-register from memory (spill/fill)
+            collector.reg_def(dst);
+            addr.get_operands(collector);
+        }
+
+        Inst::Avx512KmovStore { src, addr } => {
+            // Store k-register to memory (spill/fill)
+            collector.reg_use(src);
+            addr.get_operands(collector);
+        }
+
+        Inst::Avx512Kortest { src1, src2, .. } => {
             // Both operands are k-registers (physical), mark as nonallocatable
             collector.reg_fixed_nonallocatable(src1.to_real_reg().unwrap().into());
             collector.reg_fixed_nonallocatable(src2.to_real_reg().unwrap().into());
         }
 
-        Inst::TurinMaskShift { dst, src, .. } => {
+        Inst::Avx512MaskShift { dst, src, .. } => {
             // K-register shift: dst and src are k-registers (physical)
             collector.reg_fixed_nonallocatable(dst.to_reg().to_real_reg().unwrap().into());
             collector.reg_fixed_nonallocatable(src.to_real_reg().unwrap().into());
         }
 
-        Inst::TurinMaskUnpack { dst, src1, src2, .. } => {
+        Inst::Avx512MaskUnpack { dst, src1, src2, .. } => {
             // K-register unpack: all operands are k-registers (physical)
             collector.reg_fixed_nonallocatable(dst.to_reg().to_real_reg().unwrap().into());
             collector.reg_fixed_nonallocatable(src1.to_real_reg().unwrap().into());
             collector.reg_fixed_nonallocatable(src2.to_real_reg().unwrap().into());
         }
 
-        Inst::TurinMaskAdd { dst, src1, src2, .. } => {
+        Inst::Avx512MaskAdd { dst, src1, src2, .. } => {
             // K-register add: all operands are k-registers (physical)
             collector.reg_fixed_nonallocatable(dst.to_reg().to_real_reg().unwrap().into());
             collector.reg_fixed_nonallocatable(src1.to_real_reg().unwrap().into());
             collector.reg_fixed_nonallocatable(src2.to_real_reg().unwrap().into());
         }
 
-        Inst::TurinMaskTest { src1, src2, .. } => {
+        Inst::Avx512MaskTest { src1, src2, .. } => {
             // K-register test: both operands are k-registers (physical)
             collector.reg_fixed_nonallocatable(src1.to_real_reg().unwrap().into());
             collector.reg_fixed_nonallocatable(src2.to_real_reg().unwrap().into());
         }
 
-        Inst::TurinGather { dst, base, index, mask, .. } => {
+        Inst::Avx512Gather { dst, base, index, mask, .. } => {
             collector.reg_def(dst);
             collector.reg_use(base);
             collector.reg_use(index);
             collector.reg_use(mask);
         }
 
-        Inst::TurinScatter { src, base, index, mask, .. } => {
+        Inst::Avx512Scatter { src, base, index, mask, .. } => {
             collector.reg_use(src);
             collector.reg_use(base);
             collector.reg_use(index);
             collector.reg_use(mask);
         }
 
-        Inst::TurinCompressReg { dst, src, mask, .. } => {
+        Inst::Avx512CompressReg { dst, src, mask, .. } => {
             collector.reg_def(dst);
             collector.reg_use(src);
             // mask is a k-register - if physical, mark as nonallocatable
@@ -1965,7 +2049,7 @@ fn x64_get_operands(inst: &mut Inst, collector: &mut impl OperandVisitor) {
             }
         }
 
-        Inst::TurinExpandReg { dst, src, mask, .. } => {
+        Inst::Avx512ExpandReg { dst, src, mask, .. } => {
             collector.reg_def(dst);
             collector.reg_use(src);
             // mask is a k-register - if physical, mark as nonallocatable
@@ -1974,7 +2058,7 @@ fn x64_get_operands(inst: &mut Inst, collector: &mut impl OperandVisitor) {
             }
         }
 
-        Inst::TurinVmovmsk32 { dst, src } => {
+        Inst::Avx512Vmovmsk32 { dst, src } => {
             // dst is a k-register - if physical, mark as nonallocatable
             if let Some(rreg) = dst.to_reg().to_real_reg() {
                 collector.reg_fixed_nonallocatable(rreg.into());
@@ -1982,7 +2066,7 @@ fn x64_get_operands(inst: &mut Inst, collector: &mut impl OperandVisitor) {
             collector.reg_use(src);
         }
 
-        Inst::TurinVmovmsk64 { dst, src } => {
+        Inst::Avx512Vmovmsk64 { dst, src } => {
             // dst is a k-register - if physical, mark as nonallocatable
             if let Some(rreg) = dst.to_reg().to_real_reg() {
                 collector.reg_fixed_nonallocatable(rreg.into());
@@ -1990,7 +2074,7 @@ fn x64_get_operands(inst: &mut Inst, collector: &mut impl OperandVisitor) {
             collector.reg_use(src);
         }
 
-        Inst::TurinMovm2d { dst, src } => {
+        Inst::Avx512Movm2d { dst, src } => {
             collector.reg_def(dst);
             // src is a k-register - if physical, mark as nonallocatable
             if let Some(rreg) = src.to_real_reg() {
@@ -1998,7 +2082,7 @@ fn x64_get_operands(inst: &mut Inst, collector: &mut impl OperandVisitor) {
             }
         }
 
-        Inst::TurinMovm2q { dst, src } => {
+        Inst::Avx512Movm2q { dst, src } => {
             collector.reg_def(dst);
             // src is a k-register - if physical, mark as nonallocatable
             if let Some(rreg) = src.to_real_reg() {
@@ -2006,7 +2090,7 @@ fn x64_get_operands(inst: &mut Inst, collector: &mut impl OperandVisitor) {
             }
         }
 
-        Inst::TurinVmovmsk8 { dst, src } => {
+        Inst::Avx512Vmovmsk8 { dst, src } => {
             // dst is a k-register - if physical, mark as nonallocatable
             if let Some(rreg) = dst.to_reg().to_real_reg() {
                 collector.reg_fixed_nonallocatable(rreg.into());
@@ -2014,7 +2098,7 @@ fn x64_get_operands(inst: &mut Inst, collector: &mut impl OperandVisitor) {
             collector.reg_use(src);
         }
 
-        Inst::TurinVmovmsk16 { dst, src } => {
+        Inst::Avx512Vmovmsk16 { dst, src } => {
             // dst is a k-register - if physical, mark as nonallocatable
             if let Some(rreg) = dst.to_reg().to_real_reg() {
                 collector.reg_fixed_nonallocatable(rreg.into());
@@ -2022,7 +2106,7 @@ fn x64_get_operands(inst: &mut Inst, collector: &mut impl OperandVisitor) {
             collector.reg_use(src);
         }
 
-        Inst::TurinMovm2b { dst, src } => {
+        Inst::Avx512Movm2b { dst, src } => {
             collector.reg_def(dst);
             // src is a k-register - if physical, mark as nonallocatable
             if let Some(rreg) = src.to_real_reg() {
@@ -2030,7 +2114,7 @@ fn x64_get_operands(inst: &mut Inst, collector: &mut impl OperandVisitor) {
             }
         }
 
-        Inst::TurinMovm2w { dst, src } => {
+        Inst::Avx512Movm2w { dst, src } => {
             collector.reg_def(dst);
             // src is a k-register - if physical, mark as nonallocatable
             if let Some(rreg) = src.to_real_reg() {
@@ -2038,17 +2122,17 @@ fn x64_get_operands(inst: &mut Inst, collector: &mut impl OperandVisitor) {
             }
         }
 
-        Inst::TurinBroadcastd { dst, src } => {
+        Inst::Avx512Broadcastd { dst, src } => {
             collector.reg_def(dst);
             src.get_operands(collector);
         }
 
-        Inst::TurinBroadcastq { dst, src } => {
+        Inst::Avx512Broadcastq { dst, src } => {
             collector.reg_def(dst);
             src.get_operands(collector);
         }
 
-        Inst::TurinAvx512FpAlu {
+        Inst::Avx512Avx512FpAlu {
             dst,
             src1,
             src2,
@@ -2063,7 +2147,7 @@ fn x64_get_operands(inst: &mut Inst, collector: &mut impl OperandVisitor) {
             }
         }
 
-        Inst::TurinAvx512FpSqrt {
+        Inst::Avx512Avx512FpSqrt {
             dst,
             src,
             mask,
@@ -2076,7 +2160,7 @@ fn x64_get_operands(inst: &mut Inst, collector: &mut impl OperandVisitor) {
             }
         }
 
-        Inst::TurinAvx512Fma {
+        Inst::Avx512Avx512Fma {
             dst,
             src1,
             src2,
@@ -2095,7 +2179,7 @@ fn x64_get_operands(inst: &mut Inst, collector: &mut impl OperandVisitor) {
             }
         }
 
-        Inst::TurinAvx512Vnni {
+        Inst::Avx512Avx512Vnni {
             dst,
             acc,
             src1,
@@ -2114,7 +2198,7 @@ fn x64_get_operands(inst: &mut Inst, collector: &mut impl OperandVisitor) {
             }
         }
 
-        Inst::TurinVp2Intersect { dst_k, src1, src2, .. } => {
+        Inst::Avx512Vp2Intersect { dst_k, src1, src2, .. } => {
             // VP2INTERSECT outputs to two consecutive k-registers (dst and dst+1).
             // For register allocation purposes, we only track the first one.
             collector.reg_def(dst_k);
@@ -2122,7 +2206,7 @@ fn x64_get_operands(inst: &mut Inst, collector: &mut impl OperandVisitor) {
             src2.get_operands(collector);
         }
 
-        Inst::TurinAvx512Cvt { dst, src, mask, .. } => {
+        Inst::Avx512Avx512Cvt { dst, src, mask, .. } => {
             collector.reg_def(dst);
             src.get_operands(collector);
             if let Some(m) = mask {
@@ -2130,7 +2214,7 @@ fn x64_get_operands(inst: &mut Inst, collector: &mut impl OperandVisitor) {
             }
         }
 
-        Inst::TurinAvx512Align {
+        Inst::Avx512Avx512Align {
             dst,
             src1,
             src2,
@@ -2145,7 +2229,7 @@ fn x64_get_operands(inst: &mut Inst, collector: &mut impl OperandVisitor) {
             }
         }
 
-        Inst::TurinAvx512Ternlog {
+        Inst::Avx512Avx512Ternlog {
             dst,
             src1,
             src2,
@@ -2164,7 +2248,7 @@ fn x64_get_operands(inst: &mut Inst, collector: &mut impl OperandVisitor) {
             }
         }
 
-        Inst::TurinAvx512ImmRotate {
+        Inst::Avx512Avx512ImmRotate {
             dst,
             src,
             mask,
@@ -2179,7 +2263,7 @@ fn x64_get_operands(inst: &mut Inst, collector: &mut impl OperandVisitor) {
             }
         }
 
-        Inst::TurinAvx512ImmShuffle {
+        Inst::Avx512Avx512ImmShuffle {
             dst,
             src,
             mask,
@@ -2194,7 +2278,7 @@ fn x64_get_operands(inst: &mut Inst, collector: &mut impl OperandVisitor) {
             }
         }
 
-        Inst::TurinAvx512LaneShuffle {
+        Inst::Avx512Avx512LaneShuffle {
             dst,
             src1,
             src2,
@@ -2211,7 +2295,7 @@ fn x64_get_operands(inst: &mut Inst, collector: &mut impl OperandVisitor) {
             }
         }
 
-        Inst::TurinAvx512FpCmp {
+        Inst::Avx512Avx512FpCmp {
             dst,
             src1,
             src2,
@@ -2232,13 +2316,13 @@ fn x64_get_operands(inst: &mut Inst, collector: &mut impl OperandVisitor) {
             }
         }
 
-        Inst::TurinAvx512Extract { dst, src, .. } => {
+        Inst::Avx512Avx512Extract { dst, src, .. } => {
             // VEXTRACTI32X4/64X2: extract 128-bit lane from 512-bit register
             collector.reg_def(dst);
             collector.reg_use(src);
         }
 
-        Inst::TurinAvx512Insert {
+        Inst::Avx512Avx512Insert {
             dst,
             src1,
             src2,
@@ -2254,7 +2338,7 @@ fn x64_get_operands(inst: &mut Inst, collector: &mut impl OperandVisitor) {
             }
         }
 
-        Inst::TurinAvx512FpSpecial {
+        Inst::Avx512Avx512FpSpecial {
             dst,
             src,
             mask,
@@ -2444,7 +2528,13 @@ impl MachInst for Inst {
                     _ => unimplemented!("unable to move type: {}", ty),
                 }
             }
-            RegClass::Vector => unreachable!(),
+            RegClass::Vector => {
+                // K-register to k-register move
+                return Inst::Avx512KmovKK {
+                    dst: dst_reg,
+                    src: src_reg,
+                };
+            }
         };
         Inst::External { inst }
     }
@@ -2480,12 +2570,12 @@ impl MachInst for Inst {
                     slice::from_ref(&types[ty.bytes().ilog2() as usize - 1]),
                 ))
             }
-            // YOLM FORK: Support 256-bit vectors (YMM registers)
+            // AVX-512: Support 256-bit vectors (YMM registers)
             _ if ty.is_vector() && ty.bits() == 256 => {
                 // Use I8X16 as the canonical type since all XMM/YMM/ZMM use RegClass::Float
                 Ok((&[RegClass::Float], &[types::I8X16]))
             }
-            // YOLM FORK: Support 512-bit vectors (ZMM registers) for AVX-512
+            // AVX-512: Support 512-bit vectors (ZMM registers) for AVX-512
             _ if ty.is_vector() && ty.bits() == 512 => {
                 // Use I8X16 as the canonical type since all XMM/YMM/ZMM use RegClass::Float
                 Ok((&[RegClass::Float], &[types::I8X16]))
@@ -2500,7 +2590,8 @@ impl MachInst for Inst {
         match rc {
             RegClass::Float => types::I8X16,
             RegClass::Int => types::I64,
-            RegClass::Vector => unreachable!(),
+            // K-registers are 64-bit
+            RegClass::Vector => types::I64,
         }
     }
 

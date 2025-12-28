@@ -344,20 +344,20 @@ fn test_x64_emit() {
     ));
 
     // ========================================================
-    // YOLM FORK: Turin AVX-512 instruction tests
+    // AVX-512 instruction tests
     // ========================================================
 
     // VPADDD zmm0, zmm1, zmm2 (no mask, merging mode)
     // EVEX.512.66.0F.W0 FE /r - 62 F1 75 48 FE C2
     insns.push((
-        Inst::TurinAvx512Alu {
-            op: turin::Avx512AluOp::Vpaddd,
+        Inst::Avx512Avx512Alu {
+            op: avx512::Avx512AluOp::Vpaddd,
             size: OperandSize::Size32,
             dst: Writable::from_reg(xmm0),
             src1: xmm1,
             src2: RegMem::reg(xmm2),
             mask: None,
-            merge: turin::MergeMode::Merging,
+            merge: avx512::MergeMode::Merging,
         },
         "62F17548FEC2",
         "vpaddd %xmm1, %xmm2, %xmm0",
@@ -366,14 +366,14 @@ fn test_x64_emit() {
     // VPADDQ zmm0, zmm1, zmm2 (no mask, merging mode)
     // EVEX.512.66.0F.W1 D4 /r - 62 F1 F5 48 D4 C2
     insns.push((
-        Inst::TurinAvx512Alu {
-            op: turin::Avx512AluOp::Vpaddq,
+        Inst::Avx512Avx512Alu {
+            op: avx512::Avx512AluOp::Vpaddq,
             size: OperandSize::Size64,
             dst: Writable::from_reg(xmm0),
             src1: xmm1,
             src2: RegMem::reg(xmm2),
             mask: None,
-            merge: turin::MergeMode::Merging,
+            merge: avx512::MergeMode::Merging,
         },
         "62F1F548D4C2",
         "vpaddq %xmm1, %xmm2, %xmm0",
@@ -381,14 +381,14 @@ fn test_x64_emit() {
 
     // VPSUBD zmm0, zmm1, zmm2 (no mask, merging mode)
     insns.push((
-        Inst::TurinAvx512Alu {
-            op: turin::Avx512AluOp::Vpsubd,
+        Inst::Avx512Avx512Alu {
+            op: avx512::Avx512AluOp::Vpsubd,
             size: OperandSize::Size32,
             dst: Writable::from_reg(xmm0),
             src1: xmm1,
             src2: RegMem::reg(xmm2),
             mask: None,
-            merge: turin::MergeMode::Merging,
+            merge: avx512::MergeMode::Merging,
         },
         "62F17548FAC2",
         "vpsubd %xmm1, %xmm2, %xmm0",
@@ -396,14 +396,14 @@ fn test_x64_emit() {
 
     // VPANDD zmm0, zmm1, zmm2 (no mask, merging mode)
     insns.push((
-        Inst::TurinAvx512Alu {
-            op: turin::Avx512AluOp::Vpandd,
+        Inst::Avx512Avx512Alu {
+            op: avx512::Avx512AluOp::Vpandd,
             size: OperandSize::Size32,
             dst: Writable::from_reg(xmm0),
             src1: xmm1,
             src2: RegMem::reg(xmm2),
             mask: None,
-            merge: turin::MergeMode::Merging,
+            merge: avx512::MergeMode::Merging,
         },
         "62F17548DBC2",
         "vpandd %xmm1, %xmm2, %xmm0",
@@ -411,14 +411,14 @@ fn test_x64_emit() {
 
     // VPORD zmm0, zmm1, zmm2 (no mask, merging mode)
     insns.push((
-        Inst::TurinAvx512Alu {
-            op: turin::Avx512AluOp::Vpord,
+        Inst::Avx512Avx512Alu {
+            op: avx512::Avx512AluOp::Vpord,
             size: OperandSize::Size32,
             dst: Writable::from_reg(xmm0),
             src1: xmm1,
             src2: RegMem::reg(xmm2),
             mask: None,
-            merge: turin::MergeMode::Merging,
+            merge: avx512::MergeMode::Merging,
         },
         "62F17548EBC2",
         "vpord %xmm1, %xmm2, %xmm0",
@@ -426,14 +426,14 @@ fn test_x64_emit() {
 
     // VPXORD zmm0, zmm1, zmm2 (no mask, merging mode)
     insns.push((
-        Inst::TurinAvx512Alu {
-            op: turin::Avx512AluOp::Vpxord,
+        Inst::Avx512Avx512Alu {
+            op: avx512::Avx512AluOp::Vpxord,
             size: OperandSize::Size32,
             dst: Writable::from_reg(xmm0),
             src1: xmm1,
             src2: RegMem::reg(xmm2),
             mask: None,
-            merge: turin::MergeMode::Merging,
+            merge: avx512::MergeMode::Merging,
         },
         "62F17548EFC2",
         "vpxord %xmm1, %xmm2, %xmm0",
@@ -443,14 +443,14 @@ fn test_x64_emit() {
     // Unsigned 32x32->64 multiply (takes low 32 bits of each 64-bit element)
     // EVEX.512.66.0F.W1 F4 /r - 62 F1 F5 48 F4 C2
     insns.push((
-        Inst::TurinAvx512Alu {
-            op: turin::Avx512AluOp::Vpmuludq,
+        Inst::Avx512Avx512Alu {
+            op: avx512::Avx512AluOp::Vpmuludq,
             size: OperandSize::Size64,
             dst: Writable::from_reg(xmm0),
             src1: xmm1,
             src2: RegMem::reg(xmm2),
             mask: None,
-            merge: turin::MergeMode::Merging,
+            merge: avx512::MergeMode::Merging,
         },
         "62F1F548F4C2",
         "vpmuludq %xmm1, %xmm2, %xmm0",
@@ -460,14 +460,14 @@ fn test_x64_emit() {
     // Signed 32x32->64 multiply (takes low 32 bits of each 64-bit element)
     // EVEX.512.66.0F38.W1 28 /r - 62 F2 F5 48 28 C2
     insns.push((
-        Inst::TurinAvx512Alu {
-            op: turin::Avx512AluOp::Vpmuldq,
+        Inst::Avx512Avx512Alu {
+            op: avx512::Avx512AluOp::Vpmuldq,
             size: OperandSize::Size64,
             dst: Writable::from_reg(xmm0),
             src1: xmm1,
             src2: RegMem::reg(xmm2),
             mask: None,
-            merge: turin::MergeMode::Merging,
+            merge: avx512::MergeMode::Merging,
         },
         "62F2F54828C2",
         "vpmuldq %xmm1, %xmm2, %xmm0",
@@ -477,14 +477,14 @@ fn test_x64_emit() {
     // Rotate left 32-bit elements by immediate
     // EVEX.512.66.0F.W0 72 /1 ib - 62 F1 7D 48 72 CA 07
     insns.push((
-        Inst::TurinAvx512ImmRotate {
+        Inst::Avx512Avx512ImmRotate {
             size: OperandSize::Size32,
             dst: Writable::from_reg(xmm0),
             src: RegMem::reg(xmm2),
             imm8: 7,
             is_left: true,
             mask: None,
-            merge: turin::MergeMode::Zeroing,
+            merge: avx512::MergeMode::Zeroing,
         },
         "62F17D4872CA07",
         "vprold %xmm2, $7, %xmm0",
@@ -494,14 +494,14 @@ fn test_x64_emit() {
     // Rotate left 64-bit elements by immediate
     // EVEX.512.66.0F.W1 72 /1 ib - 62 F1 FD 48 72 CA 0D
     insns.push((
-        Inst::TurinAvx512ImmRotate {
+        Inst::Avx512Avx512ImmRotate {
             size: OperandSize::Size64,
             dst: Writable::from_reg(xmm0),
             src: RegMem::reg(xmm2),
             imm8: 13,
             is_left: true,
             mask: None,
-            merge: turin::MergeMode::Zeroing,
+            merge: avx512::MergeMode::Zeroing,
         },
         "62F1FD4872CA0D",
         "vprolq %xmm2, $13, %xmm0",
@@ -511,14 +511,14 @@ fn test_x64_emit() {
     // Rotate right 32-bit elements by immediate
     // EVEX.512.66.0F.W0 72 /0 ib - 62 F1 7D 48 72 C2 05
     insns.push((
-        Inst::TurinAvx512ImmRotate {
+        Inst::Avx512Avx512ImmRotate {
             size: OperandSize::Size32,
             dst: Writable::from_reg(xmm0),
             src: RegMem::reg(xmm2),
             imm8: 5,
             is_left: false,
             mask: None,
-            merge: turin::MergeMode::Zeroing,
+            merge: avx512::MergeMode::Zeroing,
         },
         "62F17D4872C205",
         "vprord %xmm2, $5, %xmm0",
@@ -528,14 +528,14 @@ fn test_x64_emit() {
     // Rotate right 64-bit elements by immediate
     // EVEX.512.66.0F.W1 72 /0 ib - 62 F1 FD 48 72 C2 11
     insns.push((
-        Inst::TurinAvx512ImmRotate {
+        Inst::Avx512Avx512ImmRotate {
             size: OperandSize::Size64,
             dst: Writable::from_reg(xmm0),
             src: RegMem::reg(xmm2),
             imm8: 17,
             is_left: false,
             mask: None,
-            merge: turin::MergeMode::Zeroing,
+            merge: avx512::MergeMode::Zeroing,
         },
         "62F1FD4872C211",
         "vprorq %xmm2, $17, %xmm0",

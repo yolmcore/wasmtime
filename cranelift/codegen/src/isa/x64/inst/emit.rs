@@ -1822,7 +1822,7 @@ pub(crate) fn emit(
             // Nothing.
         }
 
-        Inst::TurinAvx512Alu {
+        Inst::Avx512Avx512Alu {
             op,
             size,
             dst,
@@ -1831,14 +1831,14 @@ pub(crate) fn emit(
             mask,
             merge,
         } => {
-            turin::emit::emit_turin_inst(
+            avx512::emit::emit_x64_512_inst(
                 *op, *size, *dst, *src1, src2, *mask, *merge, sink,
             );
         }
 
-        // YOLM FORK: Additional Turin AVX-512 instruction types
-        // Delegates to turin::emit module for EVEX encoding.
-        Inst::TurinAvx512Cmp {
+        // AVX-512: Additional Avx512 AVX-512 instruction types
+        // Delegates to avx512::emit module for EVEX encoding.
+        Inst::Avx512Avx512Cmp {
             size,
             dst,
             src1,
@@ -1846,20 +1846,20 @@ pub(crate) fn emit(
             cond,
             mask,
         } => {
-            turin::emit::emit_avx512_cmp(*size, *dst, *src1, src2, *cond, *mask, sink);
+            avx512::emit::emit_x64_512_cmp(*size, *dst, *src1, src2, *cond, *mask, sink);
         }
 
-        Inst::TurinCompressStore {
+        Inst::Avx512CompressStore {
             size,
             src,
             addr,
             mask,
         } => {
             let addr = addr.finalize(state.frame_layout(), sink);
-            turin::emit::emit_compress_store(*size, *src, &addr, *mask, sink);
+            avx512::emit::emit_compress_store(*size, *src, &addr, *mask, sink);
         }
 
-        Inst::TurinExpandLoad {
+        Inst::Avx512ExpandLoad {
             size,
             dst,
             addr,
@@ -1867,10 +1867,10 @@ pub(crate) fn emit(
             merge,
         } => {
             let addr = addr.finalize(state.frame_layout(), sink);
-            turin::emit::emit_expand_load(*size, *dst, &addr, *mask, *merge, sink);
+            avx512::emit::emit_expand_load(*size, *dst, &addr, *mask, *merge, sink);
         }
 
-        Inst::TurinMaskedLoad {
+        Inst::Avx512MaskedLoad {
             size,
             dst,
             addr,
@@ -1878,114 +1878,138 @@ pub(crate) fn emit(
             merge,
         } => {
             let addr = addr.finalize(state.frame_layout(), sink);
-            turin::emit::emit_masked_load(*size, *dst, &addr, *mask, *merge, sink);
+            avx512::emit::emit_masked_load(*size, *dst, &addr, *mask, *merge, sink);
         }
 
-        Inst::TurinMaskedStore {
+        Inst::Avx512MaskedStore {
             size,
             src,
             addr,
             mask,
         } => {
             let addr = addr.finalize(state.frame_layout(), sink);
-            turin::emit::emit_masked_store(*size, *src, &addr, *mask, sink);
+            avx512::emit::emit_masked_store(*size, *src, &addr, *mask, sink);
         }
 
-        Inst::Turin512Load { size, dst, addr } => {
+        Inst::Avx512512Load { size, dst, addr } => {
             let addr = addr.finalize(state.frame_layout(), sink);
-            turin::emit::emit_512bit_load(*size, dst.map(|r| r.to_reg()), &addr, sink);
+            avx512::emit::emit_512bit_load(*size, dst.map(|r| r.to_reg()), &addr, sink);
         }
 
-        Inst::Turin512Store { size, src, addr } => {
+        Inst::Avx512256Load { size, dst, addr } => {
             let addr = addr.finalize(state.frame_layout(), sink);
-            turin::emit::emit_512bit_store(*size, src.to_reg(), &addr, sink);
+            avx512::emit::emit_256bit_load(*size, dst.map(|r| r.to_reg()), &addr, sink);
         }
 
-        Inst::TurinMaskLogic { op, dst, src1, src2 } => {
-            turin::emit::emit_mask_logic(*op, *dst, *src1, *src2, sink);
+        Inst::Avx512512Store { size, src, addr } => {
+            let addr = addr.finalize(state.frame_layout(), sink);
+            avx512::emit::emit_512bit_store(*size, src.to_reg(), &addr, sink);
         }
 
-        Inst::TurinKmov { dst, src, to_gpr } => {
-            turin::emit::emit_kmov(*dst, *src, *to_gpr, sink);
+        Inst::Avx512256Store { size, src, addr } => {
+            let addr = addr.finalize(state.frame_layout(), sink);
+            avx512::emit::emit_256bit_store(*size, src.to_reg(), &addr, sink);
         }
 
-        Inst::TurinKortest { src1, src2 } => {
-            turin::emit::emit_kortest(*src1, *src2, sink);
+        Inst::Avx512MaskLogic { op, dst, src1, src2 } => {
+            avx512::emit::emit_mask_logic(*op, *dst, *src1, *src2, sink);
         }
 
-        Inst::TurinMaskShift { op, dst, src, imm8 } => {
-            turin::emit::emit_turin_mask_shift_inst(*op, *dst, *src, *imm8, sink);
+        Inst::Avx512Kmov { dst, src, to_gpr } => {
+            avx512::emit::emit_kmov(*dst, *src, *to_gpr, sink);
         }
 
-        Inst::TurinMaskUnpack { op, dst, src1, src2 } => {
-            turin::emit::emit_turin_mask_unpack_inst(*op, *dst, *src1, *src2, sink);
+        Inst::Avx512KmovKK { dst, src } => {
+            avx512::emit::emit_kmov_kk(*dst, *src, sink);
         }
 
-        Inst::TurinMaskAdd { op, dst, src1, src2 } => {
-            turin::emit::emit_turin_mask_add_inst(*op, *dst, *src1, *src2, sink);
+        Inst::Avx512KmovLoad { dst, addr } => {
+            let addr = addr.finalize(state.frame_layout(), sink);
+            avx512::emit::emit_kmov_load(*dst, &addr, sink);
         }
 
-        Inst::TurinMaskTest { op, src1, src2 } => {
-            turin::emit::emit_turin_mask_test_inst(*op, *src1, *src2, sink);
+        Inst::Avx512KmovStore { src, addr } => {
+            let addr = addr.finalize(state.frame_layout(), sink);
+            avx512::emit::emit_kmov_store(*src, &addr, sink);
         }
 
-        Inst::TurinGather { op, dst, base, index, scale, disp, mask } => {
-            turin::emit::emit_gather(*op, *dst, *base, *index, *scale, *disp, *mask, sink);
+        Inst::Avx512Kortest { src1, src2 } => {
+            avx512::emit::emit_kortest(*src1, *src2, sink);
         }
 
-        Inst::TurinScatter { op, src, base, index, scale, disp, mask } => {
-            turin::emit::emit_scatter(*op, *src, *base, *index, *scale, *disp, *mask, sink);
+        Inst::Avx512MaskShift { op, dst, src, imm8 } => {
+            avx512::emit::emit_x64_512_mask_shift_inst(*op, *dst, *src, *imm8, sink);
         }
 
-        Inst::TurinCompressReg { size, dst, src, mask } => {
-            turin::emit::emit_compress_reg(*size, dst.map(|r| r.to_reg()), src.to_reg(), *mask, sink);
+        Inst::Avx512MaskUnpack { op, dst, src1, src2 } => {
+            avx512::emit::emit_x64_512_mask_unpack_inst(*op, *dst, *src1, *src2, sink);
         }
 
-        Inst::TurinExpandReg { size, dst, src, mask, merge } => {
-            turin::emit::emit_expand_reg(*size, dst.map(|r| r.to_reg()), src.to_reg(), *mask, *merge, sink);
+        Inst::Avx512MaskAdd { op, dst, src1, src2 } => {
+            avx512::emit::emit_x64_512_mask_add_inst(*op, *dst, *src1, *src2, sink);
         }
 
-        Inst::TurinVmovmsk32 { dst, src } => {
-            turin::emit::emit_vmovmsk32(*dst, src.to_reg(), sink);
+        Inst::Avx512MaskTest { op, src1, src2 } => {
+            avx512::emit::emit_x64_512_mask_test_inst(*op, *src1, *src2, sink);
         }
 
-        Inst::TurinVmovmsk64 { dst, src } => {
-            turin::emit::emit_vmovmsk64(*dst, src.to_reg(), sink);
+        Inst::Avx512Gather { op, dst, base, index, scale, disp, mask } => {
+            avx512::emit::emit_gather(*op, *dst, *base, *index, *scale, *disp, *mask, sink);
         }
 
-        Inst::TurinMovm2d { dst, src } => {
-            turin::emit::emit_movm2d(*dst, *src, sink);
+        Inst::Avx512Scatter { op, src, base, index, scale, disp, mask } => {
+            avx512::emit::emit_scatter(*op, *src, *base, *index, *scale, *disp, *mask, sink);
         }
 
-        Inst::TurinMovm2q { dst, src } => {
-            turin::emit::emit_movm2q(*dst, *src, sink);
+        Inst::Avx512CompressReg { size, dst, src, mask } => {
+            avx512::emit::emit_compress_reg(*size, dst.map(|r| r.to_reg()), src.to_reg(), *mask, sink);
         }
 
-        Inst::TurinVmovmsk8 { dst, src } => {
-            turin::emit::emit_vmovmsk8(*dst, src.to_reg(), sink);
+        Inst::Avx512ExpandReg { size, dst, src, mask, merge } => {
+            avx512::emit::emit_expand_reg(*size, dst.map(|r| r.to_reg()), src.to_reg(), *mask, *merge, sink);
         }
 
-        Inst::TurinVmovmsk16 { dst, src } => {
-            turin::emit::emit_vmovmsk16(*dst, src.to_reg(), sink);
+        Inst::Avx512Vmovmsk32 { dst, src } => {
+            avx512::emit::emit_vmovmsk32(*dst, src.to_reg(), sink);
         }
 
-        Inst::TurinMovm2b { dst, src } => {
-            turin::emit::emit_movm2b(*dst, *src, sink);
+        Inst::Avx512Vmovmsk64 { dst, src } => {
+            avx512::emit::emit_vmovmsk64(*dst, src.to_reg(), sink);
         }
 
-        Inst::TurinMovm2w { dst, src } => {
-            turin::emit::emit_movm2w(*dst, *src, sink);
+        Inst::Avx512Movm2d { dst, src } => {
+            avx512::emit::emit_movm2d(*dst, *src, sink);
         }
 
-        Inst::TurinBroadcastd { dst, src } => {
-            turin::emit::emit_vpbroadcastd(*dst, src, sink);
+        Inst::Avx512Movm2q { dst, src } => {
+            avx512::emit::emit_movm2q(*dst, *src, sink);
         }
 
-        Inst::TurinBroadcastq { dst, src } => {
-            turin::emit::emit_vpbroadcastq(*dst, src, sink);
+        Inst::Avx512Vmovmsk8 { dst, src } => {
+            avx512::emit::emit_vmovmsk8(*dst, src.to_reg(), sink);
         }
 
-        Inst::TurinAvx512FpAlu {
+        Inst::Avx512Vmovmsk16 { dst, src } => {
+            avx512::emit::emit_vmovmsk16(*dst, src.to_reg(), sink);
+        }
+
+        Inst::Avx512Movm2b { dst, src } => {
+            avx512::emit::emit_movm2b(*dst, *src, sink);
+        }
+
+        Inst::Avx512Movm2w { dst, src } => {
+            avx512::emit::emit_movm2w(*dst, *src, sink);
+        }
+
+        Inst::Avx512Broadcastd { dst, src } => {
+            avx512::emit::emit_vpbroadcastd(*dst, src, sink);
+        }
+
+        Inst::Avx512Broadcastq { dst, src } => {
+            avx512::emit::emit_vpbroadcastq(*dst, src, sink);
+        }
+
+        Inst::Avx512Avx512FpAlu {
             op,
             dst,
             src1,
@@ -1993,20 +2017,20 @@ pub(crate) fn emit(
             mask,
             merge,
         } => {
-            turin::emit::emit_turin_fp_inst(*op, *dst, *src1, src2, *mask, *merge, sink);
+            avx512::emit::emit_x64_512_fp_inst(*op, *dst, *src1, src2, *mask, *merge, sink);
         }
 
-        Inst::TurinAvx512FpSqrt {
+        Inst::Avx512Avx512FpSqrt {
             op,
             dst,
             src,
             mask,
             merge,
         } => {
-            turin::emit::emit_turin_fp_unary(*op, *dst, src, *mask, *merge, sink);
+            avx512::emit::emit_x64_512_fp_unary(*op, *dst, src, *mask, *merge, sink);
         }
 
-        Inst::TurinAvx512Fma {
+        Inst::Avx512Avx512Fma {
             op,
             dst,
             src1,
@@ -2015,10 +2039,10 @@ pub(crate) fn emit(
             mask,
             merge,
         } => {
-            turin::emit::emit_turin_fma_inst(*op, *dst, *src1, *src2, src3, *mask, *merge, sink);
+            avx512::emit::emit_x64_512_fma_inst(*op, *dst, *src1, *src2, src3, *mask, *merge, sink);
         }
 
-        Inst::TurinAvx512Vnni {
+        Inst::Avx512Avx512Vnni {
             op,
             dst,
             acc,
@@ -2027,29 +2051,29 @@ pub(crate) fn emit(
             mask,
             merge,
         } => {
-            turin::emit::emit_turin_vnni_inst(*op, *dst, *acc, *src1, src2, *mask, *merge, sink);
+            avx512::emit::emit_x64_512_vnni_inst(*op, *dst, *acc, *src1, src2, *mask, *merge, sink);
         }
 
-        Inst::TurinVp2Intersect {
+        Inst::Avx512Vp2Intersect {
             op,
             dst_k,
             src1,
             src2,
         } => {
-            turin::emit::emit_turin_vp2intersect_inst(*op, *dst_k, *src1, src2, sink);
+            avx512::emit::emit_x64_512_vp2intersect_inst(*op, *dst_k, *src1, src2, sink);
         }
 
-        Inst::TurinAvx512Cvt {
+        Inst::Avx512Avx512Cvt {
             op,
             dst,
             src,
             mask,
             merge,
         } => {
-            turin::emit::emit_turin_cvt_inst(*op, *dst, src, *mask, *merge, sink);
+            avx512::emit::emit_x64_512_cvt_inst(*op, *dst, src, *mask, *merge, sink);
         }
 
-        Inst::TurinAvx512Align {
+        Inst::Avx512Avx512Align {
             op,
             dst,
             src1,
@@ -2058,10 +2082,10 @@ pub(crate) fn emit(
             mask,
             merge,
         } => {
-            turin::emit::emit_turin_align_inst(*op, *dst, *src1, src2, *imm8, *mask, *merge, sink);
+            avx512::emit::emit_x64_512_align_inst(*op, *dst, *src1, src2, *imm8, *mask, *merge, sink);
         }
 
-        Inst::TurinAvx512Ternlog {
+        Inst::Avx512Avx512Ternlog {
             size,
             dst,
             src1,
@@ -2071,10 +2095,10 @@ pub(crate) fn emit(
             mask,
             merge,
         } => {
-            turin::emit::emit_turin_ternlog_inst(*size, *dst, *src1, *src2, src3, *imm8, *mask, *merge, sink);
+            avx512::emit::emit_x64_512_ternlog_inst(*size, *dst, *src1, *src2, src3, *imm8, *mask, *merge, sink);
         }
 
-        Inst::TurinAvx512ImmRotate {
+        Inst::Avx512Avx512ImmRotate {
             size,
             dst,
             src,
@@ -2083,10 +2107,10 @@ pub(crate) fn emit(
             mask,
             merge,
         } => {
-            turin::emit::emit_turin_imm_rotate_inst(*size, *dst, src, *imm8, *is_left, *mask, *merge, sink);
+            avx512::emit::emit_x64_512_imm_rotate_inst(*size, *dst, src, *imm8, *is_left, *mask, *merge, sink);
         }
 
-        Inst::TurinAvx512ImmShuffle {
+        Inst::Avx512Avx512ImmShuffle {
             op,
             dst,
             src,
@@ -2094,10 +2118,10 @@ pub(crate) fn emit(
             mask,
             merge,
         } => {
-            turin::emit::emit_turin_imm_shuffle_inst(*op, *dst, src, *imm8, *mask, *merge, sink);
+            avx512::emit::emit_x64_512_imm_shuffle_inst(*op, *dst, src, *imm8, *mask, *merge, sink);
         }
 
-        Inst::TurinAvx512LaneShuffle {
+        Inst::Avx512Avx512LaneShuffle {
             op,
             dst,
             src1,
@@ -2106,10 +2130,10 @@ pub(crate) fn emit(
             mask,
             merge,
         } => {
-            turin::emit::emit_turin_lane_shuffle_inst(*op, *dst, *src1, src2, *imm8, *mask, *merge, sink);
+            avx512::emit::emit_x64_512_lane_shuffle_inst(*op, *dst, *src1, src2, *imm8, *mask, *merge, sink);
         }
 
-        Inst::TurinAvx512FpCmp {
+        Inst::Avx512Avx512FpCmp {
             size,
             dst,
             src1,
@@ -2117,14 +2141,14 @@ pub(crate) fn emit(
             imm8,
             mask,
         } => {
-            turin::emit::emit_turin_fp_cmp_inst(*size, *dst, *src1, src2, *imm8, *mask, sink);
+            avx512::emit::emit_x64_512_fp_cmp_inst(*size, *dst, *src1, src2, *imm8, *mask, sink);
         }
 
-        Inst::TurinAvx512Extract { op, dst, src, lane } => {
-            turin::emit::emit_avx512_extract(*op, *dst, *src, *lane, sink);
+        Inst::Avx512Avx512Extract { op, dst, src, lane } => {
+            avx512::emit::emit_x64_512_extract(*op, *dst, *src, *lane, sink);
         }
 
-        Inst::TurinAvx512Insert {
+        Inst::Avx512Avx512Insert {
             op,
             dst,
             src1,
@@ -2133,17 +2157,17 @@ pub(crate) fn emit(
             mask,
             merge,
         } => {
-            turin::emit::emit_turin_insert_inst(*op, *dst, *src1, src2, *lane, *mask, *merge, sink);
+            avx512::emit::emit_x64_512_insert_inst(*op, *dst, *src1, src2, *lane, *mask, *merge, sink);
         }
 
-        Inst::TurinAvx512FpSpecial {
+        Inst::Avx512Avx512FpSpecial {
             op,
             dst,
             src,
             mask,
             merge,
         } => {
-            turin::emit::emit_avx512_fp_special(*op, *dst, src, *mask, *merge, sink);
+            avx512::emit::emit_x64_512_fp_special(*op, *dst, src, *mask, *merge, sink);
         }
 
         Inst::External { inst } => {

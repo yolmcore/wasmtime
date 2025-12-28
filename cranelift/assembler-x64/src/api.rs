@@ -185,7 +185,7 @@ pub trait RegisterVisitor<R: Registers> {
 
     /// Visit the registers in an [`Amode`].
     ///
-    /// This is helpful for generated code: it allows capturing the `R::ReadGpr`
+    /// This is helpful for generated code: it allows capavx512g the `R::ReadGpr`
     /// type (which an `Amode` method cannot) and simplifies the code to be
     /// generated.
     fn read_amode(&mut self, amode: &mut Amode<R::ReadGpr>) {

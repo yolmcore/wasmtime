@@ -1,9 +1,9 @@
-// cranelift/codegen/src/isa/x64/inst/turin/encoding.rs
+// cranelift/codegen/src/isa/x64/inst/avx512/encoding.rs
 //
-// YOLM FORK: EVEX prefix encoding for AVX-512 instructions.
+// AVX-512: EVEX prefix encoding for AVX-512 instructions.
 //
 // EVEX is a 4-byte prefix used for AVX-512 instructions. This module
-// implements the encoding logic for Turin-native 512-bit operations.
+// implements the encoding logic for Avx512-native 512-bit operations.
 
 use crate::isa::x64::inst::Inst;
 use crate::machinst::MachBuffer;

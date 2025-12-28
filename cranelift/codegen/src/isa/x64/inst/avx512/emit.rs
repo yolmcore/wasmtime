@@ -1,8 +1,8 @@
-// cranelift/codegen/src/isa/x64/inst/turin/emit.rs
+// cranelift/codegen/src/isa/x64/inst/avx512/emit.rs
 //
-// YOLM FORK: Turin AVX-512 EVEX instruction emission.
+// AVX-512 EVEX instruction emission.
 // This module handles the encoding and emission of AVX-512 instructions
-// for AMD EPYC 5th Generation (Turin / Zen 5) processors.
+// for AMD EPYC 5th Generation (Avx512 / Zen 5) processors.
 //
 // Reference: Intel 64 and IA-32 Architectures Software Developer's Manual
 // Volume 2: Instruction Set Reference (EVEX Encoding)
@@ -25,8 +25,8 @@ use crate::machinst::{MachBuffer, Reg, Writable};
 fn kreg_enc(reg: Reg) -> u8 {
     let enc = reg.to_real_reg().unwrap().hw_enc();
     // K-registers have PReg indices 32-39, subtract 32 to get 0-7
-    debug_assert!(enc >= 32 && enc < 40, "expected k-register, got PReg index {}", enc);
-    (enc - 32) as u8
+    debug_assert!(enc >= 32 && enc < 40, "expected k-register, got PReg index {enc}");
+    enc - 32
 }
 
 // =============================================================================
@@ -34,7 +34,7 @@ fn kreg_enc(reg: Reg) -> u8 {
 // =============================================================================
 
 /// Emit an AVX-512 ALU instruction (3-operand form: dst = src1 op src2).
-pub fn emit_turin_inst(
+pub fn emit_x64_512_inst(
     op: Avx512AluOp,
     size: OperandSize,
     dst: Writable<Reg>,
@@ -183,7 +183,7 @@ pub fn emit_vpbroadcastq(
 
 /// Emit an AVX-512 comparison instruction that writes to a k-register.
 /// VPCMPD/VPCMPQ: Compare packed integers and store result in mask register.
-pub fn emit_avx512_cmp(
+pub fn emit_x64_512_cmp(
     size: OperandSize,
     dst: Writable<Reg>,
     src1: Reg,
@@ -419,6 +419,43 @@ pub fn emit_512bit_load(
     emit_modrm_sib_disp(sink, dst_enc, addr);
 }
 
+/// Emit VMOVDQU32/64 unmasked load (256-bit).
+/// This is for simple 256-bit vector loads without masking.
+pub fn emit_256bit_load(
+    size: OperandSize,
+    dst: Writable<Reg>,
+    addr: &Amode,
+    sink: &mut MachBuffer<Inst>,
+) {
+    // VMOVDQU32: EVEX.256.F3.0F.W0 6F /r (load) - dword elements
+    // VMOVDQU64: EVEX.256.F3.0F.W1 6F /r (load) - qword elements
+    // Use aaa=000 (k0) for unmasked operation
+    let (pp, w) = match size {
+        OperandSize::Size32 => (0x02, false), // F3 prefix, W=0
+        OperandSize::Size64 => (0x02, true),  // F3 prefix, W=1
+        _ => panic!("256-bit load only supports Size32 and Size64"),
+    };
+
+    let evex = EvexPrefix {
+        map: 0x01, // 0F map
+        w,
+        pp,
+        aaa: 0,   // k0 = no masking
+        z: false, // No zeroing for unmasked
+        b: false,
+        ll: 0b01, // 256-bit
+    };
+
+    let dst_enc = dst.to_reg().to_real_reg().unwrap().hw_enc();
+
+    // Extract base/index register encodings from the address mode
+    let (base_enc, index_enc) = extract_mem_reg_encodings(addr);
+
+    evex.emit_for_mem(dst_enc, base_enc, index_enc, sink);
+    sink.put1(0x6F); // VMOVDQU load opcode
+    emit_modrm_sib_disp(sink, dst_enc, addr);
+}
+
 /// Emit VMOVDQU8/16/32/64 unmasked store (512-bit).
 /// This is for simple 512-bit vector stores without masking.
 pub fn emit_512bit_store(
@@ -459,6 +496,43 @@ pub fn emit_512bit_store(
     emit_modrm_sib_disp(sink, src_enc, addr);
 }
 
+/// Emit VMOVDQU32/64 unmasked store (256-bit).
+/// This is for simple 256-bit vector stores without masking.
+pub fn emit_256bit_store(
+    size: OperandSize,
+    src: Reg,
+    addr: &Amode,
+    sink: &mut MachBuffer<Inst>,
+) {
+    // VMOVDQU32: EVEX.256.F3.0F.W0 7F /r (store) - dword elements
+    // VMOVDQU64: EVEX.256.F3.0F.W1 7F /r (store) - qword elements
+    // Use aaa=000 (k0) for unmasked operation
+    let (pp, w) = match size {
+        OperandSize::Size32 => (0x02, false), // F3 prefix, W=0
+        OperandSize::Size64 => (0x02, true),  // F3 prefix, W=1
+        _ => panic!("256-bit store only supports Size32 and Size64"),
+    };
+
+    let evex = EvexPrefix {
+        map: 0x01, // 0F map
+        w,
+        pp,
+        aaa: 0,   // k0 = no masking
+        z: false,
+        b: false,
+        ll: 0b01, // 256-bit
+    };
+
+    let src_enc = src.to_real_reg().unwrap().hw_enc();
+
+    // Extract base/index register encodings from the address mode
+    let (base_enc, index_enc) = extract_mem_reg_encodings(addr);
+
+    evex.emit_for_mem(src_enc, base_enc, index_enc, sink);
+    sink.put1(0x7F); // VMOVDQU store opcode
+    emit_modrm_sib_disp(sink, src_enc, addr);
+}
+
 // =============================================================================
 // Mask Register Logic Instruction Emission (KAND, KOR, etc.)
 // =============================================================================
@@ -472,12 +546,14 @@ pub fn emit_mask_logic(
     src2: Option<Reg>,
     sink: &mut MachBuffer<Inst>,
 ) {
-    // Mask logic instructions use VEX.L1.66.0F encoding
-    // KANDW:  VEX.L1.66.0F.W0 41 /r
-    // KORW:   VEX.L1.66.0F.W0 45 /r
-    // KXORW:  VEX.L1.66.0F.W0 47 /r
-    // KNOTW:  VEX.L0.0F.W0 44 /r (unary)
-    // KANDNW: VEX.L1.66.0F.W0 42 /r
+    // Mask logic instructions use VEX encoding.
+    // Note: Different instructions have different pp (prefix) requirements:
+    // - KANDW:  VEX.L1.66.0F.W0 41 /r (pp=01)
+    // - KANDNW: VEX.L1.66.0F.W0 42 /r (pp=01)
+    // - KNOTW:  VEX.L0.0F.W0 44 /r (pp=00)
+    // - KORW:   VEX.L1.0F.W0 45 /r (pp=00)
+    // - KXNORW: VEX.L1.0F.W0 46 /r (pp=00)
+    // - KXORW:  VEX.L1.0F.W0 47 /r (pp=00)
 
     // K-registers use PReg indices 32-39, need to convert to 0-7 for VEX encoding
     let dst_enc = kreg_enc(dst.to_reg());
@@ -497,23 +573,25 @@ pub fn emit_mask_logic(
             sink.put1(modrm);
         }
         _ => {
-            // Binary ops: KAND, KOR, KXOR, KANDN
+            // Binary ops: KAND, KANDN, KOR, KXNOR, KXOR
             let src2 = src2.expect("Binary mask op requires src2");
             let src2_enc = kreg_enc(src2);
 
-            let opcode = match op {
-                MaskAluOp::Kand => 0x41,
-                MaskAluOp::Kor => 0x45,
-                MaskAluOp::Kxor => 0x47,
-                MaskAluOp::Kxnor => 0x46,
-                MaskAluOp::Kandn => 0x42,
+            let (opcode, pp) = match op {
+                // These use pp=01 (66 prefix)
+                MaskAluOp::Kand => (0x41, 0x01),
+                MaskAluOp::Kandn => (0x42, 0x01),
+                // These use pp=00 (no prefix)
+                MaskAluOp::Kor => (0x45, 0x00),
+                MaskAluOp::Kxnor => (0x46, 0x00),
+                MaskAluOp::Kxor => (0x47, 0x00),
                 MaskAluOp::Knot => unreachable!(),
             };
 
             // 3-byte VEX for L=1: C4 [RXB~mmmmm] [W~vvvv~L~pp] opcode modrm
             // K-registers only go 0-7, so R, X, B bits always 1 (no extension needed)
             let vvvv = !src1_enc & 0x0F;
-            let vex2 = (0 << 7) | (vvvv << 3) | 0x05; // W=0, L=1, pp=01 (66)
+            let vex2 = (0 << 7) | (vvvv << 3) | 0x04 | pp; // W=0, L=1, pp=variable
 
             sink.put1(0xC4);
             sink.put1(0xE1); // R=1, X=1, B=1, mmmmm = 01 (0F)
@@ -529,7 +607,10 @@ pub fn emit_mask_logic(
 // KMOV Instruction Emission
 // =============================================================================
 
-/// Emit KMOVQ - move between k-register and GPR.
+/// Emit KMOVQ - move between k-register, GPR, or k↔k.
+/// - to_gpr=true: KMOVQ r64, k (move from k to GPR)
+/// - to_gpr=false: KMOVQ k, r64 (move from GPR to k)
+/// For k↔k moves, use emit_kmov_kk instead.
 pub fn emit_kmov(
     dst: Writable<Reg>,
     src: Reg,
@@ -566,6 +647,25 @@ pub fn emit_kmov(
         let modrm = 0xC0 | ((dst_enc & 0x07) << 3) | (src_enc & 0x07);
         sink.put1(modrm);
     }
+}
+
+/// Emit KMOVQ k, k (k-register to k-register move).
+pub fn emit_kmov_kk(
+    dst: Writable<Reg>,
+    src: Reg,
+    sink: &mut MachBuffer<Inst>,
+) {
+    // KMOVQ k1, k2: VEX.L0.0F.W1 90 /r (mod=11 for reg-reg)
+    let dst_enc = dst.to_reg().to_real_reg().unwrap().hw_enc();
+    let src_enc = src.to_real_reg().unwrap().hw_enc();
+
+    // 3-byte VEX for W=1
+    sink.put1(0xC4);
+    sink.put1(0xE1); // RXB=111, mmmmm=01
+    sink.put1(0xF8); // W=1, vvvv=1111, L=0, pp=00
+    sink.put1(0x90);
+    let modrm = 0xC0 | ((dst_enc & 0x07) << 3) | (src_enc & 0x07);
+    sink.put1(modrm);
 }
 
 // =============================================================================
@@ -682,21 +782,30 @@ pub fn emit_gather(
         _ => panic!("Invalid scale for gather: {scale}"),
     };
 
+    // EVEX uses compressed displacement (disp8*N) where N is the element size.
+    // For gather/scatter with qword elements (W=1), N=8; for dword (W=0), N=4.
+    let elem_size = op.element_size() as i32;
+
+    // Try to use compressed disp8 encoding if displacement is aligned to element size
+    let can_use_disp8 = disp != 0 && (disp % elem_size) == 0;
+    let compressed_disp = if can_use_disp8 { disp / elem_size } else { 0 };
+    let use_disp8 = can_use_disp8 && compressed_disp >= -128 && compressed_disp <= 127;
+
     if disp == 0 && (base_enc & 0x07) != 5 {
         // mod=00: no displacement (unless base is RBP/R13)
         let modrm = 0x04 | ((dst_enc & 0x07) << 3);
         sink.put1(modrm);
         let sib = (scale_bits << 6) | ((index_enc & 0x07) << 3) | (base_enc & 0x07);
         sink.put1(sib);
-    } else if disp >= -128 && disp <= 127 {
-        // mod=01: 8-bit displacement
+    } else if use_disp8 {
+        // mod=01: 8-bit compressed displacement (disp8 * element_size)
         let modrm = 0x44 | ((dst_enc & 0x07) << 3);
         sink.put1(modrm);
         let sib = (scale_bits << 6) | ((index_enc & 0x07) << 3) | (base_enc & 0x07);
         sink.put1(sib);
-        sink.put1(disp as u8);
+        sink.put1(compressed_disp as u8);
     } else {
-        // mod=10: 32-bit displacement
+        // mod=10: 32-bit displacement (not compressed)
         let modrm = 0x84 | ((dst_enc & 0x07) << 3);
         sink.put1(modrm);
         let sib = (scale_bits << 6) | ((index_enc & 0x07) << 3) | (base_enc & 0x07);
@@ -855,7 +964,7 @@ pub fn emit_expand_reg(
 /// K-registers use indices 32-39 to distinguish from XMM registers (0-31),
 /// so we subtract 32 to get the actual hardware encoding (0-7).
 fn k_enc(hw_enc: u8) -> u8 {
-    debug_assert!(hw_enc >= 32 && hw_enc < 40, "invalid k-register hw_enc: {}", hw_enc);
+    debug_assert!(hw_enc >= 32 && hw_enc < 40, "invalid k-register hw_enc: {hw_enc}");
     hw_enc - 32
 }
 
@@ -880,7 +989,7 @@ pub fn emit_vmovmsk32(
     // dst is a k-register (indices 128+), extract actual encoding
     let dst_enc = k_enc(dst_hw);
 
-    evex.emit(dst_enc as u8, 0, src_enc, false, sink);
+    evex.emit(dst_enc, 0, src_enc, false, sink);
     sink.put1(0x39);
 
     let modrm = 0xC0 | ((dst_enc & 0x07) << 3) | (src_enc & 0x07);
@@ -912,7 +1021,7 @@ pub fn emit_movm2d(
     // src is a k-register (indices 128+), extract actual encoding
     let src_enc = k_enc(src_hw);
 
-    evex.emit(dst_enc, 0, src_enc as u8, false, sink);
+    evex.emit(dst_enc, 0, src_enc, false, sink);
     sink.put1(0x38);
 
     let modrm = 0xC0 | ((dst_enc & 0x07) << 3) | (src_enc & 0x07);
@@ -944,7 +1053,7 @@ pub fn emit_movm2q(
     // src is a k-register (indices 128+), extract actual encoding
     let src_enc = k_enc(src_hw);
 
-    evex.emit(dst_enc, 0, src_enc as u8, false, sink);
+    evex.emit(dst_enc, 0, src_enc, false, sink);
     sink.put1(0x38);
 
     let modrm = 0xC0 | ((dst_enc & 0x07) << 3) | (src_enc & 0x07);
@@ -976,7 +1085,7 @@ pub fn emit_vmovmsk64(
     // dst is a k-register (indices 128+), extract actual encoding
     let dst_enc = k_enc(dst_hw);
 
-    evex.emit(dst_enc as u8, 0, src_enc, false, sink);
+    evex.emit(dst_enc, 0, src_enc, false, sink);
     sink.put1(0x39);
 
     let modrm = 0xC0 | ((dst_enc & 0x07) << 3) | (src_enc & 0x07);
@@ -1008,7 +1117,7 @@ pub fn emit_vmovmsk8(
     // dst is a k-register (indices 128+), extract actual encoding
     let dst_enc = k_enc(dst_hw);
 
-    evex.emit(dst_enc as u8, 0, src_enc, false, sink);
+    evex.emit(dst_enc, 0, src_enc, false, sink);
     sink.put1(0x29);
 
     let modrm = 0xC0 | ((dst_enc & 0x07) << 3) | (src_enc & 0x07);
@@ -1040,7 +1149,7 @@ pub fn emit_vmovmsk16(
     // dst is a k-register (indices 128+), extract actual encoding
     let dst_enc = k_enc(dst_hw);
 
-    evex.emit(dst_enc as u8, 0, src_enc, false, sink);
+    evex.emit(dst_enc, 0, src_enc, false, sink);
     sink.put1(0x29);
 
     let modrm = 0xC0 | ((dst_enc & 0x07) << 3) | (src_enc & 0x07);
@@ -1072,7 +1181,7 @@ pub fn emit_movm2b(
     // src is a k-register (indices 128+), extract actual encoding
     let src_enc = k_enc(src_hw);
 
-    evex.emit(dst_enc, 0, src_enc as u8, false, sink);
+    evex.emit(dst_enc, 0, src_enc, false, sink);
     sink.put1(0x28);
 
     let modrm = 0xC0 | ((dst_enc & 0x07) << 3) | (src_enc & 0x07);
@@ -1104,7 +1213,7 @@ pub fn emit_movm2w(
     // src is a k-register (indices 128+), extract actual encoding
     let src_enc = k_enc(src_hw);
 
-    evex.emit(dst_enc, 0, src_enc as u8, false, sink);
+    evex.emit(dst_enc, 0, src_enc, false, sink);
     sink.put1(0x28);
 
     let modrm = 0xC0 | ((dst_enc & 0x07) << 3) | (src_enc & 0x07);
@@ -1118,7 +1227,7 @@ pub fn emit_movm2w(
 /// Emit an AVX-512 floating-point ALU instruction (3-operand form: dst = src1 op src2).
 ///
 /// This handles VADDPS/PD, VSUBPS/PD, VMULPS/PD, VDIVPS/PD, VMINPS/PD, VMAXPS/PD.
-pub fn emit_turin_fp_inst(
+pub fn emit_x64_512_fp_inst(
     op: Avx512FpAluOp,
     dst: Writable<Reg>,
     src1: Reg,
@@ -1164,7 +1273,7 @@ pub fn emit_turin_fp_inst(
 /// Emit an AVX-512 floating-point unary instruction (VSQRTPS/PD).
 ///
 /// dst = sqrt(src)
-pub fn emit_turin_fp_unary(
+pub fn emit_x64_512_fp_unary(
     op: Avx512FpAluOp,
     dst: Writable<Reg>,
     src: &RegMem,
@@ -1221,7 +1330,7 @@ pub fn emit_turin_fp_unary(
 ///
 /// For Cranelift's `fma(x, y, z)` = x * y + z:
 /// - Use VFMADD213: dst/src1=x, src2=y, src3=z → result = y * x + z = x * y + z ✓
-pub fn emit_turin_fma_inst(
+pub fn emit_x64_512_fma_inst(
     op: Avx512FmaOp,
     dst: Writable<Reg>,
     src1: Reg,      // First multiplicand (becomes dst)
@@ -1299,7 +1408,7 @@ pub fn emit_turin_fma_inst(
 ///   VPDPBUSDS: EVEX.NDS.512.66.0F38.W0 51 /r
 ///   VPDPWSSD:  EVEX.NDS.512.66.0F38.W0 52 /r
 ///   VPDPWSSDS: EVEX.NDS.512.66.0F38.W0 53 /r
-pub fn emit_turin_vnni_inst(
+pub fn emit_x64_512_vnni_inst(
     op: Avx512VnniOp,
     dst: Writable<Reg>,
     acc: Reg,       // Accumulator (tied to dst)
@@ -1381,7 +1490,7 @@ pub fn emit_turin_vnni_inst(
 ///
 /// Note: Unlike most instructions, the reg field in ModR/M encodes a k-register,
 /// not a ZMM register. The vvvv field holds src1 (ZMM), r/m holds src2 (ZMM/mem).
-pub fn emit_turin_vp2intersect_inst(
+pub fn emit_x64_512_vp2intersect_inst(
     op: Vp2IntersectOp,
     dst_k: Writable<Reg>,
     src1: Reg,
@@ -1407,8 +1516,7 @@ pub fn emit_turin_vp2intersect_inst(
     {
         debug_assert!(
             dst_enc % 2 == 0,
-            "VP2INTERSECT dst_k must be an even k-register (k0, k2, k4, k6), got k{}",
-            dst_enc
+            "VP2INTERSECT dst_k must be an even k-register (k0, k2, k4, k6), got k{dst_enc}"
         );
     }
 
@@ -1444,7 +1552,7 @@ pub fn emit_turin_vp2intersect_inst(
 /// Emit an AVX-512 type conversion instruction (unary: dst = convert(src)).
 ///
 /// This handles VCVTDQ2PS, VCVTPS2DQ, VCVTTPS2DQ, VCVTQQ2PD, VCVTPD2QQ, etc.
-pub fn emit_turin_cvt_inst(
+pub fn emit_x64_512_cvt_inst(
     op: Avx512CvtOp,
     dst: Writable<Reg>,
     src: &RegMem,
@@ -1498,7 +1606,7 @@ pub fn emit_turin_cvt_inst(
 ///
 /// Format: op dst, src1, src2, imm8
 /// Concatenates src1:src2 and extracts 512 bits starting at imm8 elements.
-pub fn emit_turin_align_inst(
+pub fn emit_x64_512_align_inst(
     op: Avx512AlignOp,
     dst: Writable<Reg>,
     src1: Reg,
@@ -1565,7 +1673,7 @@ pub fn emit_turin_align_inst(
 ///   0xFE = OR(a, b, c)
 ///   0x96 = XOR(a, XOR(b, c))
 ///   0xCA = (a & b) | (~a & c) = blend/select
-pub fn emit_turin_ternlog_inst(
+pub fn emit_x64_512_ternlog_inst(
     size: OperandSize,
     dst: Writable<Reg>,
     src1: Reg,
@@ -1641,7 +1749,7 @@ pub fn emit_turin_ternlog_inst(
 /// The ModRM reg field encodes the operation:
 ///   /0 = rotate right
 ///   /1 = rotate left
-pub fn emit_turin_imm_rotate_inst(
+pub fn emit_x64_512_imm_rotate_inst(
     size: OperandSize,
     dst: Writable<Reg>,
     src: &RegMem,
@@ -1705,7 +1813,7 @@ pub fn emit_turin_imm_rotate_inst(
 ///
 /// The immediate specifies the comparison predicate:
 ///   0=EQ_OQ, 1=LT_OS, 2=LE_OS, 3=UNORD_Q, 4=NEQ_UQ, 5=NLT_US, 6=NLE_US, 7=ORD_Q, etc.
-pub fn emit_turin_fp_cmp_inst(
+pub fn emit_x64_512_fp_cmp_inst(
     size: OperandSize,
     dst: Writable<Reg>,
     src1: Reg,
@@ -1769,7 +1877,7 @@ pub fn emit_turin_fp_cmp_inst(
 ///   VPSHUFLW: EVEX.512.F2.0F.W0 70 /r ib
 ///
 /// All use opcode 0x70, differentiated by the mandatory prefix (pp field).
-pub fn emit_turin_imm_shuffle_inst(
+pub fn emit_x64_512_imm_shuffle_inst(
     op: Avx512ImmShuffleOp,
     dst: Writable<Reg>,
     src: &RegMem,
@@ -1826,7 +1934,7 @@ pub fn emit_turin_imm_shuffle_inst(
 /// - src1 = first source (encoded in vvvv field)
 /// - src2 = second source (encoded in r/m field)
 /// - imm8 = lane selection pattern
-pub fn emit_turin_lane_shuffle_inst(
+pub fn emit_x64_512_lane_shuffle_inst(
     op: Avx512LaneShuffleOp,
     dst: Writable<Reg>,
     src1: Reg,
@@ -2036,7 +2144,7 @@ fn emit_modrm_sib_disp(sink: &mut MachBuffer<Inst>, reg: u8, addr: &Amode) {
 
 /// Emit an AVX-512 extract instruction (dst = extract_lane(src, imm))
 /// Extracts a 128-bit or 256-bit lane from a 512-bit ZMM register.
-pub fn emit_avx512_extract(
+pub fn emit_x64_512_extract(
     op: Avx512ExtractOp,
     dst: Writable<Reg>,
     src: Reg,
@@ -2074,7 +2182,7 @@ pub fn emit_avx512_extract(
 /// - src1: ZMM source (encoded in vvvv field)
 /// - src2: XMM/YMM source to insert (encoded in RM field)
 /// - lane: immediate selecting which lane to insert at
-pub fn emit_turin_insert_inst(
+pub fn emit_x64_512_insert_inst(
     op: Avx512InsertOp,
     dst: Writable<Reg>,
     src1: Reg,
@@ -2129,7 +2237,7 @@ pub fn emit_turin_insert_inst(
 
 /// Emit an AVX-512 FP special instruction (dst = op(src))
 /// These are unary operations for reciprocal/rsqrt approximations.
-pub fn emit_avx512_fp_special(
+pub fn emit_x64_512_fp_special(
     op: Avx512FpSpecialOp,
     dst: Writable<Reg>,
     src: &RegMem,
@@ -2204,7 +2312,7 @@ pub fn emit_avx512_fp_special(
 
 /// Emit a K-register shift instruction (dst = src << imm or dst = src >> imm)
 /// These shift the bits in a mask register by an immediate count.
-pub fn emit_turin_mask_shift_inst(
+pub fn emit_x64_512_mask_shift_inst(
     op: MaskShiftOp,
     dst: Writable<Reg>,
     src: Reg,
@@ -2256,7 +2364,7 @@ pub fn emit_turin_mask_shift_inst(
 
 /// Emit a K-register unpack instruction (dst = unpack(src1, src2)).
 /// These unpack and interleave low halves of two mask registers.
-pub fn emit_turin_mask_unpack_inst(
+pub fn emit_x64_512_mask_unpack_inst(
     op: MaskUnpackOp,
     dst: Writable<Reg>,
     src1: Reg,
@@ -2306,7 +2414,7 @@ pub fn emit_turin_mask_unpack_inst(
 
 /// Emit a K-register add instruction (dst = src1 + src2).
 /// These add two mask registers element-wise.
-pub fn emit_turin_mask_add_inst(
+pub fn emit_x64_512_mask_add_inst(
     op: MaskAddOp,
     dst: Writable<Reg>,
     src1: Reg,
@@ -2356,7 +2464,7 @@ pub fn emit_turin_mask_add_inst(
 
 /// Emit a K-register test instruction (sets flags based on src1 AND src2).
 /// These test two mask registers and set CPU flags (CF, ZF).
-pub fn emit_turin_mask_test_inst(
+pub fn emit_x64_512_mask_test_inst(
     op: MaskTestOp,
     src1: Reg,
     src2: Reg,
@@ -2466,7 +2574,7 @@ mod tests {
     // =========================================================================
 
     #[test]
-    fn test_avx512_cond_encoding() {
+    fn test_x64_512_cond_encoding() {
         // Verify condition encodings match Intel documentation for VPCMPD/VPCMPQ
         assert_eq!(Avx512Cond::Eq as u8, 0);
         assert_eq!(Avx512Cond::Lt as u8, 1);
@@ -2495,7 +2603,7 @@ mod tests {
     // =========================================================================
 
     #[test]
-    fn test_avx512_alu_op_arithmetic_opcodes() {
+    fn test_x64_512_alu_op_arithmetic_opcodes() {
         // Integer arithmetic instructions
         assert_eq!(Avx512AluOp::Vpaddd.opcode(), 0xFE);
         assert_eq!(Avx512AluOp::Vpaddq.opcode(), 0xD4);
@@ -2504,7 +2612,7 @@ mod tests {
     }
 
     #[test]
-    fn test_avx512_alu_op_logical_opcodes() {
+    fn test_x64_512_alu_op_logical_opcodes() {
         // Bitwise logical instructions
         assert_eq!(Avx512AluOp::Vpandd.opcode(), 0xDB);
         assert_eq!(Avx512AluOp::Vpandq.opcode(), 0xDB);
@@ -2515,7 +2623,7 @@ mod tests {
     }
 
     #[test]
-    fn test_avx512_alu_op_shift_opcodes() {
+    fn test_x64_512_alu_op_shift_opcodes() {
         // Shift instructions
         assert_eq!(Avx512AluOp::Vpslld.opcode(), 0xF2);
         assert_eq!(Avx512AluOp::Vpsllq.opcode(), 0xF3);
@@ -2524,7 +2632,7 @@ mod tests {
     }
 
     #[test]
-    fn test_avx512_alu_op_evex_maps() {
+    fn test_x64_512_alu_op_evex_maps() {
         // 0F map (simple operations)
         assert_eq!(Avx512AluOp::Vpaddd.evex_map(), 0x01);
         assert_eq!(Avx512AluOp::Vpandd.evex_map(), 0x01);
@@ -2538,7 +2646,7 @@ mod tests {
     }
 
     #[test]
-    fn test_avx512_alu_op_evex_w() {
+    fn test_x64_512_alu_op_evex_w() {
         // 32-bit operations: W=0
         assert!(!Avx512AluOp::Vpaddd.evex_w());
         assert!(!Avx512AluOp::Vpsubd.evex_w());

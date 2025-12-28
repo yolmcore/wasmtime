@@ -1,6 +1,6 @@
-// cranelift/codegen/src/isa/x64/inst/turin/runtime_tests.rs
+// cranelift/codegen/src/isa/x64/inst/avx512/runtime_tests.rs
 //
-// YOLM FORK: Runtime tests for AVX-512 instruction execution.
+// AVX-512: Runtime tests for AVX-512 instruction execution.
 //
 // These tests verify that AVX-512 instructions are correctly encoded
 // and execute correctly on hardware that supports AVX-512.
@@ -13,7 +13,7 @@ extern crate std;
 use crate::isa::x64::inst::args::{Mask, OperandSize, RegMem};
 use std::vec::Vec;
 use crate::isa::x64::inst::regs;
-use crate::isa::x64::inst::turin::{Avx512AluOp, MergeMode};
+use crate::isa::x64::inst::avx512::{Avx512AluOp, MergeMode};
 use crate::isa::x64::inst::Inst;
 use crate::machinst::{MachBuffer, MachInstEmit, Writable};
 
@@ -37,7 +37,7 @@ fn has_avx512f() -> bool {
 
 /// Test that AVX-512 feature detection works correctly.
 #[test]
-fn test_avx512_feature_detection() {
+fn test_x64_512_feature_detection() {
     let has_avx512 = has_avx512f();
     println!("AVX-512F support detected: {}", has_avx512);
     // This test just prints the status - it doesn't fail if AVX-512 isn't available
@@ -80,7 +80,7 @@ fn test_evex_prefix_byte_structure() {
     //   48 = P2: z=0 L'L=10 (512-bit) b=0 V'=1 aaa=000 = 01001000
     //   FE = opcode for VPADDD
     //   C2 = ModRM: 11 000 010 (reg-reg, dst=0, src=2)
-    let inst = Inst::TurinAvx512Alu {
+    let inst = Inst::Avx512Avx512Alu {
         op: Avx512AluOp::Vpaddd,
         size: OperandSize::Size32,
         dst: Writable::from_reg(regs::xmm0()),
@@ -129,7 +129,7 @@ fn test_evex_masked_zeroing_encoding() {
 
     // VPADDD zmm0{k1}{z}, zmm1, zmm2
     // The z bit and aaa field should be set
-    let inst = Inst::TurinAvx512Alu {
+    let inst = Inst::Avx512Avx512Alu {
         op: Avx512AluOp::Vpaddd,
         size: OperandSize::Size32,
         dst: Writable::from_reg(regs::xmm0()),
@@ -175,7 +175,7 @@ fn test_evex_high_register_encoding() {
     let xmm9 = regs::xmm9();
     let xmm10 = regs::xmm10();
 
-    let inst = Inst::TurinAvx512Alu {
+    let inst = Inst::Avx512Avx512Alu {
         op: Avx512AluOp::Vpaddd,
         size: OperandSize::Size32,
         dst: Writable::from_reg(xmm8),
@@ -215,7 +215,7 @@ fn test_evex_64bit_element_encoding() {
     let emit_info = crate::isa::x64::inst::EmitInfo::new(flags, isa_flags);
 
     // VPADDQ zmm0, zmm1, zmm2 (64-bit elements, W=1)
-    let inst = Inst::TurinAvx512Alu {
+    let inst = Inst::Avx512Avx512Alu {
         op: Avx512AluOp::Vpaddq,
         size: OperandSize::Size64,
         dst: Writable::from_reg(regs::xmm0()),
@@ -265,7 +265,7 @@ fn test_evex_all_mask_registers() {
     ];
 
     for (kreg, expected_aaa) in kregs.iter() {
-        let inst = Inst::TurinAvx512Alu {
+        let inst = Inst::Avx512Avx512Alu {
             op: Avx512AluOp::Vpaddd,
             size: OperandSize::Size32,
             dst: Writable::from_reg(regs::xmm0()),
@@ -361,7 +361,7 @@ fn test_all_masked_alu_ops() {
                     OperandSize::Size32
                 };
 
-                let inst = Inst::TurinAvx512Alu {
+                let inst = Inst::Avx512Avx512Alu {
                     op: *op,
                     size,
                     dst: Writable::from_reg(regs::xmm0()),
@@ -422,7 +422,7 @@ fn test_vpaddd_encoding() {
     let xmm1 = regs::xmm1();
     let xmm2 = regs::xmm2();
 
-    let inst = Inst::TurinAvx512Alu {
+    let inst = Inst::Avx512Avx512Alu {
         op: Avx512AluOp::Vpaddd,
         size: OperandSize::Size32,
         dst: Writable::from_reg(xmm0),
@@ -468,7 +468,7 @@ fn test_vpaddq_encoding() {
     let xmm1 = regs::xmm1();
     let xmm2 = regs::xmm2();
 
-    let inst = Inst::TurinAvx512Alu {
+    let inst = Inst::Avx512Avx512Alu {
         op: Avx512AluOp::Vpaddq,
         size: OperandSize::Size64,
         dst: Writable::from_reg(xmm0),
@@ -516,7 +516,7 @@ fn test_vpsubd_encoding() {
     let xmm1 = regs::xmm1();
     let xmm2 = regs::xmm2();
 
-    let inst = Inst::TurinAvx512Alu {
+    let inst = Inst::Avx512Avx512Alu {
         op: Avx512AluOp::Vpsubd,
         size: OperandSize::Size32,
         dst: Writable::from_reg(xmm0),
@@ -568,7 +568,7 @@ fn test_bitwise_ops_encoding() {
     ];
 
     for (op, name) in ops.iter() {
-        let inst = Inst::TurinAvx512Alu {
+        let inst = Inst::Avx512Avx512Alu {
             op: *op,
             size: OperandSize::Size32,
             dst: Writable::from_reg(xmm0),
@@ -621,7 +621,7 @@ fn test_shift_ops_encoding() {
     ];
 
     for (op, name) in ops.iter() {
-        let inst = Inst::TurinAvx512Alu {
+        let inst = Inst::Avx512Avx512Alu {
             op: *op,
             size: OperandSize::Size32,
             dst: Writable::from_reg(xmm0),
@@ -675,7 +675,7 @@ fn test_minmax_ops_encoding() {
     ];
 
     for (op, name) in ops.iter() {
-        let inst = Inst::TurinAvx512Alu {
+        let inst = Inst::Avx512Avx512Alu {
             op: *op,
             size: OperandSize::Size32,
             dst: Writable::from_reg(xmm0),
@@ -702,7 +702,7 @@ fn test_minmax_ops_encoding() {
 
 /// Test that all AVX-512 ALU operations encode correctly.
 #[test]
-fn test_all_avx512_alu_ops_encode() {
+fn test_all_x64_512_alu_ops_encode() {
     use crate::isa::x64;
     use crate::settings;
     use crate::settings::Configurable;
@@ -759,7 +759,7 @@ fn test_all_avx512_alu_ops_encode() {
             OperandSize::Size32
         };
 
-        let inst = Inst::TurinAvx512Alu {
+        let inst = Inst::Avx512Avx512Alu {
             op: *op,
             size,
             dst: Writable::from_reg(xmm0),
@@ -792,7 +792,7 @@ fn test_gather_encoding() {
     use crate::isa::x64;
     use crate::settings;
     use crate::settings::Configurable;
-    use crate::isa::x64::inst::turin::GatherOp;
+    use crate::isa::x64::inst::avx512::GatherOp;
 
     let mut flag_builder = settings::builder();
     flag_builder.enable("is_pic").unwrap();
@@ -809,7 +809,7 @@ fn test_gather_encoding() {
     let rax = regs::rax();
     let k1 = regs::k1();
 
-    let inst = Inst::TurinGather {
+    let inst = Inst::Avx512Gather {
         op: GatherOp::Vpgatherdd,
         dst: Writable::from_reg(xmm0),
         base: rax,
@@ -839,7 +839,7 @@ fn test_scatter_encoding() {
     use crate::isa::x64;
     use crate::settings;
     use crate::settings::Configurable;
-    use crate::isa::x64::inst::turin::ScatterOp;
+    use crate::isa::x64::inst::avx512::ScatterOp;
 
     let mut flag_builder = settings::builder();
     flag_builder.enable("is_pic").unwrap();
@@ -856,7 +856,7 @@ fn test_scatter_encoding() {
     let rax = regs::rax();
     let k1 = regs::k1();
 
-    let inst = Inst::TurinScatter {
+    let inst = Inst::Avx512Scatter {
         op: ScatterOp::Vpscatterdd,
         src: xmm0,
         base: rax,
@@ -886,7 +886,7 @@ fn test_all_gather_ops_encode() {
     use crate::isa::x64;
     use crate::settings;
     use crate::settings::Configurable;
-    use crate::isa::x64::inst::turin::GatherOp;
+    use crate::isa::x64::inst::avx512::GatherOp;
 
     let mut flag_builder = settings::builder();
     flag_builder.enable("is_pic").unwrap();
@@ -911,7 +911,7 @@ fn test_all_gather_ops_encode() {
     ];
 
     for (op, name) in gather_ops.iter() {
-        let inst = Inst::TurinGather {
+        let inst = Inst::Avx512Gather {
             op: *op,
             dst: Writable::from_reg(xmm0),
             base: rax,
@@ -942,7 +942,7 @@ fn test_all_scatter_ops_encode() {
     use crate::isa::x64;
     use crate::settings;
     use crate::settings::Configurable;
-    use crate::isa::x64::inst::turin::ScatterOp;
+    use crate::isa::x64::inst::avx512::ScatterOp;
 
     let mut flag_builder = settings::builder();
     flag_builder.enable("is_pic").unwrap();
@@ -967,7 +967,7 @@ fn test_all_scatter_ops_encode() {
     ];
 
     for (op, name) in scatter_ops.iter() {
-        let inst = Inst::TurinScatter {
+        let inst = Inst::Avx512Scatter {
             op: *op,
             src: xmm0,
             base: rax,
@@ -989,6 +989,108 @@ fn test_all_scatter_ops_encode() {
         assert_eq!(bytes[0], 0x62, "{} should have EVEX prefix", name);
 
         println!("{} encoding: {:02X?}", name, bytes);
+    }
+}
+
+/// Test 256-bit load instruction encoding.
+#[test]
+fn test_256bit_load_encoding() {
+    use crate::isa::x64;
+    use crate::settings;
+    use crate::settings::Configurable;
+    use crate::isa::x64::inst::args::{Amode, SyntheticAmode, Xmm};
+    use crate::isa::x64::inst::OperandSize;
+
+    let mut flag_builder = settings::builder();
+    flag_builder.enable("is_pic").unwrap();
+    let flags = settings::Flags::new(flag_builder);
+
+    let mut isa_flag_builder = x64::settings::builder();
+    isa_flag_builder.enable("has_avx512f").unwrap();
+    let isa_flags = x64::settings::Flags::new(&flags, &isa_flag_builder);
+
+    let emit_info = crate::isa::x64::inst::EmitInfo::new(flags, isa_flags);
+
+    // Create a 256-bit load from [rax]
+    let xmm0 = Xmm::unwrap_new(regs::xmm0());
+    let rax = regs::rax();
+
+    let addr = SyntheticAmode::Real(Amode::ImmReg {
+        simm32: 0,
+        base: rax,
+        flags: crate::ir::MemFlags::new(),
+    });
+
+    let inst = Inst::Avx512256Load {
+        size: OperandSize::Size32,
+        dst: Writable::from_reg(xmm0),
+        addr,
+    };
+
+    let mut buffer = MachBuffer::new();
+    inst.emit(&mut buffer, &emit_info, &mut Default::default());
+
+    let ctrl_plane = &mut Default::default();
+    let constants = Default::default();
+    let buffer = buffer.finish(&constants, ctrl_plane);
+
+    let bytes = buffer.data();
+    println!("256-bit load (VMOVDQU32 ymm, [rax]) encoding: {:02X?}", bytes);
+
+    // VMOVDQU32 ymm0, [rax]: EVEX.256.F3.0F.W0 6F /r
+    // Expected encoding:
+    // 62 = EVEX prefix
+    // F1 = P0: R=1 X=1 B=1 R'=1 mm=01
+    // 7E = P1: W=0 vvvv=1111 1 pp=10 (F3)
+    // 28 = P2: z=0 L'L=01 (256-bit) b=0 V'=1 aaa=000
+    // 6F = opcode (VMOVDQU load)
+    // 00 = ModRM: mod=00 reg=000 r/m=000 (rax)
+
+    assert!(!bytes.is_empty(), "256-bit load encoding should not be empty");
+    assert_eq!(bytes[0], 0x62, "Should have EVEX prefix");
+
+    // Check L'L bits in P2 (byte 3)
+    // P2 = z L'L b V' aaa
+    // For 256-bit: L'L = 01, so bit 6 = 0, bit 5 = 1
+    let p2 = bytes[3];
+    let ll = (p2 >> 5) & 0x3;
+    assert_eq!(ll, 0b01, "L'L should be 01 for 256-bit operation, got {:02b}", ll);
+
+    println!("256-bit load encoding verification PASSED!");
+}
+
+/// Test that 256-bit load actually works at runtime.
+#[test]
+#[cfg(target_arch = "x86_64")]
+fn test_execute_256bit_load() {
+    if !std::arch::is_x86_feature_detected!("avx512f") {
+        println!("Skipping 256-bit load execution test - AVX-512F not supported");
+        return;
+    }
+
+    unsafe {
+        use std::arch::asm;
+
+        // Input data: 8 x i32 = 256 bits
+        #[repr(C, align(32))]
+        struct Data([i32; 8]);
+        let data = Data([1, 2, 3, 4, 5, 6, 7, 8]);
+        let mut result = Data([0; 8]);
+
+        // Load 256 bits using EVEX-encoded VMOVDQU32
+        asm!(
+            "vmovdqu32 ymm0, [{data}]",
+            "vmovdqu32 [{result}], ymm0",
+            data = in(reg) data.0.as_ptr(),
+            result = in(reg) result.0.as_mut_ptr(),
+            options(nostack),
+        );
+
+        // Verify results
+        for i in 0..8 {
+            assert_eq!(result.0[i], data.0[i], "256-bit load failed at index {}", i);
+        }
+        println!("256-bit load execution test PASSED - all 8 elements correct: {:?}", result.0);
     }
 }
 
@@ -1191,6 +1293,119 @@ fn test_execute_vpgatherdd() {
     }
 }
 
+/// Execute VPGATHERDQ (64-bit elements, 32-bit indices) and verify results.
+/// This uses YMM for indices (8 x i32) and ZMM for results (8 x i64).
+#[test]
+#[cfg(target_arch = "x86_64")]
+fn test_execute_vpgatherdq() {
+    if !std::arch::is_x86_feature_detected!("avx512f") {
+        println!("Skipping VPGATHERDQ test - AVX-512F not supported");
+        return;
+    }
+
+    unsafe {
+        use std::arch::asm;
+
+        // Source data table (8 x i64, but we have 16 to allow for indices)
+        #[repr(C, align(64))]
+        struct Table([i64; 16]);
+        let table = Table([
+            1000, 1001, 1002, 1003, 1004, 1005, 1006, 1007,
+            1008, 1009, 1010, 1011, 1012, 1013, 1014, 1015,
+        ]);
+
+        // 32-bit indices (element indices, not byte offsets)
+        // We pick elements 0, 2, 4, 6, 8, 10, 12, 14
+        #[repr(C, align(32))]
+        struct Indices([i32; 8]);
+        let indices = Indices([0, 2, 4, 6, 8, 10, 12, 14]);
+
+        #[repr(C, align(64))]
+        struct Result([i64; 8]);
+        let mut result = Result([0; 8]);
+        let mask: u8 = 0xFF; // All 8 elements
+
+        asm!(
+            "kmovb k1, {mask:e}",
+            "vmovdqu32 ymm1, [{indices}]",  // Load 8 x i32 indices into ymm1 (256-bit)
+            "vpgatherdq zmm0{{k1}}, [{table} + ymm1*8]",  // scale=8 because each i64 is 8 bytes
+            "vmovdqu64 [{result}], zmm0",
+            mask = in(reg) mask as u32,
+            table = in(reg) table.0.as_ptr(),
+            indices = in(reg) indices.0.as_ptr(),
+            result = in(reg) result.0.as_mut_ptr(),
+            options(nostack),
+        );
+
+        // Verify gathered values
+        for i in 0..8 {
+            let expected = table.0[indices.0[i] as usize];
+            assert_eq!(result.0[i], expected, "VPGATHERDQ failed at index {}: got {}, expected {}", i, result.0[i], expected);
+        }
+        println!("VPGATHERDQ test PASSED: gathered values = {:?}", &result.0);
+    }
+}
+
+/// Execute VPGATHERDQ with byte offsets (scale=1) like the E2E test.
+/// This verifies the same approach used in the JIT E2E test works.
+#[test]
+#[cfg(target_arch = "x86_64")]
+fn test_execute_vpgatherdq_byte_offsets() {
+    if !std::arch::is_x86_feature_detected!("avx512f") {
+        println!("Skipping VPGATHERDQ byte offset test - AVX-512F not supported");
+        return;
+    }
+
+    unsafe {
+        use std::arch::asm;
+
+        // Source data table (32 x i64)
+        #[repr(C, align(64))]
+        struct Table([i64; 32]);
+        let table = Table([
+            1000, 1001, 1002, 1003, 1004, 1005, 1006, 1007,
+            1008, 1009, 1010, 1011, 1012, 1013, 1014, 1015,
+            1016, 1017, 1018, 1019, 1020, 1021, 1022, 1023,
+            1024, 1025, 1026, 1027, 1028, 1029, 1030, 1031,
+        ]);
+
+        // 32-bit indices as BYTE OFFSETS (scale=1)
+        // Element 0 is at byte offset 0, element 2 is at byte offset 16, etc.
+        #[repr(C, align(32))]
+        struct Indices([i32; 8]);
+        let indices = Indices([0, 16, 32, 48, 64, 80, 96, 112]); // Byte offsets!
+
+        #[repr(C, align(64))]
+        struct Result([i64; 8]);
+        let mut result = Result([0; 8]);
+        let mask: u8 = 0xFF; // All 8 elements
+
+        asm!(
+            "kmovb k1, {mask:e}",
+            "vmovdqu32 ymm1, [{indices}]",  // Load 8 x i32 byte offsets into ymm1 (256-bit)
+            "vpgatherdq zmm0{{k1}}, [{table} + ymm1*1]",  // scale=1 because indices are byte offsets
+            "vmovdqu64 [{result}], zmm0",
+            mask = in(reg) mask as u32,
+            table = in(reg) table.0.as_ptr(),
+            indices = in(reg) indices.0.as_ptr(),
+            result = in(reg) result.0.as_mut_ptr(),
+            options(nostack),
+        );
+
+        // Should gather elements 0, 2, 4, 6, 8, 10, 12, 14
+        assert_eq!(result.0[0], 1000, "element 0");
+        assert_eq!(result.0[1], 1002, "element 2");
+        assert_eq!(result.0[2], 1004, "element 4");
+        assert_eq!(result.0[3], 1006, "element 6");
+        assert_eq!(result.0[4], 1008, "element 8");
+        assert_eq!(result.0[5], 1010, "element 10");
+        assert_eq!(result.0[6], 1012, "element 12");
+        assert_eq!(result.0[7], 1014, "element 14");
+
+        println!("VPGATHERDQ byte offset test PASSED: gathered values = {:?}", &result.0);
+    }
+}
+
 /// Execute VPSCATTERDD and verify results.
 #[test]
 #[cfg(target_arch = "x86_64")]
@@ -1268,7 +1483,7 @@ fn test_evex_high_xmm_8_to_15() {
                     continue;
                 }
 
-                let inst = Inst::TurinAvx512Alu {
+                let inst = Inst::Avx512Avx512Alu {
                     op: Avx512AluOp::Vpaddd,
                     size: OperandSize::Size32,
                     dst: Writable::from_reg(*dst_reg),
@@ -1310,7 +1525,7 @@ fn test_evex_mixed_register_encoding() {
     let emit_info = crate::isa::x64::inst::EmitInfo::new(flags, isa_flags);
 
     // Test: dst=low, src1=high, src2=low
-    let inst1 = Inst::TurinAvx512Alu {
+    let inst1 = Inst::Avx512Avx512Alu {
         op: Avx512AluOp::Vpaddd,
         size: OperandSize::Size32,
         dst: Writable::from_reg(regs::xmm0()),
@@ -1326,7 +1541,7 @@ fn test_evex_mixed_register_encoding() {
     assert_eq!(buffer.data()[0], 0x62);
 
     // Test: dst=high, src1=low, src2=high
-    let inst2 = Inst::TurinAvx512Alu {
+    let inst2 = Inst::Avx512Avx512Alu {
         op: Avx512AluOp::Vpaddd,
         size: OperandSize::Size32,
         dst: Writable::from_reg(regs::xmm15()),
@@ -2445,7 +2660,7 @@ fn test_512bit_load_store_encoding() {
 
     let emit_info = crate::isa::x64::inst::EmitInfo::new(flags, isa_flags);
 
-    // Test Turin512Load: vmovdqu64 (%rdi), %zmm0
+    // Test Avx512512Load: vmovdqu64 (%rdi), %zmm0
     // Address mode: [rdi] (base = rdi, no offset)
     let addr = SyntheticAmode::Real(Amode::ImmReg {
         simm32: 0,
@@ -2455,7 +2670,7 @@ fn test_512bit_load_store_encoding() {
 
     use crate::isa::x64::inst::args::Xmm;
 
-    let inst = Inst::Turin512Load {
+    let inst = Inst::Avx512512Load {
         size: OperandSize::Size64,
         dst: Writable::from_reg(Xmm::new(regs::xmm0()).unwrap()),
         addr: addr.clone(),
@@ -2466,7 +2681,7 @@ fn test_512bit_load_store_encoding() {
     let buffer = buffer.finish(&Default::default(), &mut Default::default());
     let bytes = buffer.data();
 
-    println!("Turin512Load bytes: {:02X?}", bytes);
+    println!("Avx512512Load bytes: {:02X?}", bytes);
 
     // Expected: 62 f1 fe 48 6f 07
     assert_eq!(bytes[0], 0x62, "EVEX escape byte");
@@ -2476,8 +2691,8 @@ fn test_512bit_load_store_encoding() {
     assert_eq!(bytes[4], 0x6f, "VMOVDQU64 load opcode");
     assert_eq!(bytes[5], 0x07, "ModRM: mod=00 reg=000 rm=111");
 
-    // Test Turin512Store: vmovdqu64 %zmm0, (%rdi)
-    let inst_store = Inst::Turin512Store {
+    // Test Avx512512Store: vmovdqu64 %zmm0, (%rdi)
+    let inst_store = Inst::Avx512512Store {
         size: OperandSize::Size64,
         src: Xmm::new(regs::xmm0()).unwrap(),
         addr,
@@ -2488,7 +2703,7 @@ fn test_512bit_load_store_encoding() {
     let buffer = buffer.finish(&Default::default(), &mut Default::default());
     let bytes = buffer.data();
 
-    println!("Turin512Store bytes: {:02X?}", bytes);
+    println!("Avx512512Store bytes: {:02X?}", bytes);
 
     // Expected: 62 f1 fe 48 7f 07
     assert_eq!(bytes[0], 0x62, "EVEX escape byte");
@@ -2530,7 +2745,7 @@ fn test_512bit_alu_mem_encoding() {
         flags: MemFlags::trusted(),
     });
 
-    let inst = Inst::TurinAvx512Alu {
+    let inst = Inst::Avx512Avx512Alu {
         op: Avx512AluOp::Vpaddq,
         size: OperandSize::Size64,
         dst: Writable::from_reg(regs::xmm1()),
@@ -2593,7 +2808,7 @@ fn test_512bit_alu_same_src_dst() {
         flags: MemFlags::trusted(),
     });
 
-    let inst = Inst::TurinAvx512Alu {
+    let inst = Inst::Avx512Avx512Alu {
         op: Avx512AluOp::Vpaddq,
         size: OperandSize::Size64,
         dst: Writable::from_reg(regs::xmm5()),
@@ -2643,7 +2858,7 @@ fn test_vprolvd_encoding() {
     let emit_info = crate::isa::x64::inst::EmitInfo::new(flags, isa_flags);
 
     // VPROLVD zmm0, zmm1, zmm2
-    let inst = Inst::TurinAvx512Alu {
+    let inst = Inst::Avx512Avx512Alu {
         op: Avx512AluOp::Vprolvd,
         size: OperandSize::Size32,
         dst: Writable::from_reg(regs::xmm0()),
@@ -2684,7 +2899,7 @@ fn test_vprolvq_encoding() {
     let emit_info = crate::isa::x64::inst::EmitInfo::new(flags, isa_flags);
 
     // VPROLVQ zmm0, zmm1, zmm2
-    let inst = Inst::TurinAvx512Alu {
+    let inst = Inst::Avx512Avx512Alu {
         op: Avx512AluOp::Vprolvq,
         size: OperandSize::Size64,
         dst: Writable::from_reg(regs::xmm0()),
@@ -2878,7 +3093,7 @@ fn test_vpopcntd_encoding() {
     let emit_info = crate::isa::x64::inst::EmitInfo::new(flags, isa_flags);
 
     // VPOPCNTD zmm0, zmm2 (unary: src1 ignored, src2 is source)
-    let inst = Inst::TurinAvx512Alu {
+    let inst = Inst::Avx512Avx512Alu {
         op: Avx512AluOp::Vpopcntd,
         size: OperandSize::Size32,
         dst: Writable::from_reg(regs::xmm0()),
@@ -2919,7 +3134,7 @@ fn test_vpopcntq_encoding() {
     let emit_info = crate::isa::x64::inst::EmitInfo::new(flags, isa_flags);
 
     // VPOPCNTQ zmm0, zmm2 (unary: src1 ignored, src2 is source)
-    let inst = Inst::TurinAvx512Alu {
+    let inst = Inst::Avx512Avx512Alu {
         op: Avx512AluOp::Vpopcntq,
         size: OperandSize::Size64,
         dst: Writable::from_reg(regs::xmm0()),
@@ -3066,7 +3281,7 @@ fn test_vpconflictd_encoding() {
     let emit_info = crate::isa::x64::inst::EmitInfo::new(flags, isa_flags);
 
     // VPCONFLICTD zmm0, zmm2 (unary: src1 ignored)
-    let inst = Inst::TurinAvx512Alu {
+    let inst = Inst::Avx512Avx512Alu {
         op: Avx512AluOp::Vpconflictd,
         size: OperandSize::Size32,
         dst: Writable::from_reg(regs::xmm0()),
@@ -3110,7 +3325,7 @@ fn test_vpconflictq_encoding() {
     let emit_info = crate::isa::x64::inst::EmitInfo::new(flags, isa_flags);
 
     // VPCONFLICTQ zmm0, zmm2 (unary: src1 ignored)
-    let inst = Inst::TurinAvx512Alu {
+    let inst = Inst::Avx512Avx512Alu {
         op: Avx512AluOp::Vpconflictq,
         size: OperandSize::Size64,
         dst: Writable::from_reg(regs::xmm0()),
@@ -3235,7 +3450,7 @@ fn test_all_cvt_ops_encode() {
     use crate::isa::x64;
     use crate::settings;
     use crate::settings::Configurable;
-    use crate::isa::x64::inst::turin::Avx512CvtOp;
+    use crate::isa::x64::inst::avx512::Avx512CvtOp;
 
     let mut flag_builder = settings::builder();
     flag_builder.enable("is_pic").unwrap();
@@ -3262,7 +3477,7 @@ fn test_all_cvt_ops_encode() {
     ];
 
     for (op, name) in cvt_ops.iter() {
-        let inst = Inst::TurinAvx512Cvt {
+        let inst = Inst::Avx512Avx512Cvt {
             op: *op,
             dst: Writable::from_reg(xmm0),
             src: RegMem::reg(xmm1),
@@ -3291,7 +3506,7 @@ fn test_vcvtdq2ps_encoding() {
     use crate::isa::x64;
     use crate::settings;
     use crate::settings::Configurable;
-    use crate::isa::x64::inst::turin::Avx512CvtOp;
+    use crate::isa::x64::inst::avx512::Avx512CvtOp;
 
     let mut flag_builder = settings::builder();
     flag_builder.enable("is_pic").unwrap();
@@ -3305,7 +3520,7 @@ fn test_vcvtdq2ps_encoding() {
 
     // VCVTDQ2PS zmm0, zmm1
     // EVEX.512.0F.W0 5B /r
-    let inst = Inst::TurinAvx512Cvt {
+    let inst = Inst::Avx512Avx512Cvt {
         op: Avx512CvtOp::Vcvtdq2ps,
         dst: Writable::from_reg(regs::xmm0()),
         src: RegMem::reg(regs::xmm1()),
@@ -3336,7 +3551,7 @@ fn test_vcvtps2dq_encoding() {
     use crate::isa::x64;
     use crate::settings;
     use crate::settings::Configurable;
-    use crate::isa::x64::inst::turin::Avx512CvtOp;
+    use crate::isa::x64::inst::avx512::Avx512CvtOp;
 
     let mut flag_builder = settings::builder();
     flag_builder.enable("is_pic").unwrap();
@@ -3350,7 +3565,7 @@ fn test_vcvtps2dq_encoding() {
 
     // VCVTPS2DQ zmm0, zmm1
     // EVEX.512.66.0F.W0 5B /r
-    let inst = Inst::TurinAvx512Cvt {
+    let inst = Inst::Avx512Avx512Cvt {
         op: Avx512CvtOp::Vcvtps2dq,
         dst: Writable::from_reg(regs::xmm0()),
         src: RegMem::reg(regs::xmm1()),
@@ -3378,7 +3593,7 @@ fn test_vcvttps2dq_encoding() {
     use crate::isa::x64;
     use crate::settings;
     use crate::settings::Configurable;
-    use crate::isa::x64::inst::turin::Avx512CvtOp;
+    use crate::isa::x64::inst::avx512::Avx512CvtOp;
 
     let mut flag_builder = settings::builder();
     flag_builder.enable("is_pic").unwrap();
@@ -3392,7 +3607,7 @@ fn test_vcvttps2dq_encoding() {
 
     // VCVTTPS2DQ zmm0, zmm1
     // EVEX.512.F3.0F.W0 5B /r
-    let inst = Inst::TurinAvx512Cvt {
+    let inst = Inst::Avx512Avx512Cvt {
         op: Avx512CvtOp::Vcvttps2dq,
         dst: Writable::from_reg(regs::xmm0()),
         src: RegMem::reg(regs::xmm1()),
@@ -3709,7 +3924,7 @@ fn test_align_ops_encode() {
     use crate::isa::x64;
     use crate::settings;
     use crate::settings::Configurable;
-    use crate::isa::x64::inst::turin::Avx512AlignOp;
+    use crate::isa::x64::inst::avx512::Avx512AlignOp;
 
     let mut flag_builder = settings::builder();
     flag_builder.enable("is_pic").unwrap();
@@ -3731,7 +3946,7 @@ fn test_align_ops_encode() {
     ];
 
     for (op, name) in align_ops.iter() {
-        let inst = Inst::TurinAvx512Align {
+        let inst = Inst::Avx512Avx512Align {
             op: *op,
             dst: Writable::from_reg(xmm0),
             src1: xmm1,
@@ -3764,7 +3979,7 @@ fn test_valignd_encoding() {
     use crate::isa::x64;
     use crate::settings;
     use crate::settings::Configurable;
-    use crate::isa::x64::inst::turin::Avx512AlignOp;
+    use crate::isa::x64::inst::avx512::Avx512AlignOp;
 
     let mut flag_builder = settings::builder();
     flag_builder.enable("is_pic").unwrap();
@@ -3778,7 +3993,7 @@ fn test_valignd_encoding() {
 
     // VALIGND zmm0, zmm1, zmm2, 5
     // EVEX.512.66.0F3A.W0 03 /r ib
-    let inst = Inst::TurinAvx512Align {
+    let inst = Inst::Avx512Avx512Align {
         op: Avx512AlignOp::Valignd,
         dst: Writable::from_reg(regs::xmm0()),
         src1: regs::xmm1(),
@@ -3813,7 +4028,7 @@ fn test_valignq_encoding() {
     use crate::isa::x64;
     use crate::settings;
     use crate::settings::Configurable;
-    use crate::isa::x64::inst::turin::Avx512AlignOp;
+    use crate::isa::x64::inst::avx512::Avx512AlignOp;
 
     let mut flag_builder = settings::builder();
     flag_builder.enable("is_pic").unwrap();
@@ -3827,7 +4042,7 @@ fn test_valignq_encoding() {
 
     // VALIGNQ zmm0, zmm1, zmm2, 3
     // EVEX.512.66.0F3A.W1 03 /r ib
-    let inst = Inst::TurinAvx512Align {
+    let inst = Inst::Avx512Avx512Align {
         op: Avx512AlignOp::Valignq,
         dst: Writable::from_reg(regs::xmm0()),
         src1: regs::xmm1(),
@@ -3976,7 +4191,7 @@ fn test_vpternlogd_encoding() {
     //   25 = opcode for VPTERNLOGD
     //   C2 = ModRM: 11 000 010 (reg-reg, dst=0, src2=2)
     //   96 = immediate (XOR3 truth table)
-    let inst = Inst::TurinAvx512Ternlog {
+    let inst = Inst::Avx512Avx512Ternlog {
         size: OperandSize::Size32,
         dst: Writable::from_reg(regs::xmm0()),
         src1: regs::xmm0(),  // Tied to dst
@@ -4025,7 +4240,7 @@ fn test_vpternlogq_encoding() {
 
     // VPTERNLOGQ zmm0, zmm1, zmm2, 0xCA (blend/select)
     // Expected: W=1 for 64-bit element size
-    let inst = Inst::TurinAvx512Ternlog {
+    let inst = Inst::Avx512Avx512Ternlog {
         size: OperandSize::Size64,
         dst: Writable::from_reg(regs::xmm0()),
         src1: regs::xmm0(),  // Tied to dst
@@ -4549,7 +4764,7 @@ fn test_execute_vprorq_imm() {
 #[test]
 fn test_vpdpbusd_encoding() {
     use crate::isa::x64;
-    use crate::isa::x64::inst::turin::Avx512VnniOp;
+    use crate::isa::x64::inst::avx512::Avx512VnniOp;
     use crate::isa::x64::inst::args::OptionMaskReg;
     use crate::settings;
     use crate::settings::Configurable;
@@ -4571,7 +4786,7 @@ fn test_vpdpbusd_encoding() {
     let mask = None as OptionMaskReg;
     let merge = MergeMode::Zeroing;
 
-    let inst = Inst::TurinAvx512Vnni {
+    let inst = Inst::Avx512Avx512Vnni {
         op: Avx512VnniOp::Vpdpbusd,
         dst,
         acc,
@@ -4601,7 +4816,7 @@ fn test_vpdpbusd_encoding() {
 #[test]
 fn test_vpdpwssd_encoding() {
     use crate::isa::x64;
-    use crate::isa::x64::inst::turin::Avx512VnniOp;
+    use crate::isa::x64::inst::avx512::Avx512VnniOp;
     use crate::isa::x64::inst::args::OptionMaskReg;
     use crate::settings;
     use crate::settings::Configurable;
@@ -4623,7 +4838,7 @@ fn test_vpdpwssd_encoding() {
     let mask = None as OptionMaskReg;
     let merge = MergeMode::Zeroing;
 
-    let inst = Inst::TurinAvx512Vnni {
+    let inst = Inst::Avx512Avx512Vnni {
         op: Avx512VnniOp::Vpdpwssd,
         dst,
         acc,
@@ -4657,7 +4872,7 @@ fn test_vpdpwssd_encoding() {
 #[test]
 fn test_vp2intersectd_encoding() {
     use crate::isa::x64;
-    use crate::isa::x64::inst::turin::Vp2IntersectOp;
+    use crate::isa::x64::inst::avx512::Vp2IntersectOp;
     use crate::settings;
     use crate::settings::Configurable;
 
@@ -4677,7 +4892,7 @@ fn test_vp2intersectd_encoding() {
     let src1 = regs::xmm0();
     let src2 = RegMem::reg(regs::xmm1());
 
-    let inst = Inst::TurinVp2Intersect {
+    let inst = Inst::Avx512Vp2Intersect {
         op: Vp2IntersectOp::Vp2intersectd,
         dst_k,
         src1,
@@ -4703,7 +4918,7 @@ fn test_vp2intersectd_encoding() {
 #[test]
 fn test_vp2intersectq_encoding() {
     use crate::isa::x64;
-    use crate::isa::x64::inst::turin::Vp2IntersectOp;
+    use crate::isa::x64::inst::avx512::Vp2IntersectOp;
     use crate::settings;
     use crate::settings::Configurable;
 
@@ -4721,7 +4936,7 @@ fn test_vp2intersectq_encoding() {
     let src1 = regs::xmm0();
     let src2 = RegMem::reg(regs::xmm1());
 
-    let inst = Inst::TurinVp2Intersect {
+    let inst = Inst::Avx512Vp2Intersect {
         op: Vp2IntersectOp::Vp2intersectq,
         dst_k,
         src1,
@@ -4769,7 +4984,7 @@ fn test_vplzcntd_encoding() {
     let mask = None;
     let merge = MergeMode::Zeroing;
 
-    let inst = Inst::TurinAvx512Alu {
+    let inst = Inst::Avx512Avx512Alu {
         op: Avx512AluOp::Vplzcntd,
         size: OperandSize::Size32,
         dst,
@@ -4816,7 +5031,7 @@ fn test_vplzcntq_encoding() {
     let mask = None;
     let merge = MergeMode::Zeroing;
 
-    let inst = Inst::TurinAvx512Alu {
+    let inst = Inst::Avx512Avx512Alu {
         op: Avx512AluOp::Vplzcntq,
         size: OperandSize::Size64,
         dst,

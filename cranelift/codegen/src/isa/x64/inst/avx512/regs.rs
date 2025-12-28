@@ -1,6 +1,6 @@
-// cranelift/codegen/src/isa/x64/inst/turin/regs.rs
+// cranelift/codegen/src/isa/x64/inst/avx512/regs.rs
 //
-// YOLM FORK: Turin AVX-512 k-register utilities.
+// AVX-512 k-register utilities.
 //
 // This module provides utilities for working with AVX-512 mask registers (k-registers).
 // The actual k-register definitions are in the main regs.rs module at:

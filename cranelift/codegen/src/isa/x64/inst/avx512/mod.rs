@@ -1,9 +1,9 @@
-// cranelift/codegen/src/isa/x64/inst/turin/mod.rs
+// cranelift/codegen/src/isa/x64/inst/avx512/mod.rs
 //
-// YOLM FORK: Turin (Zen 5) AVX-512 instruction support.
+// AVX-512: (Zen 5) AVX-512 instruction support.
 //
 // This module provides native 512-bit SIMD instruction emission for AMD EPYC
-// 5th Gen (Turin) and Ryzen 9000 series (Zen 5) processors with full AVX-512
+// 5th Gen (Avx512) and Ryzen 9000 series (Zen 5) processors with full AVX-512
 // support.
 //
 // ## Modules

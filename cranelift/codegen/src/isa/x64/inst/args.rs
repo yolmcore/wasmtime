@@ -334,7 +334,7 @@ newtype_of_reg!(
 );
 
 // =================================================================
-// YOLM FORK: Turin AVX-512 Extensions - Mask Register Support
+// AVX-512 Extensions - Mask Register Support
 // =================================================================
 
 // Define a newtype of `Reg` for Mask (k-registers).
@@ -366,7 +366,7 @@ pub fn option_reg_none() -> OptionReg {
 }
 
 // =================================================================
-// End YOLM FORK: Turin AVX-512 Extensions
+// End AVX-512 Extensions
 // =================================================================
 
 // N.B.: `Amode` is defined in `inst.isle`. We add some convenience

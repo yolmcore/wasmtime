@@ -3418,7 +3418,7 @@ impl<'a> Parser<'a> {
                 let imm = self.match_imm64("expected immediate handler index")?;
                 InstructionData::ExceptionHandlerAddress { opcode, block, imm }
             }
-            // YOLM FORK: Turin AVX-512 instruction formats
+            // AVX-512 instruction formats
             InstructionFormat::SimdGather => {
                 // Format: memflags, base, indices, scale, offset
                 let flags = self.optional_memflags()?;

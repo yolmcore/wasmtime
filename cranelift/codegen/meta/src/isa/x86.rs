@@ -89,8 +89,8 @@ pub(crate) fn define() -> TargetIsa {
         "AVX512BW: CPUID.07H:EBX.AVX512BW[bit 30]",
         false,
     );
-    let has_avx512_vpopcntdq = settings.add_bool(
-        "has_avx512_vpopcntdq",
+    let _has_x64_512_vpopcntdq = settings.add_bool(
+        "has_x64_512_vpopcntdq",
         "Has support for AVX512_VPOPCNTDQ.",
         "AVX512_VPOPCNTDQ: CPUID.(EAX=07H, ECX=0H):ECX.AVX512_VPOPCNTDQ[bit 14]",
         false,

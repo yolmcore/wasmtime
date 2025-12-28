@@ -1,9 +1,9 @@
-// cranelift/codegen/src/isa/x64/inst/turin/defs.rs
+// cranelift/codegen/src/isa/x64/inst/avx512/defs.rs
 //
-// YOLM FORK: AVX-512 instruction definitions for Turin/Zen 5.
+// AVX-512 instruction definitions for Avx512/Zen 5.
 //
 // This module defines the AVX-512 instruction opcodes, merge modes,
-// and related types used for Turin-native SIMD operations.
+// and related types used for Avx512-native SIMD operations.
 
 /// Merge mode for AVX-512 masked operations.
 ///
@@ -56,9 +56,9 @@ pub enum Avx512Cond {
     Gt = 6,
 }
 
-/// AVX-512 ALU operations for Turin.
+/// AVX-512 ALU operations for Avx512.
 ///
-/// These operations are optimized for the AMD EPYC Turin (Zen 5) architecture.
+/// These operations are optimized for the AMD EPYC Avx512 (Zen 5) architecture.
 /// All operations use 512-bit vectors (ZMM registers) with EVEX encoding.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
@@ -1537,10 +1537,12 @@ impl GatherOp {
     /// Returns the opcode for this gather operation.
     pub fn opcode(&self) -> u8 {
         match self {
-            // All gather instructions share opcode 0x90/0x91 in 0F38 map
-            // The difference is in W bit (element size) and index register size
-            GatherOp::Vpgatherdd | GatherOp::Vpgatherqd => 0x90,
-            GatherOp::Vpgatherdq | GatherOp::Vpgatherqq => 0x91,
+            // Opcode depends on index size, NOT element size:
+            // - 0x90 for 32-bit indices (D): VPGATHERDD, VPGATHERDQ
+            // - 0x91 for 64-bit indices (Q): VPGATHERQD, VPGATHERQQ
+            // The W bit (element size) is a separate encoding field.
+            GatherOp::Vpgatherdd | GatherOp::Vpgatherdq => 0x90,
+            GatherOp::Vpgatherqd | GatherOp::Vpgatherqq => 0x91,
         }
     }
 
@@ -2141,7 +2143,7 @@ pub fn validate_active_mask_register(kreg: u8) -> Result<(), &'static str> {
 /// Validates that OperandSize is appropriate for AVX-512 integer operations.
 #[inline]
 #[allow(dead_code, reason = "validation utility reserved for future use")]
-pub fn validate_avx512_operand_size(size: &crate::isa::x64::inst::args::OperandSize) -> Result<(), &'static str> {
+pub fn validate_x64_512_operand_size(size: &crate::isa::x64::inst::args::OperandSize) -> Result<(), &'static str> {
     use crate::isa::x64::inst::args::OperandSize;
     match size {
         OperandSize::Size32 | OperandSize::Size64 => Ok(()),
@@ -2557,7 +2559,7 @@ mod tests {
     // =========================================================================
 
     #[test]
-    fn test_avx512_alu_op_opcodes() {
+    fn test_x64_512_alu_op_opcodes() {
         // Verify critical opcodes match Intel documentation
         assert_eq!(Avx512AluOp::Vpaddd.opcode(), 0xFE);
         assert_eq!(Avx512AluOp::Vpaddq.opcode(), 0xD4);
@@ -2570,7 +2572,7 @@ mod tests {
     }
 
     #[test]
-    fn test_avx512_alu_op_evex_map() {
+    fn test_x64_512_alu_op_evex_map() {
         // 0F map operations
         assert_eq!(Avx512AluOp::Vpaddd.evex_map(), 0x01);
         assert_eq!(Avx512AluOp::Vpaddq.evex_map(), 0x01);
@@ -2587,7 +2589,7 @@ mod tests {
     }
 
     #[test]
-    fn test_avx512_alu_op_evex_w() {
+    fn test_x64_512_alu_op_evex_w() {
         // 32-bit operations should have W=0
         assert!(!Avx512AluOp::Vpaddd.evex_w());
         assert!(!Avx512AluOp::Vpsubd.evex_w());
@@ -2600,7 +2602,7 @@ mod tests {
     }
 
     #[test]
-    fn test_avx512_alu_op_evex_pp() {
+    fn test_x64_512_alu_op_evex_pp() {
         // All integer ops use 66 prefix
         assert_eq!(Avx512AluOp::Vpaddd.evex_pp(), 0x01);
         assert_eq!(Avx512AluOp::Vpaddq.evex_pp(), 0x01);
@@ -2608,7 +2610,7 @@ mod tests {
     }
 
     #[test]
-    fn test_avx512_alu_op_is_64bit() {
+    fn test_x64_512_alu_op_is_64bit() {
         assert!(!Avx512AluOp::Vpaddd.is_64bit());
         assert!(Avx512AluOp::Vpaddq.is_64bit());
         assert!(!Avx512AluOp::Vpmulld.is_64bit());
@@ -2616,7 +2618,7 @@ mod tests {
     }
 
     #[test]
-    fn test_avx512_alu_op_is_unary() {
+    fn test_x64_512_alu_op_is_unary() {
         assert!(Avx512AluOp::Vpabsd.is_unary());
         assert!(Avx512AluOp::Vpbroadcastd.is_unary());
         assert!(!Avx512AluOp::Vpaddd.is_unary());
@@ -2624,14 +2626,14 @@ mod tests {
     }
 
     #[test]
-    fn test_avx512_alu_op_is_ternary() {
+    fn test_x64_512_alu_op_is_ternary() {
         assert!(Avx512AluOp::Vpternlogd.is_ternary());
         assert!(Avx512AluOp::Vpternlogq.is_ternary());
         assert!(!Avx512AluOp::Vpaddd.is_ternary());
     }
 
     #[test]
-    fn test_avx512_alu_op_names() {
+    fn test_x64_512_alu_op_names() {
         assert_eq!(Avx512AluOp::Vpaddd.name(), "vpaddd");
         assert_eq!(Avx512AluOp::Vpaddq.name(), "vpaddq");
         assert_eq!(Avx512AluOp::Vpternlogd.name(), "vpternlogd");
@@ -2682,7 +2684,7 @@ mod tests {
     // =========================================================================
 
     #[test]
-    fn test_avx512_cond_imm() {
+    fn test_x64_512_cond_imm() {
         assert_eq!(Avx512Cond::Eq.imm(), 0);
         assert_eq!(Avx512Cond::Lt.imm(), 1);
         assert_eq!(Avx512Cond::Le.imm(), 2);
@@ -2692,7 +2694,7 @@ mod tests {
     }
 
     #[test]
-    fn test_avx512_cond_names() {
+    fn test_x64_512_cond_names() {
         assert_eq!(Avx512Cond::Eq.name(), "eq");
         assert_eq!(Avx512Cond::Lt.name(), "lt");
         assert_eq!(Avx512Cond::Le.name(), "le");

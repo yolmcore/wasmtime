@@ -1324,13 +1324,18 @@ where
 
         Opcode::SequencePoint => unimplemented!("SequencePoint"),
 
-        // YOLM FORK: Turin AVX-512 opcodes (x86-specific, not interpretable)
+        // AVX-512 opcodes (x86-specific, not interpretable)
         Opcode::X86SimdGather => unimplemented!("X86SimdGather"),
         Opcode::X86SimdScatter => unimplemented!("X86SimdScatter"),
         Opcode::X86SimdMaskedLoad => unimplemented!("X86SimdMaskedLoad"),
         Opcode::X86SimdMaskedStore => unimplemented!("X86SimdMaskedStore"),
         Opcode::X86SimdCompress => unimplemented!("X86SimdCompress"),
         Opcode::X86SimdExpand => unimplemented!("X86SimdExpand"),
+        Opcode::X86Vpsllv => unimplemented!("X86Vpsllv"),
+        Opcode::X86Vpsrlv => unimplemented!("X86Vpsrlv"),
+        Opcode::X86Vpsrav => unimplemented!("X86Vpsrav"),
+        Opcode::X86PmullqLow => unimplemented!("X86PmullqLow"),
+        Opcode::X86SmullqLow => unimplemented!("X86SmullqLow"),
     })
 }
 

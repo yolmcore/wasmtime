@@ -15,9 +15,9 @@ use crate::ir::{
     BlockCall, Inst, InstructionData, LibCall, MemFlags, Opcode, TrapCode, Value, ValueList,
 };
 use crate::isa::x64::X64Backend;
-use crate::isa::x64::inst::{ReturnCallInfo, args::*, args::OptionReg, regs, turin};
-// Re-export Turin types for ISLE generated code
-pub(crate) use turin::{Avx512AluOp, Avx512AlignOp, Avx512Cond, Avx512CvtOp, Avx512ExtractOp, Avx512FmaOp, Avx512FpAluOp, Avx512FpSpecialOp, Avx512ImmShuffleOp, Avx512InsertOp, Avx512LaneShuffleOp, Avx512VnniOp, Vp2IntersectOp, GatherOp, MaskAddOp, MaskAluOp, MaskShiftOp, MaskTestOp, MaskUnpackOp, MergeMode, ScatterOp};
+use crate::isa::x64::inst::{ReturnCallInfo, args::*, args::OptionReg, regs, avx512};
+// Re-export Avx512 types for ISLE generated code
+pub(crate) use avx512::{Avx512AluOp, Avx512AlignOp, Avx512Cond, Avx512CvtOp, Avx512ExtractOp, Avx512FmaOp, Avx512FpAluOp, Avx512FpSpecialOp, Avx512ImmShuffleOp, Avx512InsertOp, Avx512LaneShuffleOp, Avx512VnniOp, Vp2IntersectOp, GatherOp, MaskAddOp, MaskAluOp, MaskShiftOp, MaskTestOp, MaskUnpackOp, MergeMode, ScatterOp};
 use crate::isa::x64::lower::{InsnInput, emit_vm_call};
 use crate::machinst::isle::*;
 use crate::machinst::{
@@ -282,8 +282,8 @@ impl Context for IsleContext<'_, '_, MInst, X64Backend> {
     }
 
     #[inline]
-    fn has_avx512_vpopcntdq(&mut self) -> bool {
-        self.backend.x64_flags.has_avx512_vpopcntdq()
+    fn has_x64_512_vpopcntdq(&mut self) -> bool {
+        self.backend.x64_flags.has_x64_512_vpopcntdq()
     }
 
     #[inline]
@@ -292,7 +292,7 @@ impl Context for IsleContext<'_, '_, MInst, X64Backend> {
     }
 
     // =========================================================================
-    // YOLM FORK: Turin AVX-512 Helpers
+    // AVX-512 Helpers
     // =========================================================================
 
     /// Constructor for OptionMaskReg::None (no masking)
@@ -301,22 +301,22 @@ impl Context for IsleContext<'_, '_, MInst, X64Backend> {
         None
     }
 
-    /// Convert Xmm to RegMem for Turin instructions
+    /// Convert Xmm to RegMem for Avx512 instructions
     #[inline]
-    fn turin_xmm_to_reg_mem(&mut self, xmm: Xmm) -> RegMem {
+    fn x64_512_xmm_to_reg_mem(&mut self, xmm: Xmm) -> RegMem {
         RegMem::reg(xmm.to_reg())
     }
 
-    /// Convert XmmMem to RegMem for Turin instructions
+    /// Convert XmmMem to RegMem for Avx512 instructions
     #[inline]
-    fn turin_xmm_mem_to_reg_mem(&mut self, xmm_mem: &XmmMem) -> RegMem {
+    fn x64_512_xmm_mem_to_reg_mem(&mut self, xmm_mem: &XmmMem) -> RegMem {
         xmm_mem.clone().into()
     }
 
-    /// Convert a Reg to an OptionMaskReg for Turin masked operations.
+    /// Convert a Reg to an OptionMaskReg for Avx512 masked operations.
     /// The reg should be a k-register (k1-k7).
     #[inline]
-    fn turin_mask_reg(&mut self, reg: Reg) -> OptionMaskReg {
+    fn x64_512_mask_reg(&mut self, reg: Reg) -> OptionMaskReg {
         Mask::new(reg)
     }
 
