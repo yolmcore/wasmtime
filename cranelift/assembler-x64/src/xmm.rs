@@ -24,9 +24,19 @@ impl<R: AsReg> Xmm<R> {
         enc
     }
 
-    /// Return the register name.
+    /// Return the register name (as XMM).
     pub fn to_string(&self) -> String {
         self.0.to_string(None)
+    }
+
+    /// Return the register name as YMM (256-bit).
+    pub fn to_ymm_string(&self) -> String {
+        format!("%ymm{}", self.enc())
+    }
+
+    /// Return the register name as ZMM (512-bit).
+    pub fn to_zmm_string(&self) -> String {
+        format!("%zmm{}", self.enc())
     }
 
     /// Emit this register as the `r/m` field of a ModR/M byte.

@@ -2303,9 +2303,8 @@ fn test_vcode_load_store_512bit() {
     println!("test_vcode_load_store_512bit: PASSED - verified VMOVDQU64/32");
 }
 
-// NOTE: VPOPCNTD/Q tests are disabled because Cranelift lacks the has_x64_512_vpopcntdq
-// ISA flag. The instructions require AVX-512 VPOPCNTDQ extension which needs to be
-// added to the ISA flags before these tests can be enabled.
+// NOTE: VPOPCNTD/Q tests are disabled because they require AVX-512 VPOPCNTDQ extension.
+// The has_avx512vpopcntdq ISA flag exists but the instructions need additional lowering.
 
 // =============================================================================
 // Tests: Count Leading Zeros (VPLZCNTD / VPLZCNTQ)

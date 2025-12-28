@@ -684,17 +684,16 @@
 ;; =============================================================================
 ;; 512-bit Population Count (VPOPCNTD/Q - AVX-512 VPOPCNTDQ)
 ;; =============================================================================
-;; NOTE: These instructions require AVX-512 VPOPCNTDQ extension which is not
-;; VPOPCNTD/Q helpers are available in inst.isle. Using has_x64_512_vpopcntdq flag.
+;; NOTE: These instructions require AVX-512 VPOPCNTDQ extension.
 
 ;; I32X16 population count -> VPOPCNTD
 (rule 20 (lower (has_type (multi_lane 32 16) (popcnt data)))
-      (if-let true (has_x64_512_vpopcntdq))
+      (if-let true (has_avx512vpopcntdq))
       (x64_512_vpopcntd (put_in_xmm data)))
 
 ;; I64X8 population count -> VPOPCNTQ
 (rule 20 (lower (has_type (multi_lane 64 8) (popcnt data)))
-      (if-let true (has_x64_512_vpopcntdq))
+      (if-let true (has_avx512vpopcntdq))
       (x64_512_vpopcntq (put_in_xmm data)))
 
 ;; =============================================================================
@@ -1652,4 +1651,4 @@
 ;; F64X8 -> F32X8: VCVTPD2PS (narrow 8 doubles to 8 floats in lower half)
 (rule 20 (lower (has_type (multi_lane 32 8) (fdemote x @ (value_type (multi_lane 64 8)))))
       (if-let true (has_avx512f))
-      (x64_512_vcvtpd2ps (put_in_xmm_mem x)))
+      (x64_512_vcvtpd2ps (put_in_xmm x)))

@@ -282,8 +282,8 @@ impl Context for IsleContext<'_, '_, MInst, X64Backend> {
     }
 
     #[inline]
-    fn has_x64_512_vpopcntdq(&mut self) -> bool {
-        self.backend.x64_flags.has_x64_512_vpopcntdq()
+    fn has_avx512vpopcntdq(&mut self) -> bool {
+        self.backend.x64_flags.has_avx512vpopcntdq()
     }
 
     #[inline]
@@ -585,6 +585,31 @@ impl Context for IsleContext<'_, '_, MInst, X64Backend> {
     }
 
     #[inline]
+    fn temp_writable_kmask(&mut self) -> WritableMask {
+        self.lower_ctx.temp_writable_kmask()
+    }
+
+    #[inline]
+    fn kmask_to_reg(&mut self, k: Mask) -> Reg {
+        k.into()
+    }
+
+    #[inline]
+    fn reg_to_kmask(&mut self, r: Reg) -> Mask {
+        Mask::unwrap_new(r)
+    }
+
+    #[inline]
+    fn writable_kmask_to_writable_reg(&mut self, wk: WritableMask) -> Writable<Reg> {
+        wk.to_writable_reg()
+    }
+
+    #[inline]
+    fn writable_kmask_to_kmask(&mut self, wk: WritableMask) -> Mask {
+        wk.to_reg()
+    }
+
+    #[inline]
     fn reg_to_reg_mem_imm(&mut self, reg: Reg) -> RegMemImm {
         RegMemImm::Reg { reg }
     }
@@ -687,6 +712,11 @@ impl Context for IsleContext<'_, '_, MInst, X64Backend> {
             CC::NZ => Some(*cc),
             _ => None,
         }
+    }
+
+    #[inline]
+    fn avx512_cond_to_u8(&mut self, cond: &Avx512Cond) -> u8 {
+        *cond as u8
     }
 
     #[inline]

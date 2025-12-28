@@ -39,6 +39,13 @@ impl Lower<'_, Inst> {
     pub fn temp_writable_xmm(&mut self) -> WritableXmm {
         WritableXmm::from_writable_reg(self.alloc_tmp(types::F64).only_reg().unwrap()).unwrap()
     }
+
+    #[inline]
+    pub fn temp_writable_kmask(&mut self) -> WritableMask {
+        // K-mask registers share the Vector register class with XMM/ZMM.
+        // We use F64 as a placeholder type since there's no dedicated k-mask type.
+        WritableMask::from_writable_reg(self.alloc_tmp(types::F64).only_reg().unwrap()).unwrap()
+    }
 }
 
 fn is_int_or_ref_ty(ty: Type) -> bool {

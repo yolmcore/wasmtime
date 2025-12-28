@@ -2750,6 +2750,20 @@ impl asm::AvailableFeatures for &EmitInfo {
     fn avx512bw(&self) -> bool {
         self.isa_flags.has_avx512bw()
     }
+
+    fn avx512cd(&self) -> bool {
+        self.isa_flags.has_avx512cd()
+    }
+
+    fn avx512vpopcntdq(&self) -> bool {
+        self.isa_flags.has_avx512vpopcntdq()
+    }
+
+    fn avx512vnni(&self) -> bool {
+        // AVX-512 VNNI is not yet exposed as an ISA flag, return false for now
+        // TODO: Add has_avx512vnni() to ISA flags
+        false
+    }
 }
 
 impl MachInstEmit for Inst {

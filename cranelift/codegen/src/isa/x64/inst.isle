@@ -1030,6 +1030,10 @@
 (type MaskMem extern (enum))
 (type MaskMemImm extern (enum))
 
+;; K-mask register type for assembler DSL (wrapper around Mask register)
+(type Kmask (primitive Kmask))
+(type WritableKmask (primitive WritableKmask))
+
 ;; AVX-512 types
 (type Avx512AluOp extern
       (enum Vpaddd
@@ -1260,6 +1264,10 @@
             Ge
             Gt))
 
+;; Convert Avx512Cond to u8 immediate value for DSL instructions
+(decl avx512_cond_to_u8 (Avx512Cond) u8)
+(extern constructor avx512_cond_to_u8 avx512_cond_to_u8)
+
 (type Avx512ImmShuffleOp extern
       (enum Vpshufd
             Vpshufhw
@@ -1419,6 +1427,26 @@
 ;; Allocate a new temporary XMM register.
 (decl temp_writable_xmm () WritableXmm)
 (extern constructor temp_writable_xmm temp_writable_xmm)
+
+;; Allocate a new temporary k-mask register.
+(decl temp_writable_kmask () WritableKmask)
+(extern constructor temp_writable_kmask temp_writable_kmask)
+
+;; Convert a `Kmask` to a `Reg`.
+(decl kmask_to_reg (Kmask) Reg)
+(extern constructor kmask_to_reg kmask_to_reg)
+
+;; Convert a `Reg` to a `Kmask`.
+(decl reg_to_kmask (Reg) Kmask)
+(extern constructor reg_to_kmask reg_to_kmask)
+
+;; Convert a `WritableKmask` to a `WritableReg`.
+(decl writable_kmask_to_writable_reg (WritableKmask) WritableReg)
+(extern constructor writable_kmask_to_writable_reg writable_kmask_to_writable_reg)
+
+;; Convert a `WritableKmask` to a `Kmask`.
+(decl writable_kmask_to_kmask (WritableKmask) Kmask)
+(extern constructor writable_kmask_to_kmask writable_kmask_to_kmask)
 
 ;; Construct a new `XmmMem` from the given `RegMem`.
 ;;
@@ -1647,8 +1675,8 @@
 (decl pure has_avx512vbmi () bool)
 (extern constructor has_avx512vbmi has_avx512vbmi)
 
-(decl pure has_x64_512_vpopcntdq () bool)
-(extern constructor has_x64_512_vpopcntdq has_x64_512_vpopcntdq)
+(decl pure has_avx512vpopcntdq () bool)
+(extern constructor has_avx512vpopcntdq has_avx512vpopcntdq)
 
 (decl pure has_avx512bw () bool)
 (extern constructor has_avx512bw has_avx512bw)
@@ -4779,54 +4807,26 @@
 (decl x64_512_xmm_mem_to_reg_mem (XmmMem) RegMem)
 (extern constructor x64_512_xmm_mem_to_reg_mem x64_512_xmm_mem_to_reg_mem)
 
-;; Helper for creating Avx512 AVX-512 ALU instructions (unmasked, 32-bit elements)
-;; Returns an Xmm register with the result
-(decl x64_512_alu_d (Avx512AluOp Xmm XmmMem) Xmm)
-(rule (x64_512_alu_d op src1 src2)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (src2_rm RegMem (x64_512_xmm_mem_to_reg_mem src2))
-            (_ Unit (emit (MInst.Avx512Avx512Alu op
-                                                (OperandSize.Size32)
-                                                dst
-                                                src1
-                                                src2_rm
-                                                (option_mask_reg_none)
-                                                (MergeMode.Zeroing)))))
-        dst))
-
-;; Helper for creating Avx512 AVX-512 ALU instructions (unmasked, 64-bit elements)
-(decl x64_512_alu_q (Avx512AluOp Xmm XmmMem) Xmm)
-(rule (x64_512_alu_q op src1 src2)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (src2_rm RegMem (x64_512_xmm_mem_to_reg_mem src2))
-            (_ Unit (emit (MInst.Avx512Avx512Alu op
-                                                (OperandSize.Size64)
-                                                dst
-                                                src1
-                                                src2_rm
-                                                (option_mask_reg_none)
-                                                (MergeMode.Zeroing)))))
-        dst))
-
 ;; Specific 512-bit ALU operations (32-bit elements - I32X16)
+;; These now use the DSL-generated constructors (x64_*_z format)
 
 (decl x64_512_vpaddd (Xmm XmmMem) Xmm)
-(rule (x64_512_vpaddd src1 src2) (x64_512_alu_d (Avx512AluOp.Vpaddd) src1 src2))
+(rule (x64_512_vpaddd src1 src2) (x64_vpaddd_z src1 src2))
 
 (decl x64_512_vpsubd (Xmm XmmMem) Xmm)
-(rule (x64_512_vpsubd src1 src2) (x64_512_alu_d (Avx512AluOp.Vpsubd) src1 src2))
+(rule (x64_512_vpsubd src1 src2) (x64_vpsubd_z src1 src2))
 
 (decl x64_512_vpmulld (Xmm XmmMem) Xmm)
-(rule (x64_512_vpmulld src1 src2) (x64_512_alu_d (Avx512AluOp.Vpmulld) src1 src2))
+(rule (x64_512_vpmulld src1 src2) (x64_vpmulld_z src1 src2))
 
 (decl x64_512_vpandd (Xmm XmmMem) Xmm)
-(rule (x64_512_vpandd src1 src2) (x64_512_alu_d (Avx512AluOp.Vpandd) src1 src2))
+(rule (x64_512_vpandd src1 src2) (x64_vpandd_z src1 src2))
 
 (decl x64_512_vpord (Xmm XmmMem) Xmm)
-(rule (x64_512_vpord src1 src2) (x64_512_alu_d (Avx512AluOp.Vpord) src1 src2))
+(rule (x64_512_vpord src1 src2) (x64_vpord_z src1 src2))
 
 (decl x64_512_vpxord (Xmm XmmMem) Xmm)
-(rule (x64_512_vpxord src1 src2) (x64_512_alu_d (Avx512AluOp.Vpxord) src1 src2))
+(rule (x64_512_vpxord src1 src2) (x64_vpxord_z src1 src2))
 
 ;; Create a zero 512-bit vector (for I32X16 ineg)
 (decl x64_512_zmm_zero_d () Xmm)
@@ -4835,49 +4835,49 @@
         (x64_512_vpxord tmp tmp)))
 
 (decl x64_512_vpandnd (Xmm XmmMem) Xmm)
-(rule (x64_512_vpandnd src1 src2) (x64_512_alu_d (Avx512AluOp.Vpandnd) src1 src2))
+(rule (x64_512_vpandnd src1 src2) (x64_vpandnd_z src1 src2))
 
 (decl x64_512_vpminsd (Xmm XmmMem) Xmm)
-(rule (x64_512_vpminsd src1 src2) (x64_512_alu_d (Avx512AluOp.Vpminsd) src1 src2))
+(rule (x64_512_vpminsd src1 src2) (x64_vpminsd_z src1 src2))
 
 (decl x64_512_vpmaxsd (Xmm XmmMem) Xmm)
-(rule (x64_512_vpmaxsd src1 src2) (x64_512_alu_d (Avx512AluOp.Vpmaxsd) src1 src2))
+(rule (x64_512_vpmaxsd src1 src2) (x64_vpmaxsd_z src1 src2))
 
 (decl x64_512_vpminud (Xmm XmmMem) Xmm)
-(rule (x64_512_vpminud src1 src2) (x64_512_alu_d (Avx512AluOp.Vpminud) src1 src2))
+(rule (x64_512_vpminud src1 src2) (x64_vpminud_z src1 src2))
 
 (decl x64_512_vpmaxud (Xmm XmmMem) Xmm)
-(rule (x64_512_vpmaxud src1 src2) (x64_512_alu_d (Avx512AluOp.Vpmaxud) src1 src2))
+(rule (x64_512_vpmaxud src1 src2) (x64_vpmaxud_z src1 src2))
 
 ;; Specific 512-bit ALU operations (64-bit elements - I64X8)
 
 (decl x64_512_vpaddq (Xmm XmmMem) Xmm)
-(rule (x64_512_vpaddq src1 src2) (x64_512_alu_q (Avx512AluOp.Vpaddq) src1 src2))
+(rule (x64_512_vpaddq src1 src2) (x64_vpaddq_z src1 src2))
 
 (decl x64_512_vpsubq (Xmm XmmMem) Xmm)
-(rule (x64_512_vpsubq src1 src2) (x64_512_alu_q (Avx512AluOp.Vpsubq) src1 src2))
+(rule (x64_512_vpsubq src1 src2) (x64_vpsubq_z src1 src2))
 
 (decl x64_512_vpmullq (Xmm XmmMem) Xmm)
-(rule (x64_512_vpmullq src1 src2) (x64_512_alu_q (Avx512AluOp.Vpmullq) src1 src2))
+(rule (x64_512_vpmullq src1 src2) (x64_vpmullq_z src1 src2))
 
 ;; VPMULUDQ - 32x32→64 unsigned multiply
 ;; Takes low 32-bits of each 64-bit element and produces 64-bit result
 (decl x64_512_vpmuludq (Xmm XmmMem) Xmm)
-(rule (x64_512_vpmuludq src1 src2) (x64_512_alu_q (Avx512AluOp.Vpmuludq) src1 src2))
+(rule (x64_512_vpmuludq src1 src2) (x64_vpmuludq_z src1 src2))
 
 ;; VPMULDQ - 32x32→64 signed multiply
 ;; Takes low 32-bits of each 64-bit element and produces 64-bit result
 (decl x64_512_vpmuldq (Xmm XmmMem) Xmm)
-(rule (x64_512_vpmuldq src1 src2) (x64_512_alu_q (Avx512AluOp.Vpmuldq) src1 src2))
+(rule (x64_512_vpmuldq src1 src2) (x64_vpmuldq_z src1 src2))
 
 (decl x64_512_vpandq (Xmm XmmMem) Xmm)
-(rule (x64_512_vpandq src1 src2) (x64_512_alu_q (Avx512AluOp.Vpandq) src1 src2))
+(rule (x64_512_vpandq src1 src2) (x64_vpandq_z src1 src2))
 
 (decl x64_512_vporq (Xmm XmmMem) Xmm)
-(rule (x64_512_vporq src1 src2) (x64_512_alu_q (Avx512AluOp.Vporq) src1 src2))
+(rule (x64_512_vporq src1 src2) (x64_vporq_z src1 src2))
 
 (decl x64_512_vpxorq (Xmm XmmMem) Xmm)
-(rule (x64_512_vpxorq src1 src2) (x64_512_alu_q (Avx512AluOp.Vpxorq) src1 src2))
+(rule (x64_512_vpxorq src1 src2) (x64_vpxorq_z src1 src2))
 
 ;; Create a zero 512-bit vector (for I64X8 ineg)
 (decl x64_512_zmm_zero_q () Xmm)
@@ -4886,101 +4886,77 @@
         (x64_512_vpxorq tmp tmp)))
 
 (decl x64_512_vpandnq (Xmm XmmMem) Xmm)
-(rule (x64_512_vpandnq src1 src2) (x64_512_alu_q (Avx512AluOp.Vpandnq) src1 src2))
+(rule (x64_512_vpandnq src1 src2) (x64_vpandnq_z src1 src2))
 
 (decl x64_512_vpminsq (Xmm XmmMem) Xmm)
-(rule (x64_512_vpminsq src1 src2) (x64_512_alu_q (Avx512AluOp.Vpminsq) src1 src2))
+(rule (x64_512_vpminsq src1 src2) (x64_vpminsq_z src1 src2))
 
 (decl x64_512_vpmaxsq (Xmm XmmMem) Xmm)
-(rule (x64_512_vpmaxsq src1 src2) (x64_512_alu_q (Avx512AluOp.Vpmaxsq) src1 src2))
+(rule (x64_512_vpmaxsq src1 src2) (x64_vpmaxsq_z src1 src2))
 
 (decl x64_512_vpminuq (Xmm XmmMem) Xmm)
-(rule (x64_512_vpminuq src1 src2) (x64_512_alu_q (Avx512AluOp.Vpminuq) src1 src2))
+(rule (x64_512_vpminuq src1 src2) (x64_vpminuq_z src1 src2))
 
 (decl x64_512_vpmaxuq (Xmm XmmMem) Xmm)
-(rule (x64_512_vpmaxuq src1 src2) (x64_512_alu_q (Avx512AluOp.Vpmaxuq) src1 src2))
+(rule (x64_512_vpmaxuq src1 src2) (x64_vpmaxuq_z src1 src2))
 
 ;; =============================================================================
 ;; Byte/Word Operations (AVX-512BW) - I8X64 and I16X32
 ;; =============================================================================
 
-;; Helper for creating Avx512 AVX-512 ALU instructions (unmasked, 8-bit elements)
-(decl x64_512_alu_b (Avx512AluOp Xmm XmmMem) Xmm)
-(rule (x64_512_alu_b op src1 src2)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (src2_rm RegMem (x64_512_xmm_mem_to_reg_mem src2))
-            (_ Unit (emit (MInst.Avx512Avx512Alu op
-                                                (OperandSize.Size8)
-                                                dst
-                                                src1
-                                                src2_rm
-                                                (option_mask_reg_none)
-                                                (MergeMode.Zeroing)))))
-        dst))
-
-;; Helper for creating Avx512 AVX-512 ALU instructions (unmasked, 16-bit elements)
-(decl x64_512_alu_w (Avx512AluOp Xmm XmmMem) Xmm)
-(rule (x64_512_alu_w op src1 src2)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (src2_rm RegMem (x64_512_xmm_mem_to_reg_mem src2))
-            (_ Unit (emit (MInst.Avx512Avx512Alu op
-                                                (OperandSize.Size16)
-                                                dst
-                                                src1
-                                                src2_rm
-                                                (option_mask_reg_none)
-                                                (MergeMode.Zeroing)))))
-        dst))
-
 ;; Byte arithmetic (I8X64)
 (decl x64_512_vpaddb (Xmm XmmMem) Xmm)
-(rule (x64_512_vpaddb src1 src2) (x64_512_alu_b (Avx512AluOp.Vpaddb) src1 src2))
+(rule (x64_512_vpaddb src1 src2) (x64_vpaddb_z src1 src2))
 
 (decl x64_512_vpsubb (Xmm XmmMem) Xmm)
-(rule (x64_512_vpsubb src1 src2) (x64_512_alu_b (Avx512AluOp.Vpsubb) src1 src2))
+(rule (x64_512_vpsubb src1 src2) (x64_vpsubb_z src1 src2))
 
 (decl x64_512_vpminsb (Xmm XmmMem) Xmm)
-(rule (x64_512_vpminsb src1 src2) (x64_512_alu_b (Avx512AluOp.Vpminsb) src1 src2))
+(rule (x64_512_vpminsb src1 src2) (x64_vpminsb_z src1 src2))
 
 (decl x64_512_vpminub (Xmm XmmMem) Xmm)
-(rule (x64_512_vpminub src1 src2) (x64_512_alu_b (Avx512AluOp.Vpminub) src1 src2))
+(rule (x64_512_vpminub src1 src2) (x64_vpminub_z src1 src2))
 
 (decl x64_512_vpmaxsb (Xmm XmmMem) Xmm)
-(rule (x64_512_vpmaxsb src1 src2) (x64_512_alu_b (Avx512AluOp.Vpmaxsb) src1 src2))
+(rule (x64_512_vpmaxsb src1 src2) (x64_vpmaxsb_z src1 src2))
 
 (decl x64_512_vpmaxub (Xmm XmmMem) Xmm)
-(rule (x64_512_vpmaxub src1 src2) (x64_512_alu_b (Avx512AluOp.Vpmaxub) src1 src2))
+(rule (x64_512_vpmaxub src1 src2) (x64_vpmaxub_z src1 src2))
 
+;; Note: These output to a vector register (Xmm), not a k-register.
+;; Each element becomes all-1s if comparison is true, all-0s otherwise.
 (decl x64_512_vpcmpeqb (Xmm XmmMem) Xmm)
-(rule (x64_512_vpcmpeqb src1 src2) (x64_512_alu_b (Avx512AluOp.Vpcmpeqb) src1 src2))
+(rule (x64_512_vpcmpeqb src1 src2) (x64_vpcmpeqb_z src1 src2))
 
 (decl x64_512_vpcmpgtb (Xmm XmmMem) Xmm)
-(rule (x64_512_vpcmpgtb src1 src2) (x64_512_alu_b (Avx512AluOp.Vpcmpgtb) src1 src2))
+(rule (x64_512_vpcmpgtb src1 src2) (x64_vpcmpgtb_z src1 src2))
 
 ;; Word arithmetic (I16X32)
 (decl x64_512_vpaddw (Xmm XmmMem) Xmm)
-(rule (x64_512_vpaddw src1 src2) (x64_512_alu_w (Avx512AluOp.Vpaddw) src1 src2))
+(rule (x64_512_vpaddw src1 src2) (x64_vpaddw_z src1 src2))
 
 (decl x64_512_vpsubw (Xmm XmmMem) Xmm)
-(rule (x64_512_vpsubw src1 src2) (x64_512_alu_w (Avx512AluOp.Vpsubw) src1 src2))
+(rule (x64_512_vpsubw src1 src2) (x64_vpsubw_z src1 src2))
 
 (decl x64_512_vpminsw (Xmm XmmMem) Xmm)
-(rule (x64_512_vpminsw src1 src2) (x64_512_alu_w (Avx512AluOp.Vpminsw) src1 src2))
+(rule (x64_512_vpminsw src1 src2) (x64_vpminsw_z src1 src2))
 
 (decl x64_512_vpminuw (Xmm XmmMem) Xmm)
-(rule (x64_512_vpminuw src1 src2) (x64_512_alu_w (Avx512AluOp.Vpminuw) src1 src2))
+(rule (x64_512_vpminuw src1 src2) (x64_vpminuw_z src1 src2))
 
 (decl x64_512_vpmaxsw (Xmm XmmMem) Xmm)
-(rule (x64_512_vpmaxsw src1 src2) (x64_512_alu_w (Avx512AluOp.Vpmaxsw) src1 src2))
+(rule (x64_512_vpmaxsw src1 src2) (x64_vpmaxsw_z src1 src2))
 
 (decl x64_512_vpmaxuw (Xmm XmmMem) Xmm)
-(rule (x64_512_vpmaxuw src1 src2) (x64_512_alu_w (Avx512AluOp.Vpmaxuw) src1 src2))
+(rule (x64_512_vpmaxuw src1 src2) (x64_vpmaxuw_z src1 src2))
 
+;; Note: These output to a vector register (Xmm), not a k-register.
+;; Each element becomes all-1s if comparison is true, all-0s otherwise.
 (decl x64_512_vpcmpeqw (Xmm XmmMem) Xmm)
-(rule (x64_512_vpcmpeqw src1 src2) (x64_512_alu_w (Avx512AluOp.Vpcmpeqw) src1 src2))
+(rule (x64_512_vpcmpeqw src1 src2) (x64_vpcmpeqw_z src1 src2))
 
 (decl x64_512_vpcmpgtw (Xmm XmmMem) Xmm)
-(rule (x64_512_vpcmpgtw src1 src2) (x64_512_alu_w (Avx512AluOp.Vpcmpgtw) src1 src2))
+(rule (x64_512_vpcmpgtw src1 src2) (x64_vpcmpgtw_z src1 src2))
 
 ;; =============================================================================
 ;; AVX-512 Masked Operations
@@ -5000,153 +4976,105 @@
 (decl x64_512_mask_reg (Reg) OptionMaskReg)
 (extern constructor x64_512_mask_reg x64_512_mask_reg)
 
-;; Generic masked ALU (32-bit elements)
-;; Strategy: Execute with zeroing mask, then blend with passthrough
-;; This works around merge mode requiring dst to be pre-initialized
-(decl x64_512_masked_alu_d (Avx512AluOp Reg Xmm XmmMem Xmm) Xmm)
-(rule (x64_512_masked_alu_d op mask src1 src2 passthrough)
-      ;; Execute operation with zeroing mode - masked-off lanes become 0
-      (let ((raw_result Xmm (x64_512_zeroing_alu_d op mask src1 src2)))
-        ;; Blend: where mask=1 take raw_result, where mask=0 take passthrough
-        (x64_512_vpblendmd mask passthrough (xmm_to_xmm_mem raw_result))))
-
-;; Generic masked ALU (64-bit elements)
-;; Strategy: Execute with zeroing mask, then blend with passthrough
-(decl x64_512_masked_alu_q (Avx512AluOp Reg Xmm XmmMem Xmm) Xmm)
-(rule (x64_512_masked_alu_q op mask src1 src2 passthrough)
-      ;; Execute operation with zeroing mode - masked-off lanes become 0
-      (let ((raw_result Xmm (x64_512_zeroing_alu_q op mask src1 src2)))
-        ;; Blend: where mask=1 take raw_result, where mask=0 take passthrough
-        (x64_512_vpblendmq mask passthrough (xmm_to_xmm_mem raw_result))))
-
-;; Generic zeroing ALU (32-bit elements, zeroing mode)
-(decl x64_512_zeroing_alu_d (Avx512AluOp Reg Xmm XmmMem) Xmm)
-(rule (x64_512_zeroing_alu_d op mask src1 src2)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (src2_rm RegMem (x64_512_xmm_mem_to_reg_mem src2))
-            (mask_reg OptionMaskReg (x64_512_mask_reg mask))
-            (_ Unit (emit (MInst.Avx512Avx512Alu op
-                                                (OperandSize.Size32)
-                                                dst
-                                                src1
-                                                src2_rm
-                                                mask_reg
-                                                (MergeMode.Zeroing)))))
-        dst))
-
-;; Generic zeroing ALU (64-bit elements, zeroing mode)
-(decl x64_512_zeroing_alu_q (Avx512AluOp Reg Xmm XmmMem) Xmm)
-(rule (x64_512_zeroing_alu_q op mask src1 src2)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (src2_rm RegMem (x64_512_xmm_mem_to_reg_mem src2))
-            (mask_reg OptionMaskReg (x64_512_mask_reg mask))
-            (_ Unit (emit (MInst.Avx512Avx512Alu op
-                                                (OperandSize.Size64)
-                                                dst
-                                                src1
-                                                src2_rm
-                                                mask_reg
-                                                (MergeMode.Zeroing)))))
-        dst))
-
 ;; Masked add operations (I32X16)
+;; Uses DSL-generated merge-masking constructor
 (decl x64_512_masked_vpaddd (Reg Xmm XmmMem Xmm) Xmm)
 (rule (x64_512_masked_vpaddd mask src1 src2 passthrough)
-      (x64_512_masked_alu_d (Avx512AluOp.Vpaddd) mask src1 src2 passthrough))
+      (x64_vpaddd_z_km passthrough (reg_to_kmask mask) src1 src2))
 
 (decl x64_512_zeroing_vpaddd (Reg Xmm XmmMem) Xmm)
 (rule (x64_512_zeroing_vpaddd mask src1 src2)
-      (x64_512_zeroing_alu_d (Avx512AluOp.Vpaddd) mask src1 src2))
+      (x64_vpaddd_z_km (x64_512_zmm_zero_d) (reg_to_kmask mask) src1 src2))
 
 ;; Masked add operations (I64X8)
 (decl x64_512_masked_vpaddq (Reg Xmm XmmMem Xmm) Xmm)
 (rule (x64_512_masked_vpaddq mask src1 src2 passthrough)
-      (x64_512_masked_alu_q (Avx512AluOp.Vpaddq) mask src1 src2 passthrough))
+      (x64_vpaddq_z_km passthrough (reg_to_kmask mask) src1 src2))
 
 (decl x64_512_zeroing_vpaddq (Reg Xmm XmmMem) Xmm)
 (rule (x64_512_zeroing_vpaddq mask src1 src2)
-      (x64_512_zeroing_alu_q (Avx512AluOp.Vpaddq) mask src1 src2))
+      (x64_vpaddq_z_km (x64_512_zmm_zero_q) (reg_to_kmask mask) src1 src2))
 
 ;; Masked subtract operations (I32X16)
 (decl x64_512_masked_vpsubd (Reg Xmm XmmMem Xmm) Xmm)
 (rule (x64_512_masked_vpsubd mask src1 src2 passthrough)
-      (x64_512_masked_alu_d (Avx512AluOp.Vpsubd) mask src1 src2 passthrough))
+      (x64_vpsubd_z_km passthrough (reg_to_kmask mask) src1 src2))
 
 (decl x64_512_zeroing_vpsubd (Reg Xmm XmmMem) Xmm)
 (rule (x64_512_zeroing_vpsubd mask src1 src2)
-      (x64_512_zeroing_alu_d (Avx512AluOp.Vpsubd) mask src1 src2))
+      (x64_vpsubd_z_km (x64_512_zmm_zero_d) (reg_to_kmask mask) src1 src2))
 
 ;; Masked subtract operations (I64X8)
 (decl x64_512_masked_vpsubq (Reg Xmm XmmMem Xmm) Xmm)
 (rule (x64_512_masked_vpsubq mask src1 src2 passthrough)
-      (x64_512_masked_alu_q (Avx512AluOp.Vpsubq) mask src1 src2 passthrough))
+      (x64_vpsubq_z_km passthrough (reg_to_kmask mask) src1 src2))
 
 (decl x64_512_zeroing_vpsubq (Reg Xmm XmmMem) Xmm)
 (rule (x64_512_zeroing_vpsubq mask src1 src2)
-      (x64_512_zeroing_alu_q (Avx512AluOp.Vpsubq) mask src1 src2))
+      (x64_vpsubq_z_km (x64_512_zmm_zero_q) (reg_to_kmask mask) src1 src2))
 
 ;; Masked multiply operations (I32X16)
 (decl x64_512_masked_vpmulld (Reg Xmm XmmMem Xmm) Xmm)
 (rule (x64_512_masked_vpmulld mask src1 src2 passthrough)
-      (x64_512_masked_alu_d (Avx512AluOp.Vpmulld) mask src1 src2 passthrough))
+      (x64_vpmulld_z_km passthrough (reg_to_kmask mask) src1 src2))
 
 (decl x64_512_zeroing_vpmulld (Reg Xmm XmmMem) Xmm)
 (rule (x64_512_zeroing_vpmulld mask src1 src2)
-      (x64_512_zeroing_alu_d (Avx512AluOp.Vpmulld) mask src1 src2))
+      (x64_vpmulld_z_km (x64_512_zmm_zero_d) (reg_to_kmask mask) src1 src2))
 
 ;; Masked multiply operations (I64X8)
 (decl x64_512_masked_vpmullq (Reg Xmm XmmMem Xmm) Xmm)
 (rule (x64_512_masked_vpmullq mask src1 src2 passthrough)
-      (x64_512_masked_alu_q (Avx512AluOp.Vpmullq) mask src1 src2 passthrough))
+      (x64_vpmullq_z_km passthrough (reg_to_kmask mask) src1 src2))
 
 (decl x64_512_zeroing_vpmullq (Reg Xmm XmmMem) Xmm)
 (rule (x64_512_zeroing_vpmullq mask src1 src2)
-      (x64_512_zeroing_alu_q (Avx512AluOp.Vpmullq) mask src1 src2))
+      (x64_vpmullq_z_km (x64_512_zmm_zero_q) (reg_to_kmask mask) src1 src2))
 
 ;; Masked AND operations (I32X16 / I64X8)
 (decl x64_512_masked_vpandd (Reg Xmm XmmMem Xmm) Xmm)
 (rule (x64_512_masked_vpandd mask src1 src2 passthrough)
-      (x64_512_masked_alu_d (Avx512AluOp.Vpandd) mask src1 src2 passthrough))
+      (x64_vpandd_z_km passthrough (reg_to_kmask mask) src1 src2))
 
 (decl x64_512_masked_vpandq (Reg Xmm XmmMem Xmm) Xmm)
 (rule (x64_512_masked_vpandq mask src1 src2 passthrough)
-      (x64_512_masked_alu_q (Avx512AluOp.Vpandq) mask src1 src2 passthrough))
+      (x64_vpandq_z_km passthrough (reg_to_kmask mask) src1 src2))
 
 ;; Masked OR operations (I32X16 / I64X8)
 (decl x64_512_masked_vpord (Reg Xmm XmmMem Xmm) Xmm)
 (rule (x64_512_masked_vpord mask src1 src2 passthrough)
-      (x64_512_masked_alu_d (Avx512AluOp.Vpord) mask src1 src2 passthrough))
+      (x64_vpord_z_km passthrough (reg_to_kmask mask) src1 src2))
 
 (decl x64_512_masked_vporq (Reg Xmm XmmMem Xmm) Xmm)
 (rule (x64_512_masked_vporq mask src1 src2 passthrough)
-      (x64_512_masked_alu_q (Avx512AluOp.Vporq) mask src1 src2 passthrough))
+      (x64_vporq_z_km passthrough (reg_to_kmask mask) src1 src2))
 
 ;; Masked XOR operations (I32X16 / I64X8)
 (decl x64_512_masked_vpxord (Reg Xmm XmmMem Xmm) Xmm)
 (rule (x64_512_masked_vpxord mask src1 src2 passthrough)
-      (x64_512_masked_alu_d (Avx512AluOp.Vpxord) mask src1 src2 passthrough))
+      (x64_vpxord_z_km passthrough (reg_to_kmask mask) src1 src2))
 
 (decl x64_512_masked_vpxorq (Reg Xmm XmmMem Xmm) Xmm)
 (rule (x64_512_masked_vpxorq mask src1 src2 passthrough)
-      (x64_512_masked_alu_q (Avx512AluOp.Vpxorq) mask src1 src2 passthrough))
+      (x64_vpxorq_z_km passthrough (reg_to_kmask mask) src1 src2))
 
-;; Masked min/max operations (I32X16)
+;; Masked min/max operations (I32X16) - using DSL merge-masking constructors
 (decl x64_512_masked_vpminsd (Reg Xmm XmmMem Xmm) Xmm)
 (rule (x64_512_masked_vpminsd mask src1 src2 passthrough)
-      (x64_512_masked_alu_d (Avx512AluOp.Vpminsd) mask src1 src2 passthrough))
+      (x64_vpminsd_z_km passthrough (reg_to_kmask mask) src1 src2))
 
 (decl x64_512_masked_vpmaxsd (Reg Xmm XmmMem Xmm) Xmm)
 (rule (x64_512_masked_vpmaxsd mask src1 src2 passthrough)
-      (x64_512_masked_alu_d (Avx512AluOp.Vpmaxsd) mask src1 src2 passthrough))
+      (x64_vpmaxsd_z_km passthrough (reg_to_kmask mask) src1 src2))
 
 ;; Masked min/max operations (I64X8)
 (decl x64_512_masked_vpminsq (Reg Xmm XmmMem Xmm) Xmm)
 (rule (x64_512_masked_vpminsq mask src1 src2 passthrough)
-      (x64_512_masked_alu_q (Avx512AluOp.Vpminsq) mask src1 src2 passthrough))
+      (x64_vpminsq_z_km passthrough (reg_to_kmask mask) src1 src2))
 
 (decl x64_512_masked_vpmaxsq (Reg Xmm XmmMem Xmm) Xmm)
 (rule (x64_512_masked_vpmaxsq mask src1 src2 passthrough)
-      (x64_512_masked_alu_q (Avx512AluOp.Vpmaxsq) mask src1 src2 passthrough))
+      (x64_vpmaxsq_z_km passthrough (reg_to_kmask mask) src1 src2))
 
 ;; =============================================================================
 ;; Avx512 AVX-512 Blend Operations (VPBLENDMD/VPBLENDMQ)
@@ -5158,38 +5086,18 @@
 ;; VPBLENDMD: Blend src1 and src2 based on mask.
 ;; - When k[i]=1: select src2 (if_false)
 ;; - When k[i]=0: select src1 (if_true)
-;; Note: Merging mode is used so unmasked lanes take from src1, not zeroed.
+;; Note: Uses DSL-generated instruction with merge-masking.
 (decl x64_512_vpblendmd (Reg Xmm XmmMem) Xmm)
 (rule (x64_512_vpblendmd mask if_true if_false)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (if_false_rm RegMem (x64_512_xmm_mem_to_reg_mem if_false))
-            (mask_reg OptionMaskReg (x64_512_mask_reg mask))
-            (_ Unit (emit (MInst.Avx512Avx512Alu (Avx512AluOp.Vpblendmd)
-                                                (OperandSize.Size32)
-                                                dst
-                                                if_true
-                                                if_false_rm
-                                                mask_reg
-                                                (MergeMode.Merging)))))
-        dst))
+      (x64_vpblendmd_z_km (reg_to_kmask mask) if_true if_false))
 
 ;; VPBLENDMQ: Blend src1 and src2 based on mask.
 ;; - When k[i]=1: select src2 (if_false)
 ;; - When k[i]=0: select src1 (if_true)
-;; Note: Merging mode is used so unmasked lanes take from src1, not zeroed.
+;; Note: Uses DSL-generated instruction with merge-masking.
 (decl x64_512_vpblendmq (Reg Xmm XmmMem) Xmm)
 (rule (x64_512_vpblendmq mask if_true if_false)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (if_false_rm RegMem (x64_512_xmm_mem_to_reg_mem if_false))
-            (mask_reg OptionMaskReg (x64_512_mask_reg mask))
-            (_ Unit (emit (MInst.Avx512Avx512Alu (Avx512AluOp.Vpblendmq)
-                                                (OperandSize.Size64)
-                                                dst
-                                                if_true
-                                                if_false_rm
-                                                mask_reg
-                                                (MergeMode.Merging)))))
-        dst))
+      (x64_vpblendmq_z_km (reg_to_kmask mask) if_true if_false))
 
 ;; =============================================================================
 ;; Avx512 AVX-512 Compare Operations (VPCMPD/VPCMPQ)
@@ -5201,29 +5109,15 @@
 ;; Conditions (Avx512Cond):
 ;;   Eq = 0, Lt = 1, Le = 2, Neq = 4, Ge = 5, Gt = 6
 
+;; Uses DSL-generated constructor for VPCMPD
 (decl x64_512_vpcmpd (Avx512Cond Xmm XmmMem) Reg)
 (rule (x64_512_vpcmpd cond src1 src2)
-      (let ((k1 Reg (k1_reg))
-            (src2_rm RegMem (x64_512_xmm_mem_to_reg_mem src2))
-            (_ Unit (emit (MInst.Avx512Avx512Cmp (OperandSize.Size32)
-                                                 (reg_to_writable_reg k1)
-                                                 src1
-                                                 src2_rm
-                                                 cond
-                                                 (option_mask_reg_none)))))
-        k1))
+      (kmask_to_reg (x64_vpcmpd_zc src1 src2 (avx512_cond_to_u8 cond))))
 
+;; Uses DSL-generated constructor for VPCMPQ
 (decl x64_512_vpcmpq (Avx512Cond Xmm XmmMem) Reg)
 (rule (x64_512_vpcmpq cond src1 src2)
-      (let ((k1 Reg (k1_reg))
-            (src2_rm RegMem (x64_512_xmm_mem_to_reg_mem src2))
-            (_ Unit (emit (MInst.Avx512Avx512Cmp (OperandSize.Size64)
-                                                 (reg_to_writable_reg k1)
-                                                 src1
-                                                 src2_rm
-                                                 cond
-                                                 (option_mask_reg_none)))))
-        k1))
+      (kmask_to_reg (x64_vpcmpq_zc src1 src2 (avx512_cond_to_u8 cond))))
 
 ;; Specific comparison helpers for common conditions (I32X16)
 (decl x64_512_vpcmpeqd (Xmm XmmMem) Reg)
@@ -5270,48 +5164,27 @@
 ;; VPCOMPRESSD/Q: Pack elements where mask bit is 1 to low lanes
 ;; VPEXPANDD/Q: Scatter consecutive elements to lanes where mask is 1
 
-;; Note: Avx512CompressStore stores directly to memory
-;; For register-to-register compress, we need a helper that allocates temp storage
+;; Note: For register-to-register compress, use x64_vpcompressd_z_km_c
 
 ;; VPCOMPRESSD - compress 32-bit elements based on mask, store to memory
 (decl x64_512_vpcompressd_mem (Xmm Reg SyntheticAmode) SideEffectNoResult)
 (rule (x64_512_vpcompressd_mem src mask addr)
-      (SideEffectNoResult.Inst
-        (MInst.Avx512CompressStore (OperandSize.Size32)
-                                   src
-                                   addr
-                                   mask)))
+      (x64_vpcompressd_zs_km_c_mem (reg_to_kmask mask) addr src))
 
 ;; VPCOMPRESSQ - compress 64-bit elements based on mask, store to memory
 (decl x64_512_vpcompressq_mem (Xmm Reg SyntheticAmode) SideEffectNoResult)
 (rule (x64_512_vpcompressq_mem src mask addr)
-      (SideEffectNoResult.Inst
-        (MInst.Avx512CompressStore (OperandSize.Size64)
-                                   src
-                                   addr
-                                   mask)))
+      (x64_vpcompressq_zs_km_c_mem (reg_to_kmask mask) addr src))
 
 ;; VPEXPANDD - expand 32-bit elements from memory based on mask
 (decl x64_512_vpexpandd (SyntheticAmode Reg) Xmm)
 (rule (x64_512_vpexpandd addr mask)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512ExpandLoad (OperandSize.Size32)
-                                                  dst
-                                                  addr
-                                                  mask
-                                                  (MergeMode.Zeroing)))))
-        dst))
+      (x64_vpexpandd_zl_km_e (reg_to_kmask mask) addr))
 
 ;; VPEXPANDQ - expand 64-bit elements from memory based on mask
 (decl x64_512_vpexpandq (SyntheticAmode Reg) Xmm)
 (rule (x64_512_vpexpandq addr mask)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512ExpandLoad (OperandSize.Size64)
-                                                  dst
-                                                  addr
-                                                  mask
-                                                  (MergeMode.Zeroing)))))
-        dst))
+      (x64_vpexpandq_zl_km_e (reg_to_kmask mask) addr))
 
 ;; =============================================================================
 ;; Avx512 AVX-512 Gather/Scatter Operations
@@ -5411,29 +5284,19 @@
 
 ;; VMOVDQU64 - load 512-bit I64X8 from memory
 (decl x64_512_load_i64x8 (SyntheticAmode) Xmm)
-(rule (x64_512_load_i64x8 addr)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512512Load (OperandSize.Size64) dst addr))))
-        dst))
+(rule (x64_512_load_i64x8 addr) (x64_vmovdqu64_zl addr))
 
 ;; VMOVDQU32 - load 512-bit I32X16 from memory
 (decl x64_512_load_i32x16 (SyntheticAmode) Xmm)
-(rule (x64_512_load_i32x16 addr)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512512Load (OperandSize.Size32) dst addr))))
-        dst))
+(rule (x64_512_load_i32x16 addr) (x64_vmovdqu32_zl addr))
 
 ;; VMOVDQU64 - store 512-bit I64X8 to memory
 (decl x64_512_store_i64x8 (SyntheticAmode Xmm) SideEffectNoResult)
-(rule (x64_512_store_i64x8 addr src)
-      (SideEffectNoResult.Inst
-        (MInst.Avx512512Store (OperandSize.Size64) src addr)))
+(rule (x64_512_store_i64x8 addr src) (x64_vmovdqu64_zs_mem addr src))
 
 ;; VMOVDQU32 - store 512-bit I32X16 to memory
 (decl x64_512_store_i32x16 (SyntheticAmode Xmm) SideEffectNoResult)
-(rule (x64_512_store_i32x16 addr src)
-      (SideEffectNoResult.Inst
-        (MInst.Avx512512Store (OperandSize.Size32) src addr)))
+(rule (x64_512_store_i32x16 addr src) (x64_vmovdqu32_zs_mem addr src))
 
 ;; =============================================================================
 ;; 256-bit Load (unmasked)
@@ -5441,55 +5304,35 @@
 
 ;; VMOVDQU64 - load 256-bit I64X4 from memory
 (decl x64_256_load_i64x4 (SyntheticAmode) Xmm)
-(rule (x64_256_load_i64x4 addr)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512256Load (OperandSize.Size64) dst addr))))
-        dst))
+(rule (x64_256_load_i64x4 addr) (x64_vmovdqu64_yl addr))
 
 ;; VMOVDQU32 - load 256-bit I32X8 from memory
 (decl x64_256_load_i32x8 (SyntheticAmode) Xmm)
-(rule (x64_256_load_i32x8 addr)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512256Load (OperandSize.Size32) dst addr))))
-        dst))
+(rule (x64_256_load_i32x8 addr) (x64_vmovdqu32_yl addr))
 
 ;; VMOVDQU64 - store 256-bit I64X4 to memory
 (decl x64_256_store_i64x4 (SyntheticAmode Xmm) SideEffectNoResult)
-(rule (x64_256_store_i64x4 addr src)
-      (SideEffectNoResult.Inst
-        (MInst.Avx512256Store (OperandSize.Size64) src addr)))
+(rule (x64_256_store_i64x4 addr src) (x64_vmovdqu64_ys_mem addr src))
 
 ;; VMOVDQU32 - store 256-bit I32X8 to memory
 (decl x64_256_store_i32x8 (SyntheticAmode Xmm) SideEffectNoResult)
-(rule (x64_256_store_i32x8 addr src)
-      (SideEffectNoResult.Inst
-        (MInst.Avx512256Store (OperandSize.Size32) src addr)))
+(rule (x64_256_store_i32x8 addr src) (x64_vmovdqu32_ys_mem addr src))
 
 ;; VMOVDQU8 - load 512-bit I8X64 from memory
 (decl x64_512_load_i8x64 (SyntheticAmode) Xmm)
-(rule (x64_512_load_i8x64 addr)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512512Load (OperandSize.Size8) dst addr))))
-        dst))
+(rule (x64_512_load_i8x64 addr) (x64_vmovdqu8_zl addr))
 
 ;; VMOVDQU16 - load 512-bit I16X32 from memory
 (decl x64_512_load_i16x32 (SyntheticAmode) Xmm)
-(rule (x64_512_load_i16x32 addr)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512512Load (OperandSize.Size16) dst addr))))
-        dst))
+(rule (x64_512_load_i16x32 addr) (x64_vmovdqu16_zl addr))
 
 ;; VMOVDQU8 - store 512-bit I8X64 to memory
 (decl x64_512_store_i8x64 (SyntheticAmode Xmm) SideEffectNoResult)
-(rule (x64_512_store_i8x64 addr src)
-      (SideEffectNoResult.Inst
-        (MInst.Avx512512Store (OperandSize.Size8) src addr)))
+(rule (x64_512_store_i8x64 addr src) (x64_vmovdqu8_zs_mem addr src))
 
 ;; VMOVDQU16 - store 512-bit I16X32 to memory
 (decl x64_512_store_i16x32 (SyntheticAmode Xmm) SideEffectNoResult)
-(rule (x64_512_store_i16x32 addr src)
-      (SideEffectNoResult.Inst
-        (MInst.Avx512512Store (OperandSize.Size16) src addr)))
+(rule (x64_512_store_i16x32 addr src) (x64_vmovdqu16_zs_mem addr src))
 
 ;; =============================================================================
 ;; Helper functions for AVX-512 IR operations
@@ -5521,86 +5364,75 @@
 
 ;; Initialize an all-1s mask register using KXNORW k1, k1, k1
 ;; Returns k1 with all bits set to 1.
+;; Uses DSL-generated kxnorw constructor
 (decl x64_512_init_all_ones_mask () Reg)
 (rule (x64_512_init_all_ones_mask)
-      (let ((k1 Reg (k1_reg))
-            (_ Unit (emit (MInst.Avx512MaskLogic (MaskAluOp.Kxnor)
-                                                  (reg_to_writable_reg k1)
-                                                  k1
-                                                  (some_reg k1)))))
-        k1))
+      (let ((k1 Kmask (reg_to_kmask (k1_reg))))
+        (kmask_to_reg (x64_kxnorw_k k1 k1))))
 
 ;; Convert a vector mask (0/-1 per element) to a k-register mask using VPMOVD2M
 ;; Input: 512-bit vector with 32-bit elements where each element is 0 or -1
 ;; Output: k-register with 16 mask bits corresponding to the sign bits
+;; Now uses DSL-generated constructor
 (decl x64_512_vec_mask_to_kreg_32 (Xmm) Reg)
 (rule (x64_512_vec_mask_to_kreg_32 vec_mask)
-      (let ((k1 Reg (k1_reg))
-            (_ Unit (emit (MInst.Avx512Vmovmsk32 (reg_to_writable_reg k1) vec_mask))))
-        k1))
+      (kmask_to_reg (x64_vpmovd2m_kz vec_mask)))
 
 ;; Convert a vector mask (0/-1 per element) to a k-register mask using VPMOVQ2M
 ;; Input: 512-bit vector with 64-bit elements where each element is 0 or -1
 ;; Output: k-register with 8 mask bits corresponding to the sign bits
+;; Now uses DSL-generated constructor
 (decl x64_512_vec_mask_to_kreg_64 (Xmm) Reg)
 (rule (x64_512_vec_mask_to_kreg_64 vec_mask)
-      (let ((k1 Reg (k1_reg))
-            (_ Unit (emit (MInst.Avx512Vmovmsk64 (reg_to_writable_reg k1) vec_mask))))
-        k1))
+      (kmask_to_reg (x64_vpmovq2m_kz vec_mask)))
 
 ;; Convert a k-register mask to a vector mask (0/-1 per element) using VPMOVM2D
 ;; Input: k-register with mask bits
 ;; Output: 512-bit vector with 32-bit elements (0 or -1)
+;; Now uses DSL-generated constructor
 (decl x64_512_kreg_to_vec_mask_32 (Reg) Xmm)
 (rule (x64_512_kreg_to_vec_mask_32 kreg)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Movm2d dst kreg))))
-        dst))
+      (x64_vpmovm2d_zk (reg_to_kmask kreg)))
 
 ;; Convert a k-register mask to a vector mask (0/-1 per element) using VPMOVM2Q
 ;; Input: k-register with mask bits
 ;; Output: 512-bit vector with 64-bit elements (0 or -1)
+;; Now uses DSL-generated constructor
 (decl x64_512_kreg_to_vec_mask_64 (Reg) Xmm)
 (rule (x64_512_kreg_to_vec_mask_64 kreg)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Movm2q dst kreg))))
-        dst))
+      (x64_vpmovm2q_zk (reg_to_kmask kreg)))
 
 ;; Convert a vector mask (0/-1 per element) to a k-register mask using VPMOVB2M (AVX-512BW)
 ;; Input: 512-bit vector with 8-bit elements where each element is 0 or -1
 ;; Output: k-register with 64 mask bits corresponding to the sign bits
+;; Now uses DSL-generated constructor
 (decl x64_512_vec_mask_to_kreg_8 (Xmm) Reg)
 (rule (x64_512_vec_mask_to_kreg_8 vec_mask)
-      (let ((k1 Reg (k1_reg))
-            (_ Unit (emit (MInst.Avx512Vmovmsk8 (reg_to_writable_reg k1) vec_mask))))
-        k1))
+      (kmask_to_reg (x64_vpmovb2m_kz vec_mask)))
 
 ;; Convert a vector mask (0/-1 per element) to a k-register mask using VPMOVW2M (AVX-512BW)
 ;; Input: 512-bit vector with 16-bit elements where each element is 0 or -1
 ;; Output: k-register with 32 mask bits corresponding to the sign bits
+;; Now uses DSL-generated constructor
 (decl x64_512_vec_mask_to_kreg_16 (Xmm) Reg)
 (rule (x64_512_vec_mask_to_kreg_16 vec_mask)
-      (let ((k1 Reg (k1_reg))
-            (_ Unit (emit (MInst.Avx512Vmovmsk16 (reg_to_writable_reg k1) vec_mask))))
-        k1))
+      (kmask_to_reg (x64_vpmovw2m_kz vec_mask)))
 
 ;; Convert a k-register mask to a vector mask (0/-1 per element) using VPMOVM2B (AVX-512BW)
 ;; Input: k-register with mask bits
 ;; Output: 512-bit vector with 8-bit elements (0 or -1)
+;; Now uses DSL-generated constructor
 (decl x64_512_kreg_to_vec_mask_8 (Reg) Xmm)
 (rule (x64_512_kreg_to_vec_mask_8 kreg)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Movm2b dst kreg))))
-        dst))
+      (x64_vpmovm2b_zk (reg_to_kmask kreg)))
 
 ;; Convert a k-register mask to a vector mask (0/-1 per element) using VPMOVM2W (AVX-512BW)
 ;; Input: k-register with mask bits
 ;; Output: 512-bit vector with 16-bit elements (0 or -1)
+;; Now uses DSL-generated constructor
 (decl x64_512_kreg_to_vec_mask_16 (Reg) Xmm)
 (rule (x64_512_kreg_to_vec_mask_16 kreg)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Movm2w dst kreg))))
-        dst))
+      (x64_vpmovm2w_zk (reg_to_kmask kreg)))
 
 ;; =============================================================================
 ;; Broadcast helpers (VPBROADCASTD/Q)
@@ -5608,17 +5440,11 @@
 
 ;; VPBROADCASTD - broadcast 32-bit element to all 16 lanes
 (decl x64_512_vpbroadcastd (RegMem) Xmm)
-(rule (x64_512_vpbroadcastd src)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Broadcastd dst src))))
-        dst))
+(rule (x64_512_vpbroadcastd src) (x64_vpbroadcastd_z_unary src))
 
 ;; VPBROADCASTQ - broadcast 64-bit element to all 8 lanes
 (decl x64_512_vpbroadcastq (RegMem) Xmm)
-(rule (x64_512_vpbroadcastq src)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Broadcastq dst src))))
-        dst))
+(rule (x64_512_vpbroadcastq src) (x64_vpbroadcastq_z_unary src))
 
 ;; =============================================================================
 ;; Permute helpers (VPERMD/Q, VPERMI2D/Q)
@@ -5628,83 +5454,29 @@
 ;; idx = index vector with 32-bit element indices (values 0-15 for 512-bit)
 ;; src = source data vector
 (decl x64_512_vpermd (Xmm XmmMem) Xmm)
-(rule (x64_512_vpermd idx src)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512Alu (Avx512AluOp.Vpermd)
-                                                 (OperandSize.Size32)
-                                                 dst
-                                                 idx
-                                                 src
-                                                 (option_mask_reg_none)
-                                                 (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vpermd idx src) (x64_vpermd_z idx src))
 
 ;; VPERMQ - permute 64-bit elements: dst[i] = src[idx[i]]
 ;; idx = index vector with 64-bit element indices (values 0-7 for 512-bit)
 ;; src = source data vector
 (decl x64_512_vpermq (Xmm XmmMem) Xmm)
-(rule (x64_512_vpermq idx src)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512Alu (Avx512AluOp.Vpermq)
-                                                 (OperandSize.Size64)
-                                                 dst
-                                                 idx
-                                                 src
-                                                 (option_mask_reg_none)
-                                                 (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vpermq idx src) (x64_vpermq_z idx src))
 
 ;; VPERMI2D - two-source permute 32-bit: dst = permute(src1, src2, indices)
 ;; indices: vector of indices where bit 4 selects src1 (0) or src2 (1), bits 3:0 select element
 ;; src1: first source data (values selected by index bit 4 = 0)
 ;; src2: second source data (values selected by index bit 4 = 1)
-;; Note: indices is the destination and is modified in place
+;; Note: indices is the destination and is modified in place (tied operand)
 (decl x64_512_vpermi2d (Xmm Xmm XmmMem) Xmm)
-(rule (x64_512_vpermi2d indices src1 src2)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            ;; First copy indices to dst since vpermi2 modifies indices in place
-            (_ Unit (emit (MInst.Avx512Avx512Alu (Avx512AluOp.Vpord)
-                                                 (OperandSize.Size32)
-                                                 dst
-                                                 indices
-                                                 (xmm_to_xmm_mem indices)
-                                                 (option_mask_reg_none)
-                                                 (MergeMode.Zeroing))))
-            ;; Now perform vpermi2d: dst is modified in place
-            (_ Unit (emit (MInst.Avx512Avx512Alu (Avx512AluOp.Vpermi2d)
-                                                 (OperandSize.Size32)
-                                                 dst
-                                                 src1
-                                                 src2
-                                                 (option_mask_reg_none)
-                                                 (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vpermi2d indices src1 src2) (x64_vpermi2d_z_perm2 indices src1 src2))
 
 ;; VPERMI2Q - two-source permute 64-bit: dst = permute(src1, src2, indices)
 ;; indices: vector of indices where bit 3 selects src1 (0) or src2 (1), bits 2:0 select element
 ;; src1: first source data (values selected by index bit 3 = 0)
 ;; src2: second source data (values selected by index bit 3 = 1)
-;; Note: indices is the destination and is modified in place
+;; Note: indices is the destination and is modified in place (tied operand)
 (decl x64_512_vpermi2q (Xmm Xmm XmmMem) Xmm)
-(rule (x64_512_vpermi2q indices src1 src2)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            ;; First copy indices to dst since vpermi2 modifies indices in place
-            (_ Unit (emit (MInst.Avx512Avx512Alu (Avx512AluOp.Vporq)
-                                                 (OperandSize.Size64)
-                                                 dst
-                                                 indices
-                                                 (xmm_to_xmm_mem indices)
-                                                 (option_mask_reg_none)
-                                                 (MergeMode.Zeroing))))
-            ;; Now perform vpermi2q: dst is modified in place
-            (_ Unit (emit (MInst.Avx512Avx512Alu (Avx512AluOp.Vpermi2q)
-                                                 (OperandSize.Size64)
-                                                 dst
-                                                 src1
-                                                 src2
-                                                 (option_mask_reg_none)
-                                                 (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vpermi2q indices src1 src2) (x64_vpermi2q_z_perm2 indices src1 src2))
 
 ;; =============================================================================
 ;; Variable Shift helpers (VPSLLVD/Q, VPSRLVD/Q, VPSRAVD/Q)
@@ -5713,81 +5485,27 @@
 ;; VPSLLVD - variable left shift 32-bit elements
 ;; dst[i] = data[i] << shift[i]
 (decl x64_512_vpsllvd (Xmm XmmMem) Xmm)
-(rule (x64_512_vpsllvd data shift)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512Alu (Avx512AluOp.Vpsllvd)
-                                                 (OperandSize.Size32)
-                                                 dst
-                                                 data
-                                                 shift
-                                                 (option_mask_reg_none)
-                                                 (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vpsllvd data shift) (x64_vpsllvd_z data shift))
 
 ;; VPSLLVQ - variable left shift 64-bit elements
 (decl x64_512_vpsllvq (Xmm XmmMem) Xmm)
-(rule (x64_512_vpsllvq data shift)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512Alu (Avx512AluOp.Vpsllvq)
-                                                 (OperandSize.Size64)
-                                                 dst
-                                                 data
-                                                 shift
-                                                 (option_mask_reg_none)
-                                                 (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vpsllvq data shift) (x64_vpsllvq_z data shift))
 
 ;; VPSRLVD - variable logical right shift 32-bit elements
 (decl x64_512_vpsrlvd (Xmm XmmMem) Xmm)
-(rule (x64_512_vpsrlvd data shift)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512Alu (Avx512AluOp.Vpsrlvd)
-                                                 (OperandSize.Size32)
-                                                 dst
-                                                 data
-                                                 shift
-                                                 (option_mask_reg_none)
-                                                 (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vpsrlvd data shift) (x64_vpsrlvd_z data shift))
 
 ;; VPSRLVQ - variable logical right shift 64-bit elements
 (decl x64_512_vpsrlvq (Xmm XmmMem) Xmm)
-(rule (x64_512_vpsrlvq data shift)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512Alu (Avx512AluOp.Vpsrlvq)
-                                                 (OperandSize.Size64)
-                                                 dst
-                                                 data
-                                                 shift
-                                                 (option_mask_reg_none)
-                                                 (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vpsrlvq data shift) (x64_vpsrlvq_z data shift))
 
 ;; VPSRAVD - variable arithmetic right shift 32-bit elements
 (decl x64_512_vpsravd (Xmm XmmMem) Xmm)
-(rule (x64_512_vpsravd data shift)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512Alu (Avx512AluOp.Vpsravd)
-                                                 (OperandSize.Size32)
-                                                 dst
-                                                 data
-                                                 shift
-                                                 (option_mask_reg_none)
-                                                 (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vpsravd data shift) (x64_vpsravd_z data shift))
 
 ;; VPSRAVQ - variable arithmetic right shift 64-bit elements
 (decl x64_512_vpsravq (Xmm XmmMem) Xmm)
-(rule (x64_512_vpsravq data shift)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512Alu (Avx512AluOp.Vpsravq)
-                                                 (OperandSize.Size64)
-                                                 dst
-                                                 data
-                                                 shift
-                                                 (option_mask_reg_none)
-                                                 (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vpsravq data shift) (x64_vpsravq_z data shift))
 
 ;; =============================================================================
 ;; Variable Rotate helpers (VPROLVD/Q)
@@ -5796,150 +5514,51 @@
 ;; VPROLVD - variable rotate left 32-bit elements
 ;; dst[i] = data[i] <<< rotate[i] (rotate left by rotate[i] bits)
 (decl x64_512_vprolvd (Xmm XmmMem) Xmm)
-(rule (x64_512_vprolvd data rotate)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512Alu (Avx512AluOp.Vprolvd)
-                                                 (OperandSize.Size32)
-                                                 dst
-                                                 data
-                                                 rotate
-                                                 (option_mask_reg_none)
-                                                 (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vprolvd data rotate) (x64_vprolvd_z data rotate))
 
 ;; VPROLVQ - variable rotate left 64-bit elements
 (decl x64_512_vprolvq (Xmm XmmMem) Xmm)
-(rule (x64_512_vprolvq data rotate)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512Alu (Avx512AluOp.Vprolvq)
-                                                 (OperandSize.Size64)
-                                                 dst
-                                                 data
-                                                 rotate
-                                                 (option_mask_reg_none)
-                                                 (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vprolvq data rotate) (x64_vprolvq_z data rotate))
 
 ;; =============================================================================
 ;; Population Count helpers (VPOPCNTD/Q - AVX-512 VPOPCNTDQ)
 ;; =============================================================================
 
 ;; VPOPCNTD - population count (count 1 bits) for each 32-bit element
-;; dst[i] = popcount(src[i])
-;; Note: Takes Xmm (not XmmMem) because unary ops need a valid register for src1
-;; even though it's ignored in encoding (vvvv=0xF). We use the input as dummy.
 (decl x64_512_vpopcntd (Xmm) Xmm)
-(rule (x64_512_vpopcntd src)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512Alu (Avx512AluOp.Vpopcntd)
-                                                 (OperandSize.Size32)
-                                                 dst
-                                                 src  ;; Dummy src1 (ignored in encoding)
-                                                 (xmm_to_xmm_mem src)  ;; Actual source
-                                                 (option_mask_reg_none)
-                                                 (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vpopcntd src) (x64_vpopcntd_z_unary (xmm_to_xmm_mem src)))
 
 ;; VPOPCNTQ - population count (count 1 bits) for each 64-bit element
 (decl x64_512_vpopcntq (Xmm) Xmm)
-(rule (x64_512_vpopcntq src)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512Alu (Avx512AluOp.Vpopcntq)
-                                                 (OperandSize.Size64)
-                                                 dst
-                                                 src  ;; Dummy src1 (ignored in encoding)
-                                                 (xmm_to_xmm_mem src)  ;; Actual source
-                                                 (option_mask_reg_none)
-                                                 (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vpopcntq src) (x64_vpopcntq_z_unary (xmm_to_xmm_mem src)))
 
 ;; =============================================================================
 ;; Conflict Detection helpers (VPCONFLICTD/Q - AVX-512 CD)
 ;; =============================================================================
 
 ;; VPCONFLICTD - detect conflicts (duplicates) in 32-bit elements
-;; For each element, produces a bitmask indicating which prior elements have the same value
-;; Used for parallel histogram construction and scatter conflict detection
-;; Note: Takes Xmm (not XmmMem) because unary ops need a valid register for src1
 (decl x64_512_vpconflictd (Xmm) Xmm)
-(rule (x64_512_vpconflictd src)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512Alu (Avx512AluOp.Vpconflictd)
-                                                 (OperandSize.Size32)
-                                                 dst
-                                                 src  ;; Dummy src1 (ignored in encoding)
-                                                 (xmm_to_xmm_mem src)  ;; Actual source
-                                                 (option_mask_reg_none)
-                                                 (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vpconflictd src) (x64_vpconflictd_z_unary (xmm_to_xmm_mem src)))
 
 ;; VPCONFLICTQ - detect conflicts (duplicates) in 64-bit elements
 (decl x64_512_vpconflictq (Xmm) Xmm)
-(rule (x64_512_vpconflictq src)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512Alu (Avx512AluOp.Vpconflictq)
-                                                 (OperandSize.Size64)
-                                                 dst
-                                                 src  ;; Dummy src1 (ignored in encoding)
-                                                 (xmm_to_xmm_mem src)  ;; Actual source
-                                                 (option_mask_reg_none)
-                                                 (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vpconflictq src) (x64_vpconflictq_z_unary (xmm_to_xmm_mem src)))
 
 ;; VPLZCNTD - count leading zeros per 32-bit element (AVX-512CD)
-;; For each element, produces the count of leading zero bits (0-32)
-;; Used for find-first-set, log2 approximation, and bit manipulation
 (decl x64_512_vplzcntd (Xmm) Xmm)
-(rule (x64_512_vplzcntd src)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512Alu (Avx512AluOp.Vplzcntd)
-                                                 (OperandSize.Size32)
-                                                 dst
-                                                 src  ;; Dummy src1 (ignored in encoding)
-                                                 (xmm_to_xmm_mem src)  ;; Actual source
-                                                 (option_mask_reg_none)
-                                                 (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vplzcntd src) (x64_vplzcntd_z_unary (xmm_to_xmm_mem src)))
 
 ;; VPLZCNTQ - count leading zeros per 64-bit element (AVX-512CD)
 (decl x64_512_vplzcntq (Xmm) Xmm)
-(rule (x64_512_vplzcntq src)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512Alu (Avx512AluOp.Vplzcntq)
-                                                 (OperandSize.Size64)
-                                                 dst
-                                                 src  ;; Dummy src1 (ignored in encoding)
-                                                 (xmm_to_xmm_mem src)  ;; Actual source
-                                                 (option_mask_reg_none)
-                                                 (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vplzcntq src) (x64_vplzcntq_z_unary (xmm_to_xmm_mem src)))
 
 ;; VPABSD - absolute value per 32-bit element (AVX-512F)
-;; For each element, produces the absolute value
 (decl x64_512_vpabsd (Xmm) Xmm)
-(rule (x64_512_vpabsd src)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512Alu (Avx512AluOp.Vpabsd)
-                                                 (OperandSize.Size32)
-                                                 dst
-                                                 src  ;; Dummy src1 (ignored in encoding)
-                                                 (xmm_to_xmm_mem src)  ;; Actual source
-                                                 (option_mask_reg_none)
-                                                 (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vpabsd src) (x64_vpabsd_z_unary (xmm_to_xmm_mem src)))
 
 ;; VPABSQ - absolute value per 64-bit element (AVX-512F)
 (decl x64_512_vpabsq (Xmm) Xmm)
-(rule (x64_512_vpabsq src)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512Alu (Avx512AluOp.Vpabsq)
-                                                 (OperandSize.Size64)
-                                                 dst
-                                                 src  ;; Dummy src1 (ignored in encoding)
-                                                 (xmm_to_xmm_mem src)  ;; Actual source
-                                                 (option_mask_reg_none)
-                                                 (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vpabsq src) (x64_vpabsq_z_unary (xmm_to_xmm_mem src)))
 
 ;; =============================================================================
 ;; Floating-Point ALU helpers (VADDPS/PD, VSUBPS/PD, VMULPS/PD, VDIVPS/PD, etc.)
@@ -5947,169 +5566,59 @@
 
 ;; VADDPS - add F32X16
 (decl x64_512_vaddps (Xmm XmmMem) Xmm)
-(rule (x64_512_vaddps src1 src2)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512FpAlu (Avx512FpAluOp.Vaddps)
-                                                  dst
-                                                  src1
-                                                  src2
-                                                  (option_mask_reg_none)
-                                                  (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vaddps src1 src2) (x64_vaddps_z src1 src2))
 
 ;; VADDPD - add F64X8
 (decl x64_512_vaddpd (Xmm XmmMem) Xmm)
-(rule (x64_512_vaddpd src1 src2)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512FpAlu (Avx512FpAluOp.Vaddpd)
-                                                  dst
-                                                  src1
-                                                  src2
-                                                  (option_mask_reg_none)
-                                                  (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vaddpd src1 src2) (x64_vaddpd_z src1 src2))
 
 ;; VSUBPS - subtract F32X16
 (decl x64_512_vsubps (Xmm XmmMem) Xmm)
-(rule (x64_512_vsubps src1 src2)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512FpAlu (Avx512FpAluOp.Vsubps)
-                                                  dst
-                                                  src1
-                                                  src2
-                                                  (option_mask_reg_none)
-                                                  (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vsubps src1 src2) (x64_vsubps_z src1 src2))
 
 ;; VSUBPD - subtract F64X8
 (decl x64_512_vsubpd (Xmm XmmMem) Xmm)
-(rule (x64_512_vsubpd src1 src2)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512FpAlu (Avx512FpAluOp.Vsubpd)
-                                                  dst
-                                                  src1
-                                                  src2
-                                                  (option_mask_reg_none)
-                                                  (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vsubpd src1 src2) (x64_vsubpd_z src1 src2))
 
 ;; VMULPS - multiply F32X16
 (decl x64_512_vmulps (Xmm XmmMem) Xmm)
-(rule (x64_512_vmulps src1 src2)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512FpAlu (Avx512FpAluOp.Vmulps)
-                                                  dst
-                                                  src1
-                                                  src2
-                                                  (option_mask_reg_none)
-                                                  (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vmulps src1 src2) (x64_vmulps_z src1 src2))
 
 ;; VMULPD - multiply F64X8
 (decl x64_512_vmulpd (Xmm XmmMem) Xmm)
-(rule (x64_512_vmulpd src1 src2)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512FpAlu (Avx512FpAluOp.Vmulpd)
-                                                  dst
-                                                  src1
-                                                  src2
-                                                  (option_mask_reg_none)
-                                                  (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vmulpd src1 src2) (x64_vmulpd_z src1 src2))
 
 ;; VDIVPS - divide F32X16
 (decl x64_512_vdivps (Xmm XmmMem) Xmm)
-(rule (x64_512_vdivps src1 src2)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512FpAlu (Avx512FpAluOp.Vdivps)
-                                                  dst
-                                                  src1
-                                                  src2
-                                                  (option_mask_reg_none)
-                                                  (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vdivps src1 src2) (x64_vdivps_z src1 src2))
 
 ;; VDIVPD - divide F64X8
 (decl x64_512_vdivpd (Xmm XmmMem) Xmm)
-(rule (x64_512_vdivpd src1 src2)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512FpAlu (Avx512FpAluOp.Vdivpd)
-                                                  dst
-                                                  src1
-                                                  src2
-                                                  (option_mask_reg_none)
-                                                  (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vdivpd src1 src2) (x64_vdivpd_z src1 src2))
 
 ;; VMINPS - minimum F32X16
 (decl x64_512_vminps (Xmm XmmMem) Xmm)
-(rule (x64_512_vminps src1 src2)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512FpAlu (Avx512FpAluOp.Vminps)
-                                                  dst
-                                                  src1
-                                                  src2
-                                                  (option_mask_reg_none)
-                                                  (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vminps src1 src2) (x64_vminps_z src1 src2))
 
 ;; VMINPD - minimum F64X8
 (decl x64_512_vminpd (Xmm XmmMem) Xmm)
-(rule (x64_512_vminpd src1 src2)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512FpAlu (Avx512FpAluOp.Vminpd)
-                                                  dst
-                                                  src1
-                                                  src2
-                                                  (option_mask_reg_none)
-                                                  (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vminpd src1 src2) (x64_vminpd_z src1 src2))
 
 ;; VMAXPS - maximum F32X16
 (decl x64_512_vmaxps (Xmm XmmMem) Xmm)
-(rule (x64_512_vmaxps src1 src2)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512FpAlu (Avx512FpAluOp.Vmaxps)
-                                                  dst
-                                                  src1
-                                                  src2
-                                                  (option_mask_reg_none)
-                                                  (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vmaxps src1 src2) (x64_vmaxps_z src1 src2))
 
 ;; VMAXPD - maximum F64X8
 (decl x64_512_vmaxpd (Xmm XmmMem) Xmm)
-(rule (x64_512_vmaxpd src1 src2)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512FpAlu (Avx512FpAluOp.Vmaxpd)
-                                                  dst
-                                                  src1
-                                                  src2
-                                                  (option_mask_reg_none)
-                                                  (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vmaxpd src1 src2) (x64_vmaxpd_z src1 src2))
 
 ;; VSQRTPS - square root F32X16
 (decl x64_512_vsqrtps (XmmMem) Xmm)
-(rule (x64_512_vsqrtps src)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512FpSqrt (Avx512FpAluOp.Vsqrtps)
-                                                   dst
-                                                   src
-                                                   (option_mask_reg_none)
-                                                   (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vsqrtps src) (x64_vsqrtps_z_unary src))
 
 ;; VSQRTPD - square root F64X8
 (decl x64_512_vsqrtpd (XmmMem) Xmm)
-(rule (x64_512_vsqrtpd src)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512FpSqrt (Avx512FpAluOp.Vsqrtpd)
-                                                   dst
-                                                   src
-                                                   (option_mask_reg_none)
-                                                   (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vsqrtpd src) (x64_vsqrtpd_z_unary src))
 
 ;; =============================================================================
 ;; AVX-512 FMA (Fused Multiply-Add) helpers
@@ -6118,116 +5627,42 @@
 ;; VFMADD213PS - fma F32X16: result = src2 * src1 + src3 (src1 tied to dst)
 ;; For Cranelift's fma(x, y, z) = x * y + z:
 ;; Pass x as src1 (dst), y as src2, z as src3
-;; The register allocator will ensure dst gets the same register as src1 via reg_reuse_def
 (decl x64_512_vfmadd213ps (Xmm Xmm XmmMem) Xmm)
-(rule (x64_512_vfmadd213ps src1 src2 src3)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512Fma (Avx512FmaOp.Vfmadd213ps)
-                                                 dst
-                                                 src1
-                                                 src2
-                                                 src3
-                                                 (option_mask_reg_none)
-                                                 (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vfmadd213ps src1 src2 src3) (x64_vfmadd213ps_z_fma src1 src2 src3))
 
 ;; VFMADD213PD - fma F64X8: result = src2 * src1 + src3 (src1 tied to dst)
-;; The register allocator will ensure dst gets the same register as src1 via reg_reuse_def
 (decl x64_512_vfmadd213pd (Xmm Xmm XmmMem) Xmm)
-(rule (x64_512_vfmadd213pd src1 src2 src3)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512Fma (Avx512FmaOp.Vfmadd213pd)
-                                                 dst
-                                                 src1
-                                                 src2
-                                                 src3
-                                                 (option_mask_reg_none)
-                                                 (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vfmadd213pd src1 src2 src3) (x64_vfmadd213pd_z_fma src1 src2 src3))
 
 ;; VFMSUB213PS - fms F32X16: result = src2 * src1 - src3
 ;; Computes (x * y) - z
 (decl x64_512_vfmsub213ps (Xmm Xmm XmmMem) Xmm)
-(rule (x64_512_vfmsub213ps src1 src2 src3)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512Fma (Avx512FmaOp.Vfmsub213ps)
-                                                 dst
-                                                 src1
-                                                 src2
-                                                 src3
-                                                 (option_mask_reg_none)
-                                                 (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vfmsub213ps src1 src2 src3) (x64_vfmsub213ps_z_fma src1 src2 src3))
 
 ;; VFMSUB213PD - fms F64X8: result = src2 * src1 - src3
 ;; Computes (x * y) - z
 (decl x64_512_vfmsub213pd (Xmm Xmm XmmMem) Xmm)
-(rule (x64_512_vfmsub213pd src1 src2 src3)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512Fma (Avx512FmaOp.Vfmsub213pd)
-                                                 dst
-                                                 src1
-                                                 src2
-                                                 src3
-                                                 (option_mask_reg_none)
-                                                 (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vfmsub213pd src1 src2 src3) (x64_vfmsub213pd_z_fma src1 src2 src3))
 
 ;; VFNMADD213PS - fnma F32X16: result = -(src2 * src1) + src3
 ;; Computes z - (x * y) = -(x * y) + z
 (decl x64_512_vfnmadd213ps (Xmm Xmm XmmMem) Xmm)
-(rule (x64_512_vfnmadd213ps src1 src2 src3)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512Fma (Avx512FmaOp.Vfnmadd213ps)
-                                                 dst
-                                                 src1
-                                                 src2
-                                                 src3
-                                                 (option_mask_reg_none)
-                                                 (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vfnmadd213ps src1 src2 src3) (x64_vfnmadd213ps_z_fma src1 src2 src3))
 
 ;; VFNMADD213PD - fnma F64X8: result = -(src2 * src1) + src3
 ;; Computes z - (x * y) = -(x * y) + z
 (decl x64_512_vfnmadd213pd (Xmm Xmm XmmMem) Xmm)
-(rule (x64_512_vfnmadd213pd src1 src2 src3)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512Fma (Avx512FmaOp.Vfnmadd213pd)
-                                                 dst
-                                                 src1
-                                                 src2
-                                                 src3
-                                                 (option_mask_reg_none)
-                                                 (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vfnmadd213pd src1 src2 src3) (x64_vfnmadd213pd_z_fma src1 src2 src3))
 
 ;; VFNMSUB213PS - fnms F32X16: result = -(src2 * src1) - src3
 ;; Computes -(x * y) - z
 (decl x64_512_vfnmsub213ps (Xmm Xmm XmmMem) Xmm)
-(rule (x64_512_vfnmsub213ps src1 src2 src3)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512Fma (Avx512FmaOp.Vfnmsub213ps)
-                                                 dst
-                                                 src1
-                                                 src2
-                                                 src3
-                                                 (option_mask_reg_none)
-                                                 (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vfnmsub213ps src1 src2 src3) (x64_vfnmsub213ps_z_fma src1 src2 src3))
 
 ;; VFNMSUB213PD - fnms F64X8: result = -(src2 * src1) - src3
 ;; Computes -(x * y) - z
 (decl x64_512_vfnmsub213pd (Xmm Xmm XmmMem) Xmm)
-(rule (x64_512_vfnmsub213pd src1 src2 src3)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512Fma (Avx512FmaOp.Vfnmsub213pd)
-                                                 dst
-                                                 src1
-                                                 src2
-                                                 src3
-                                                 (option_mask_reg_none)
-                                                 (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vfnmsub213pd src1 src2 src3) (x64_vfnmsub213pd_z_fma src1 src2 src3))
 
 ;; =============================================================================
 ;; VNNI (Vector Neural Network Instructions) helpers
@@ -6236,58 +5671,30 @@
 ;; VPDPBUSD - Multiply unsigned bytes by signed bytes, add pairs to dword accumulator
 ;; dst[i] = acc[i] + dot4(src1[4i:4i+3] unsigned, src2[4i:4i+3] signed)
 ;; Each dword accumulator receives 4 byte products summed
+;; Now uses DSL-generated constructor
 (decl x64_512_vpdpbusd (Xmm Xmm XmmMem) Xmm)
 (rule (x64_512_vpdpbusd acc src1 src2)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512Vnni (Avx512VnniOp.Vpdpbusd)
-                                                  dst
-                                                  acc
-                                                  src1
-                                                  src2
-                                                  (option_mask_reg_none)
-                                                  (MergeMode.Zeroing)))))
-        dst))
+      (x64_vpdpbusd_z_fma acc src1 src2))
 
 ;; VPDPBUSDS - Same as VPDPBUSD but with signed saturation
+;; Now uses DSL-generated constructor
 (decl x64_512_vpdpbusds (Xmm Xmm XmmMem) Xmm)
 (rule (x64_512_vpdpbusds acc src1 src2)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512Vnni (Avx512VnniOp.Vpdpbusds)
-                                                  dst
-                                                  acc
-                                                  src1
-                                                  src2
-                                                  (option_mask_reg_none)
-                                                  (MergeMode.Zeroing)))))
-        dst))
+      (x64_vpdpbusds_z_fma acc src1 src2))
 
 ;; VPDPWSSD - Multiply signed words, add pairs to dword accumulator
 ;; dst[i] = acc[i] + dot2(src1[2i:2i+1], src2[2i:2i+1])
 ;; Each dword accumulator receives 2 word products summed
+;; Now uses DSL-generated constructor
 (decl x64_512_vpdpwssd (Xmm Xmm XmmMem) Xmm)
 (rule (x64_512_vpdpwssd acc src1 src2)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512Vnni (Avx512VnniOp.Vpdpwssd)
-                                                  dst
-                                                  acc
-                                                  src1
-                                                  src2
-                                                  (option_mask_reg_none)
-                                                  (MergeMode.Zeroing)))))
-        dst))
+      (x64_vpdpwssd_z_fma acc src1 src2))
 
 ;; VPDPWSSDS - Same as VPDPWSSD but with signed saturation
+;; Now uses DSL-generated constructor
 (decl x64_512_vpdpwssds (Xmm Xmm XmmMem) Xmm)
 (rule (x64_512_vpdpwssds acc src1 src2)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512Vnni (Avx512VnniOp.Vpdpwssds)
-                                                  dst
-                                                  acc
-                                                  src1
-                                                  src2
-                                                  (option_mask_reg_none)
-                                                  (MergeMode.Zeroing)))))
-        dst))
+      (x64_vpdpwssds_z_fma acc src1 src2))
 
 ;; =============================================================================
 ;; VP2INTERSECT helpers (Hash join acceleration)
@@ -6325,91 +5732,35 @@
 
 ;; VCVTDQ2PS - convert packed i32 to packed f32 (I32X16 -> F32X16)
 (decl x64_512_vcvtdq2ps (XmmMem) Xmm)
-(rule (x64_512_vcvtdq2ps src)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512Cvt (Avx512CvtOp.Vcvtdq2ps)
-                                                 dst
-                                                 src
-                                                 (option_mask_reg_none)
-                                                 (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vcvtdq2ps src) (x64_vcvtdq2ps_zu src))
 
 ;; VCVTPS2DQ - convert packed f32 to packed i32 with rounding (F32X16 -> I32X16)
 (decl x64_512_vcvtps2dq (XmmMem) Xmm)
-(rule (x64_512_vcvtps2dq src)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512Cvt (Avx512CvtOp.Vcvtps2dq)
-                                                 dst
-                                                 src
-                                                 (option_mask_reg_none)
-                                                 (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vcvtps2dq src) (x64_vcvtps2dq_zu src))
 
 ;; VCVTTPS2DQ - convert packed f32 to packed i32 with truncation (F32X16 -> I32X16)
 (decl x64_512_vcvttps2dq (XmmMem) Xmm)
-(rule (x64_512_vcvttps2dq src)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512Cvt (Avx512CvtOp.Vcvttps2dq)
-                                                 dst
-                                                 src
-                                                 (option_mask_reg_none)
-                                                 (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vcvttps2dq src) (x64_vcvttps2dq_zu src))
 
 ;; VCVTQQ2PD - convert packed i64 to packed f64 (I64X8 -> F64X8)
 (decl x64_512_vcvtqq2pd (XmmMem) Xmm)
-(rule (x64_512_vcvtqq2pd src)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512Cvt (Avx512CvtOp.Vcvtqq2pd)
-                                                 dst
-                                                 src
-                                                 (option_mask_reg_none)
-                                                 (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vcvtqq2pd src) (x64_vcvtqq2pd_zu src))
 
 ;; VCVTPD2QQ - convert packed f64 to packed i64 with rounding (F64X8 -> I64X8)
 (decl x64_512_vcvtpd2qq (XmmMem) Xmm)
-(rule (x64_512_vcvtpd2qq src)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512Cvt (Avx512CvtOp.Vcvtpd2qq)
-                                                 dst
-                                                 src
-                                                 (option_mask_reg_none)
-                                                 (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vcvtpd2qq src) (x64_vcvtpd2qq_zu src))
 
 ;; VCVTTPD2QQ - convert packed f64 to packed i64 with truncation (F64X8 -> I64X8)
 (decl x64_512_vcvttpd2qq (XmmMem) Xmm)
-(rule (x64_512_vcvttpd2qq src)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512Cvt (Avx512CvtOp.Vcvttpd2qq)
-                                                 dst
-                                                 src
-                                                 (option_mask_reg_none)
-                                                 (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vcvttpd2qq src) (x64_vcvttpd2qq_zu src))
 
 ;; VCVTPS2PD - convert packed f32 to packed f64 (F32X8 -> F64X8)
 (decl x64_512_vcvtps2pd (XmmMem) Xmm)
-(rule (x64_512_vcvtps2pd src)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512Cvt (Avx512CvtOp.Vcvtps2pd)
-                                                 dst
-                                                 src
-                                                 (option_mask_reg_none)
-                                                 (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vcvtps2pd src) (x64_vcvtps2pd_zy src))
 
 ;; VCVTPD2PS - convert packed f64 to packed f32 (F64X8 -> F32X8)
-(decl x64_512_vcvtpd2ps (XmmMem) Xmm)
-(rule (x64_512_vcvtpd2ps src)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512Cvt (Avx512CvtOp.Vcvtpd2ps)
-                                                 dst
-                                                 src
-                                                 (option_mask_reg_none)
-                                                 (MergeMode.Zeroing)))))
-        dst))
+(decl x64_512_vcvtpd2ps (Xmm) Xmm)
+(rule (x64_512_vcvtpd2ps src) (x64_vcvtpd2ps_yz src))
 
 ;; =============================================================================
 ;; Vector Alignment helpers (VALIGND, VALIGNQ)
@@ -6419,33 +5770,13 @@
 ;; dst = (src1 || src2) >> (imm8 * 32)
 ;; Extracts 16 consecutive 32-bit elements from the concatenation of src1:src2
 (decl x64_512_valignd (Xmm XmmMem u8) Xmm)
-(rule (x64_512_valignd src1 src2 imm8)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (src2_rm RegMem (x64_512_xmm_mem_to_reg_mem src2))
-            (_ Unit (emit (MInst.Avx512Avx512Align (Avx512AlignOp.Valignd)
-                                                   dst
-                                                   src1
-                                                   src2_rm
-                                                   imm8
-                                                   (option_mask_reg_none)
-                                                   (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_valignd src1 src2 imm8) (x64_valignd_z_align src1 src2 imm8))
 
 ;; VALIGNQ - Align 64-bit elements from concatenation of two vectors
 ;; dst = (src1 || src2) >> (imm8 * 64)
 ;; Extracts 8 consecutive 64-bit elements from the concatenation of src1:src2
 (decl x64_512_valignq (Xmm XmmMem u8) Xmm)
-(rule (x64_512_valignq src1 src2 imm8)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (src2_rm RegMem (x64_512_xmm_mem_to_reg_mem src2))
-            (_ Unit (emit (MInst.Avx512Avx512Align (Avx512AlignOp.Valignq)
-                                                   dst
-                                                   src1
-                                                   src2_rm
-                                                   imm8
-                                                   (option_mask_reg_none)
-                                                   (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_valignq src1 src2 imm8) (x64_valignq_z_align src1 src2 imm8))
 
 ;; =============================================================================
 ;; Ternary Logic helpers (VPTERNLOGD/Q)
@@ -6474,49 +5805,13 @@
 ;; Note: dst is tied to src1 (the instruction modifies src1 in place)
 (decl x64_512_vpternlogd (Xmm Xmm XmmMem u8) Xmm)
 (rule (x64_512_vpternlogd src1 src2 src3 imm8)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            ;; First move src1 to dst since vpternlog modifies the first operand
-            (_ Unit (emit (MInst.Avx512Avx512Alu (Avx512AluOp.Vpord)
-                                                 (OperandSize.Size32)
-                                                 dst
-                                                 src1
-                                                 (xmm_to_xmm_mem src1)
-                                                 (option_mask_reg_none)
-                                                 (MergeMode.Zeroing))))
-            (src3_rm RegMem (x64_512_xmm_mem_to_reg_mem src3))
-            (_ Unit (emit (MInst.Avx512Avx512Ternlog (OperandSize.Size32)
-                                                     dst
-                                                     (writable_xmm_to_xmm dst)
-                                                     src2
-                                                     src3_rm
-                                                     imm8
-                                                     (option_mask_reg_none)
-                                                     (MergeMode.Zeroing)))))
-        dst))
+      (x64_vpternlogd_z_ternlog src1 src2 src3 imm8))
 
 ;; VPTERNLOGQ - ternary logic on 64-bit elements
 ;; dst = ternlog(src1, src2, src3, imm8)
 (decl x64_512_vpternlogq (Xmm Xmm XmmMem u8) Xmm)
 (rule (x64_512_vpternlogq src1 src2 src3 imm8)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            ;; First move src1 to dst since vpternlog modifies the first operand
-            (_ Unit (emit (MInst.Avx512Avx512Alu (Avx512AluOp.Vporq)
-                                                 (OperandSize.Size64)
-                                                 dst
-                                                 src1
-                                                 (xmm_to_xmm_mem src1)
-                                                 (option_mask_reg_none)
-                                                 (MergeMode.Zeroing))))
-            (src3_rm RegMem (x64_512_xmm_mem_to_reg_mem src3))
-            (_ Unit (emit (MInst.Avx512Avx512Ternlog (OperandSize.Size64)
-                                                     dst
-                                                     (writable_xmm_to_xmm dst)
-                                                     src2
-                                                     src3_rm
-                                                     imm8
-                                                     (option_mask_reg_none)
-                                                     (MergeMode.Zeroing)))))
-        dst))
+      (x64_vpternlogq_z_ternlog src1 src2 src3 imm8))
 
 ;; =============================================================================
 ;; Register-form Compress/Expand helpers
@@ -6524,114 +5819,69 @@
 
 ;; VPCOMPRESSD register form - compress 32-bit elements based on mask
 ;; Input mask is a vector of 0/-1, needs conversion to k-register
-;; Note: We emit vpmovd2m first, then use k1_reg() directly in compress instruction
-;; to ensure the physical k1 register is used (avoiding ISLE virtualizing the return value)
+;; Uses DSL-generated constructor with vpmovd2m for mask conversion
 (decl x64_512_vpcompressd_reg (Reg Xmm) Xmm)
 (rule (x64_512_vpcompressd_reg vec_mask src)
-      (let ((k1 Reg (k1_reg))
-            (_ Unit (emit (MInst.Avx512Vmovmsk32 (reg_to_writable_reg k1) (xmm_new vec_mask))))
-            (dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512CompressReg (OperandSize.Size32)
-                                                   dst
-                                                   src
-                                                   (k1_reg)))))
-        dst))
+      (let ((kmask Kmask (x64_vpmovd2m_kz (xmm_new vec_mask))))
+        (x64_vpcompressd_z_km_c kmask src)))
 
 ;; VPCOMPRESSQ register form - compress 64-bit elements based on mask
 ;; Input mask is a vector of 0/-1, needs conversion to k-register
 (decl x64_512_vpcompressq_reg (Reg Xmm) Xmm)
 (rule (x64_512_vpcompressq_reg vec_mask src)
-      (let ((k1 Reg (k1_reg))
-            (_ Unit (emit (MInst.Avx512Vmovmsk64 (reg_to_writable_reg k1) (xmm_new vec_mask))))
-            (dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512CompressReg (OperandSize.Size64)
-                                                   dst
-                                                   src
-                                                   (k1_reg)))))
-        dst))
+      (let ((kmask Kmask (x64_vpmovq2m_kz (xmm_new vec_mask))))
+        (x64_vpcompressq_z_km_c kmask src)))
 
 ;; VPEXPANDD register form - expand 32-bit elements based on mask
 ;; Input mask is a vector of 0/-1, needs conversion to k-register
 (decl x64_512_vpexpandd_reg (Reg Xmm) Xmm)
 (rule (x64_512_vpexpandd_reg vec_mask src)
-      (let ((k1 Reg (k1_reg))
-            (_ Unit (emit (MInst.Avx512Vmovmsk32 (reg_to_writable_reg k1) (xmm_new vec_mask))))
-            (dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512ExpandReg (OperandSize.Size32)
-                                                 dst
-                                                 src
-                                                 (k1_reg)
-                                                 (MergeMode.Zeroing)))))
-        dst))
+      (let ((kmask Kmask (x64_vpmovd2m_kz (xmm_new vec_mask))))
+        (x64_vpexpandd_z_km_e kmask src)))
 
 ;; VPEXPANDQ register form - expand 64-bit elements based on mask
 ;; Input mask is a vector of 0/-1, needs conversion to k-register
 (decl x64_512_vpexpandq_reg (Reg Xmm) Xmm)
 (rule (x64_512_vpexpandq_reg vec_mask src)
-      (let ((k1 Reg (k1_reg))
-            (_ Unit (emit (MInst.Avx512Vmovmsk64 (reg_to_writable_reg k1) (xmm_new vec_mask))))
-            (dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512ExpandReg (OperandSize.Size64)
-                                                 dst
-                                                 src
-                                                 (k1_reg)
-                                                 (MergeMode.Zeroing)))))
-        dst))
+      (let ((kmask Kmask (x64_vpmovq2m_kz (xmm_new vec_mask))))
+        (x64_vpexpandq_z_km_e kmask src)))
 
 ;; =============================================================================
 ;; Masked Load/Store helpers
 ;; =============================================================================
 
 ;; VMOVDQU32 with mask - masked load for 32-bit elements
+;; Strategy: Load with zeroing mask, then blend with passthru
 (decl x64_512_masked_load_i32x16 (SyntheticAmode Reg Xmm) Xmm)
 (rule (x64_512_masked_load_i32x16 addr mask passthru)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512MaskedLoad (OperandSize.Size32)
-                                                  dst
-                                                  addr
-                                                  mask
-                                                  (MergeMode.Merging)))))
-        ;; Copy passthru to dst first, then the masked load merges
-        (x64_512_vpblendmd mask passthru (xmm_to_xmm_mem (x64_512_masked_load_raw_i32x16 addr mask)))))
+      (x64_512_vpblendmd mask passthru (xmm_to_xmm_mem (x64_512_masked_load_raw_i32x16 addr mask))))
 
-;; Raw masked load (no merge with passthru)
+;; Raw masked load (no merge with passthru) - uses DSL constructor
 (decl x64_512_masked_load_raw_i32x16 (SyntheticAmode Reg) Xmm)
 (rule (x64_512_masked_load_raw_i32x16 addr mask)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512MaskedLoad (OperandSize.Size32)
-                                                  dst
-                                                  addr
-                                                  mask
-                                                  (MergeMode.Zeroing)))))
-        dst))
+      (x64_vmovdqu32_zl_km (reg_to_kmask mask) (synthetic_amode_to_xmm_mem addr)))
 
 ;; VMOVDQU64 with mask - masked load for 64-bit elements
 (decl x64_512_masked_load_i64x8 (SyntheticAmode Reg Xmm) Xmm)
 (rule (x64_512_masked_load_i64x8 addr mask passthru)
       (x64_512_vpblendmq mask passthru (xmm_to_xmm_mem (x64_512_masked_load_raw_i64x8 addr mask))))
 
-;; Raw masked load (no merge with passthru)
+;; Raw masked load (no merge with passthru) - uses DSL constructor
 (decl x64_512_masked_load_raw_i64x8 (SyntheticAmode Reg) Xmm)
 (rule (x64_512_masked_load_raw_i64x8 addr mask)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512MaskedLoad (OperandSize.Size64)
-                                                  dst
-                                                  addr
-                                                  mask
-                                                  (MergeMode.Zeroing)))))
-        dst))
+      (x64_vmovdqu64_zl_km (reg_to_kmask mask) (synthetic_amode_to_xmm_mem addr)))
 
 ;; VMOVDQU32 with mask - masked store for 32-bit elements
+;; Uses DSL-generated constructor
 (decl x64_512_masked_store_i32x16 (SyntheticAmode Reg Xmm) SideEffectNoResult)
 (rule (x64_512_masked_store_i32x16 addr mask src)
-      (SideEffectNoResult.Inst
-        (MInst.Avx512MaskedStore (OperandSize.Size32) src addr mask)))
+      (x64_vmovdqu32_zs_km_mem (reg_to_kmask mask) addr src))
 
 ;; VMOVDQU64 with mask - masked store for 64-bit elements
+;; Uses DSL-generated constructor
 (decl x64_512_masked_store_i64x8 (SyntheticAmode Reg Xmm) SideEffectNoResult)
 (rule (x64_512_masked_store_i64x8 addr mask src)
-      (SideEffectNoResult.Inst
-        (MInst.Avx512MaskedStore (OperandSize.Size64) src addr mask)))
+      (x64_vmovdqu64_zs_km_mem (reg_to_kmask mask) addr src))
 
 ;; =============================================================================
 ;; Immediate Rotate helpers (VPROLD/VPROLQ/VPRORD/VPRORQ)
@@ -6639,59 +5889,19 @@
 
 ;; VPROLD - rotate left 32-bit elements by immediate
 (decl x64_512_vprold (XmmMem u8) Xmm)
-(rule (x64_512_vprold src imm8)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (src_rm RegMem (x64_512_xmm_mem_to_reg_mem src))
-            (_ Unit (emit (MInst.Avx512Avx512ImmRotate (OperandSize.Size32)
-                                                       dst
-                                                       src_rm
-                                                       imm8
-                                                       true  ;; is_left = true
-                                                       (option_mask_reg_none)
-                                                       (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vprold src imm8) (x64_vprold_z_immrotate src imm8))
 
 ;; VPROLQ - rotate left 64-bit elements by immediate
 (decl x64_512_vprolq (XmmMem u8) Xmm)
-(rule (x64_512_vprolq src imm8)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (src_rm RegMem (x64_512_xmm_mem_to_reg_mem src))
-            (_ Unit (emit (MInst.Avx512Avx512ImmRotate (OperandSize.Size64)
-                                                       dst
-                                                       src_rm
-                                                       imm8
-                                                       true  ;; is_left = true
-                                                       (option_mask_reg_none)
-                                                       (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vprolq src imm8) (x64_vprolq_z_immrotate src imm8))
 
 ;; VPRORD - rotate right 32-bit elements by immediate
 (decl x64_512_vprord (XmmMem u8) Xmm)
-(rule (x64_512_vprord src imm8)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (src_rm RegMem (x64_512_xmm_mem_to_reg_mem src))
-            (_ Unit (emit (MInst.Avx512Avx512ImmRotate (OperandSize.Size32)
-                                                       dst
-                                                       src_rm
-                                                       imm8
-                                                       false  ;; is_left = false
-                                                       (option_mask_reg_none)
-                                                       (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vprord src imm8) (x64_vprord_z_immrotate src imm8))
 
 ;; VPRORQ - rotate right 64-bit elements by immediate
 (decl x64_512_vprorq (XmmMem u8) Xmm)
-(rule (x64_512_vprorq src imm8)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (src_rm RegMem (x64_512_xmm_mem_to_reg_mem src))
-            (_ Unit (emit (MInst.Avx512Avx512ImmRotate (OperandSize.Size64)
-                                                       dst
-                                                       src_rm
-                                                       imm8
-                                                       false  ;; is_left = false
-                                                       (option_mask_reg_none)
-                                                       (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vprorq src imm8) (x64_vprorq_z_immrotate src imm8))
 
 ;; =============================================================================
 ;; Immediate Shuffle helpers (VPSHUFD, VPSHUFHW, VPSHUFLW)
@@ -6701,46 +5911,19 @@
 ;; Each 2-bit field in imm8 selects one of 4 dwords within each 128-bit lane
 ;; Result: For each 128-bit lane, dst[i] = src[imm8[i*2+1:i*2]] for i=0..3
 (decl x64_512_vpshufd (XmmMem u8) Xmm)
-(rule (x64_512_vpshufd src imm8)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (src_rm RegMem (x64_512_xmm_mem_to_reg_mem src))
-            (_ Unit (emit (MInst.Avx512Avx512ImmShuffle (Avx512ImmShuffleOp.Vpshufd)
-                                                        dst
-                                                        src_rm
-                                                        imm8
-                                                        (option_mask_reg_none)
-                                                        (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vpshufd src imm8) (x64_vpshufd_z_i src imm8))
 
 ;; VPSHUFHW - Shuffle packed high words according to immediate
 ;; Shuffles the high 4 words (bits 64-127) of each 128-bit lane
 ;; Low 4 words are copied unchanged
 (decl x64_512_vpshufhw (XmmMem u8) Xmm)
-(rule (x64_512_vpshufhw src imm8)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (src_rm RegMem (x64_512_xmm_mem_to_reg_mem src))
-            (_ Unit (emit (MInst.Avx512Avx512ImmShuffle (Avx512ImmShuffleOp.Vpshufhw)
-                                                        dst
-                                                        src_rm
-                                                        imm8
-                                                        (option_mask_reg_none)
-                                                        (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vpshufhw src imm8) (x64_vpshufhw_z_i src imm8))
 
 ;; VPSHUFLW - Shuffle packed low words according to immediate
 ;; Shuffles the low 4 words (bits 0-63) of each 128-bit lane
 ;; High 4 words are copied unchanged
 (decl x64_512_vpshuflw (XmmMem u8) Xmm)
-(rule (x64_512_vpshuflw src imm8)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (src_rm RegMem (x64_512_xmm_mem_to_reg_mem src))
-            (_ Unit (emit (MInst.Avx512Avx512ImmShuffle (Avx512ImmShuffleOp.Vpshuflw)
-                                                        dst
-                                                        src_rm
-                                                        imm8
-                                                        (option_mask_reg_none)
-                                                        (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vpshuflw src imm8) (x64_vpshuflw_z_i src imm8))
 
 ;; =============================================================================
 ;; Lane Shuffle helpers (VSHUFF32X4, VSHUFF64X2, VSHUFI32X4, VSHUFI64X2)
@@ -6749,62 +5932,22 @@
 ;; VSHUFF32X4 - Shuffle 128-bit lanes of packed single-precision FP
 ;; imm8 selects which 128-bit lanes from src1/src2 go to each output lane
 (decl x64_512_vshuff32x4 (Xmm XmmMem u8) Xmm)
-(rule (x64_512_vshuff32x4 src1 src2 imm8)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (src2_rm RegMem (x64_512_xmm_mem_to_reg_mem src2))
-            (_ Unit (emit (MInst.Avx512Avx512LaneShuffle (Avx512LaneShuffleOp.Vshuff32x4)
-                                                         dst
-                                                         src1
-                                                         src2_rm
-                                                         imm8
-                                                         (option_mask_reg_none)
-                                                         (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vshuff32x4 src1 src2 imm8) (x64_vshuff32x4_z_laneshuffle src1 src2 imm8))
 
 ;; VSHUFF64X2 - Shuffle 128-bit lanes of packed double-precision FP
 ;; imm8 selects which 128-bit lanes from src1/src2 go to each output lane
 (decl x64_512_vshuff64x2 (Xmm XmmMem u8) Xmm)
-(rule (x64_512_vshuff64x2 src1 src2 imm8)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (src2_rm RegMem (x64_512_xmm_mem_to_reg_mem src2))
-            (_ Unit (emit (MInst.Avx512Avx512LaneShuffle (Avx512LaneShuffleOp.Vshuff64x2)
-                                                         dst
-                                                         src1
-                                                         src2_rm
-                                                         imm8
-                                                         (option_mask_reg_none)
-                                                         (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vshuff64x2 src1 src2 imm8) (x64_vshuff64x2_z_laneshuffle src1 src2 imm8))
 
 ;; VSHUFI32X4 - Shuffle 128-bit lanes of packed 32-bit integers
 ;; imm8 selects which 128-bit lanes from src1/src2 go to each output lane
 (decl x64_512_vshufi32x4 (Xmm XmmMem u8) Xmm)
-(rule (x64_512_vshufi32x4 src1 src2 imm8)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (src2_rm RegMem (x64_512_xmm_mem_to_reg_mem src2))
-            (_ Unit (emit (MInst.Avx512Avx512LaneShuffle (Avx512LaneShuffleOp.Vshufi32x4)
-                                                         dst
-                                                         src1
-                                                         src2_rm
-                                                         imm8
-                                                         (option_mask_reg_none)
-                                                         (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vshufi32x4 src1 src2 imm8) (x64_vshufi32x4_z_laneshuffle src1 src2 imm8))
 
 ;; VSHUFI64X2 - Shuffle 128-bit lanes of packed 64-bit integers
 ;; imm8 selects which 128-bit lanes from src1/src2 go to each output lane
 (decl x64_512_vshufi64x2 (Xmm XmmMem u8) Xmm)
-(rule (x64_512_vshufi64x2 src1 src2 imm8)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (src2_rm RegMem (x64_512_xmm_mem_to_reg_mem src2))
-            (_ Unit (emit (MInst.Avx512Avx512LaneShuffle (Avx512LaneShuffleOp.Vshufi64x2)
-                                                         dst
-                                                         src1
-                                                         src2_rm
-                                                         imm8
-                                                         (option_mask_reg_none)
-                                                         (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vshufi64x2 src1 src2 imm8) (x64_vshufi64x2_z_laneshuffle src1 src2 imm8))
 
 ;; =============================================================================
 ;; FP Compare helpers (VCMPPS/VCMPPD)
@@ -6812,31 +5955,17 @@
 
 ;; VCMPPS - compare packed single-precision floats to k-mask
 ;; Returns the k-register containing the comparison result mask
+;; Uses DSL-generated constructor
 (decl x64_512_vcmpps (Xmm XmmMem u8) Reg)
 (rule (x64_512_vcmpps src1 src2 imm8)
-      (let ((k1 Reg (k1_reg))
-            (src2_rm RegMem (x64_512_xmm_mem_to_reg_mem src2))
-            (_ Unit (emit (MInst.Avx512Avx512FpCmp (OperandSize.Size32)
-                                                   (reg_to_writable_reg k1)
-                                                   src1
-                                                   src2_rm
-                                                   imm8
-                                                   (option_mask_reg_none)))))
-        k1))
+      (kmask_to_reg (x64_vcmpps_zc src1 src2 imm8)))
 
 ;; VCMPPD - compare packed double-precision floats to k-mask
 ;; Returns the k-register containing the comparison result mask
+;; Uses DSL-generated constructor
 (decl x64_512_vcmppd (Xmm XmmMem u8) Reg)
 (rule (x64_512_vcmppd src1 src2 imm8)
-      (let ((k1 Reg (k1_reg))
-            (src2_rm RegMem (x64_512_xmm_mem_to_reg_mem src2))
-            (_ Unit (emit (MInst.Avx512Avx512FpCmp (OperandSize.Size64)
-                                                   (reg_to_writable_reg k1)
-                                                   src1
-                                                   src2_rm
-                                                   imm8
-                                                   (option_mask_reg_none)))))
-        k1))
+      (kmask_to_reg (x64_vcmppd_zc src1 src2 imm8)))
 
 ;; =============================================================================
 ;; Pack/Unpack helpers (type narrowing/widening operations)
@@ -6845,159 +5974,51 @@
 ;; VPACKSSDW - Pack 32-bit signed to 16-bit signed with saturation
 ;; Pack and saturate src1 and src2 doublewords to words in dst
 (decl x64_512_vpackssdw (Xmm XmmMem) Xmm)
-(rule (x64_512_vpackssdw src1 src2)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512Alu (Avx512AluOp.Vpackssdw)
-                                                 (OperandSize.Size32)
-                                                 dst
-                                                 src1
-                                                 src2
-                                                 (option_mask_reg_none)
-                                                 (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vpackssdw src1 src2) (x64_vpackssdw_z src1 src2))
 
 ;; VPACKUSDW - Pack 32-bit unsigned to 16-bit unsigned with saturation
 (decl x64_512_vpackusdw (Xmm XmmMem) Xmm)
-(rule (x64_512_vpackusdw src1 src2)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512Alu (Avx512AluOp.Vpackusdw)
-                                                 (OperandSize.Size32)
-                                                 dst
-                                                 src1
-                                                 src2
-                                                 (option_mask_reg_none)
-                                                 (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vpackusdw src1 src2) (x64_vpackusdw_z src1 src2))
 
 ;; VPACKSSWB - Pack 16-bit signed to 8-bit signed with saturation
 (decl x64_512_vpacksswb (Xmm XmmMem) Xmm)
-(rule (x64_512_vpacksswb src1 src2)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512Alu (Avx512AluOp.Vpacksswb)
-                                                 (OperandSize.Size32)
-                                                 dst
-                                                 src1
-                                                 src2
-                                                 (option_mask_reg_none)
-                                                 (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vpacksswb src1 src2) (x64_vpacksswb_z src1 src2))
 
 ;; VPACKUSWB - Pack 16-bit unsigned to 8-bit unsigned with saturation
 (decl x64_512_vpackuswb (Xmm XmmMem) Xmm)
-(rule (x64_512_vpackuswb src1 src2)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512Alu (Avx512AluOp.Vpackuswb)
-                                                 (OperandSize.Size32)
-                                                 dst
-                                                 src1
-                                                 src2
-                                                 (option_mask_reg_none)
-                                                 (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vpackuswb src1 src2) (x64_vpackuswb_z src1 src2))
 
 ;; VPUNPCKLBW - Unpack low bytes (interleave low bytes from src1 and src2)
 (decl x64_512_vpunpcklbw (Xmm XmmMem) Xmm)
-(rule (x64_512_vpunpcklbw src1 src2)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512Alu (Avx512AluOp.Vpunpcklbw)
-                                                 (OperandSize.Size32)
-                                                 dst
-                                                 src1
-                                                 src2
-                                                 (option_mask_reg_none)
-                                                 (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vpunpcklbw src1 src2) (x64_vpunpcklbw_z src1 src2))
 
 ;; VPUNPCKHBW - Unpack high bytes
 (decl x64_512_vpunpckhbw (Xmm XmmMem) Xmm)
-(rule (x64_512_vpunpckhbw src1 src2)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512Alu (Avx512AluOp.Vpunpckhbw)
-                                                 (OperandSize.Size32)
-                                                 dst
-                                                 src1
-                                                 src2
-                                                 (option_mask_reg_none)
-                                                 (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vpunpckhbw src1 src2) (x64_vpunpckhbw_z src1 src2))
 
 ;; VPUNPCKLWD - Unpack low words
 (decl x64_512_vpunpcklwd (Xmm XmmMem) Xmm)
-(rule (x64_512_vpunpcklwd src1 src2)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512Alu (Avx512AluOp.Vpunpcklwd)
-                                                 (OperandSize.Size32)
-                                                 dst
-                                                 src1
-                                                 src2
-                                                 (option_mask_reg_none)
-                                                 (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vpunpcklwd src1 src2) (x64_vpunpcklwd_z src1 src2))
 
 ;; VPUNPCKHWD - Unpack high words
 (decl x64_512_vpunpckhwd (Xmm XmmMem) Xmm)
-(rule (x64_512_vpunpckhwd src1 src2)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512Alu (Avx512AluOp.Vpunpckhwd)
-                                                 (OperandSize.Size32)
-                                                 dst
-                                                 src1
-                                                 src2
-                                                 (option_mask_reg_none)
-                                                 (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vpunpckhwd src1 src2) (x64_vpunpckhwd_z src1 src2))
 
 ;; VPUNPCKLDQ - Unpack low doublewords
 (decl x64_512_vpunpckldq (Xmm XmmMem) Xmm)
-(rule (x64_512_vpunpckldq src1 src2)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512Alu (Avx512AluOp.Vpunpckldq)
-                                                 (OperandSize.Size32)
-                                                 dst
-                                                 src1
-                                                 src2
-                                                 (option_mask_reg_none)
-                                                 (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vpunpckldq src1 src2) (x64_vpunpckldq_z src1 src2))
 
 ;; VPUNPCKHDQ - Unpack high doublewords
 (decl x64_512_vpunpckhdq (Xmm XmmMem) Xmm)
-(rule (x64_512_vpunpckhdq src1 src2)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512Alu (Avx512AluOp.Vpunpckhdq)
-                                                 (OperandSize.Size32)
-                                                 dst
-                                                 src1
-                                                 src2
-                                                 (option_mask_reg_none)
-                                                 (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vpunpckhdq src1 src2) (x64_vpunpckhdq_z src1 src2))
 
 ;; VPUNPCKLQDQ - Unpack low quadwords
 (decl x64_512_vpunpcklqdq (Xmm XmmMem) Xmm)
-(rule (x64_512_vpunpcklqdq src1 src2)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512Alu (Avx512AluOp.Vpunpcklqdq)
-                                                 (OperandSize.Size64)
-                                                 dst
-                                                 src1
-                                                 src2
-                                                 (option_mask_reg_none)
-                                                 (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vpunpcklqdq src1 src2) (x64_vpunpcklqdq_z src1 src2))
 
 ;; VPUNPCKHQDQ - Unpack high quadwords
 (decl x64_512_vpunpckhqdq (Xmm XmmMem) Xmm)
-(rule (x64_512_vpunpckhqdq src1 src2)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512Alu (Avx512AluOp.Vpunpckhqdq)
-                                                 (OperandSize.Size64)
-                                                 dst
-                                                 src1
-                                                 src2
-                                                 (option_mask_reg_none)
-                                                 (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vpunpckhqdq src1 src2) (x64_vpunpckhqdq_z src1 src2))
 
 ;; =============================================================================
 ;; Integer-Double Conversion helpers (VCVTDQ2PD, VCVTPD2DQ, VCVTTPD2DQ)
@@ -7005,36 +6026,15 @@
 
 ;; VCVTDQ2PD - Convert packed i32 to packed f64 (I32X8 -> F64X8)
 (decl x64_512_vcvtdq2pd (XmmMem) Xmm)
-(rule (x64_512_vcvtdq2pd src)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512Cvt (Avx512CvtOp.Vcvtdq2pd)
-                                                 dst
-                                                 src
-                                                 (option_mask_reg_none)
-                                                 (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vcvtdq2pd src) (x64_vcvtdq2pd_zy src))
 
 ;; VCVTPD2DQ - Convert packed f64 to packed i32 with rounding (F64X8 -> I32X8)
-(decl x64_512_vcvtpd2dq (XmmMem) Xmm)
-(rule (x64_512_vcvtpd2dq src)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512Cvt (Avx512CvtOp.Vcvtpd2dq)
-                                                 dst
-                                                 src
-                                                 (option_mask_reg_none)
-                                                 (MergeMode.Zeroing)))))
-        dst))
+(decl x64_512_vcvtpd2dq (Xmm) Xmm)
+(rule (x64_512_vcvtpd2dq src) (x64_vcvtpd2dq_yz src))
 
 ;; VCVTTPD2DQ - Convert packed f64 to packed i32 with truncation (F64X8 -> I32X8)
-(decl x64_512_vcvttpd2dq (XmmMem) Xmm)
-(rule (x64_512_vcvttpd2dq src)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512Cvt (Avx512CvtOp.Vcvttpd2dq)
-                                                 dst
-                                                 src
-                                                 (option_mask_reg_none)
-                                                 (MergeMode.Zeroing)))))
-        dst))
+(decl x64_512_vcvttpd2dq (Xmm) Xmm)
+(rule (x64_512_vcvttpd2dq src) (x64_vcvttpd2dq_yz src))
 
 ;; =============================================================================
 ;; Zero/Sign-Extend helpers (VPMOVZX/VPMOVSX)
@@ -7042,227 +6042,87 @@
 
 ;; VPMOVZXBD - Zero-extend packed bytes to dwords (I8 -> I32)
 (decl x64_512_vpmovzxbd (XmmMem) Xmm)
-(rule (x64_512_vpmovzxbd src)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512Cvt (Avx512CvtOp.Vpmovzxbd)
-                                                 dst
-                                                 src
-                                                 (option_mask_reg_none)
-                                                 (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vpmovzxbd src) (x64_vpmovzxbd_zu src))
 
 ;; VPMOVZXBQ - Zero-extend packed bytes to qwords (I8 -> I64)
 (decl x64_512_vpmovzxbq (XmmMem) Xmm)
-(rule (x64_512_vpmovzxbq src)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512Cvt (Avx512CvtOp.Vpmovzxbq)
-                                                 dst
-                                                 src
-                                                 (option_mask_reg_none)
-                                                 (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vpmovzxbq src) (x64_vpmovzxbq_zu src))
 
 ;; VPMOVZXWD - Zero-extend packed words to dwords (I16 -> I32)
 (decl x64_512_vpmovzxwd (XmmMem) Xmm)
-(rule (x64_512_vpmovzxwd src)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512Cvt (Avx512CvtOp.Vpmovzxwd)
-                                                 dst
-                                                 src
-                                                 (option_mask_reg_none)
-                                                 (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vpmovzxwd src) (x64_vpmovzxwd_zy src))
 
 ;; VPMOVZXWQ - Zero-extend packed words to qwords (I16 -> I64)
 (decl x64_512_vpmovzxwq (XmmMem) Xmm)
-(rule (x64_512_vpmovzxwq src)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512Cvt (Avx512CvtOp.Vpmovzxwq)
-                                                 dst
-                                                 src
-                                                 (option_mask_reg_none)
-                                                 (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vpmovzxwq src) (x64_vpmovzxwq_zu src))
 
 ;; VPMOVZXDQ - Zero-extend packed dwords to qwords (I32 -> I64)
 (decl x64_512_vpmovzxdq (XmmMem) Xmm)
-(rule (x64_512_vpmovzxdq src)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512Cvt (Avx512CvtOp.Vpmovzxdq)
-                                                 dst
-                                                 src
-                                                 (option_mask_reg_none)
-                                                 (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vpmovzxdq src) (x64_vpmovzxdq_zy src))
 
 ;; VPMOVSXBD - Sign-extend packed bytes to dwords (I8 -> I32)
 (decl x64_512_vpmovsxbd (XmmMem) Xmm)
-(rule (x64_512_vpmovsxbd src)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512Cvt (Avx512CvtOp.Vpmovsxbd)
-                                                 dst
-                                                 src
-                                                 (option_mask_reg_none)
-                                                 (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vpmovsxbd src) (x64_vpmovsxbd_zu src))
 
 ;; VPMOVSXBQ - Sign-extend packed bytes to qwords (I8 -> I64)
 (decl x64_512_vpmovsxbq (XmmMem) Xmm)
-(rule (x64_512_vpmovsxbq src)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512Cvt (Avx512CvtOp.Vpmovsxbq)
-                                                 dst
-                                                 src
-                                                 (option_mask_reg_none)
-                                                 (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vpmovsxbq src) (x64_vpmovsxbq_zu src))
 
 ;; VPMOVSXWD - Sign-extend packed words to dwords (I16 -> I32)
 (decl x64_512_vpmovsxwd (XmmMem) Xmm)
-(rule (x64_512_vpmovsxwd src)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512Cvt (Avx512CvtOp.Vpmovsxwd)
-                                                 dst
-                                                 src
-                                                 (option_mask_reg_none)
-                                                 (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vpmovsxwd src) (x64_vpmovsxwd_zy src))
 
 ;; VPMOVSXWQ - Sign-extend packed words to qwords (I16 -> I64)
 (decl x64_512_vpmovsxwq (XmmMem) Xmm)
-(rule (x64_512_vpmovsxwq src)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512Cvt (Avx512CvtOp.Vpmovsxwq)
-                                                 dst
-                                                 src
-                                                 (option_mask_reg_none)
-                                                 (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vpmovsxwq src) (x64_vpmovsxwq_zu src))
 
 ;; VPMOVSXDQ - Sign-extend packed dwords to qwords (I32 -> I64)
 (decl x64_512_vpmovsxdq (XmmMem) Xmm)
-(rule (x64_512_vpmovsxdq src)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512Cvt (Avx512CvtOp.Vpmovsxdq)
-                                                 dst
-                                                 src
-                                                 (option_mask_reg_none)
-                                                 (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vpmovsxdq src) (x64_vpmovsxdq_zy src))
 
 ;; =============================================================================
 ;; Truncation helpers (VPMOVDB/DW/QB/QD/QW/WB and saturating variants)
 ;; =============================================================================
 
 ;; VPMOVDB - Truncate packed dwords to bytes (I32X16 -> I8X16)
-(decl x64_512_vpmovdb (XmmMem) Xmm)
-(rule (x64_512_vpmovdb src)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512Cvt (Avx512CvtOp.Vpmovdb)
-                                                 dst
-                                                 src
-                                                 (option_mask_reg_none)
-                                                 (MergeMode.Zeroing)))))
-        dst))
+(decl x64_512_vpmovdb (Xmm) Xmm)
+(rule (x64_512_vpmovdb src) (x64_vpmovdb_xz src))
 
 ;; VPMOVDW - Truncate packed dwords to words (I32X16 -> I16X16)
-(decl x64_512_vpmovdw (XmmMem) Xmm)
-(rule (x64_512_vpmovdw src)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512Cvt (Avx512CvtOp.Vpmovdw)
-                                                 dst
-                                                 src
-                                                 (option_mask_reg_none)
-                                                 (MergeMode.Zeroing)))))
-        dst))
+(decl x64_512_vpmovdw (Xmm) Xmm)
+(rule (x64_512_vpmovdw src) (x64_vpmovdw_yz src))
 
 ;; VPMOVQB - Truncate packed qwords to bytes (I64X8 -> I8X8)
-(decl x64_512_vpmovqb (XmmMem) Xmm)
-(rule (x64_512_vpmovqb src)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512Cvt (Avx512CvtOp.Vpmovqb)
-                                                 dst
-                                                 src
-                                                 (option_mask_reg_none)
-                                                 (MergeMode.Zeroing)))))
-        dst))
+(decl x64_512_vpmovqb (Xmm) Xmm)
+(rule (x64_512_vpmovqb src) (x64_vpmovqb_xz src))
 
 ;; VPMOVQD - Truncate packed qwords to dwords (I64X8 -> I32X8)
-(decl x64_512_vpmovqd (XmmMem) Xmm)
-(rule (x64_512_vpmovqd src)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512Cvt (Avx512CvtOp.Vpmovqd)
-                                                 dst
-                                                 src
-                                                 (option_mask_reg_none)
-                                                 (MergeMode.Zeroing)))))
-        dst))
+(decl x64_512_vpmovqd (Xmm) Xmm)
+(rule (x64_512_vpmovqd src) (x64_vpmovqd_yz src))
 
 ;; VPMOVQW - Truncate packed qwords to words (I64X8 -> I16X8)
-(decl x64_512_vpmovqw (XmmMem) Xmm)
-(rule (x64_512_vpmovqw src)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512Cvt (Avx512CvtOp.Vpmovqw)
-                                                 dst
-                                                 src
-                                                 (option_mask_reg_none)
-                                                 (MergeMode.Zeroing)))))
-        dst))
+(decl x64_512_vpmovqw (Xmm) Xmm)
+(rule (x64_512_vpmovqw src) (x64_vpmovqw_xz src))
 
 ;; VPMOVWB - Truncate packed words to bytes (I16X32 -> I8X32)
-(decl x64_512_vpmovwb (XmmMem) Xmm)
-(rule (x64_512_vpmovwb src)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512Cvt (Avx512CvtOp.Vpmovwb)
-                                                 dst
-                                                 src
-                                                 (option_mask_reg_none)
-                                                 (MergeMode.Zeroing)))))
-        dst))
+(decl x64_512_vpmovwb (Xmm) Xmm)
+(rule (x64_512_vpmovwb src) (x64_vpmovwb_yz src))
 
 ;; VPMOVSDB - Truncate dwords to bytes with signed saturation
-(decl x64_512_vpmovsdb (XmmMem) Xmm)
-(rule (x64_512_vpmovsdb src)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512Cvt (Avx512CvtOp.Vpmovsdb)
-                                                 dst
-                                                 src
-                                                 (option_mask_reg_none)
-                                                 (MergeMode.Zeroing)))))
-        dst))
+(decl x64_512_vpmovsdb (Xmm) Xmm)
+(rule (x64_512_vpmovsdb src) (x64_vpmovsdb_xz src))
 
 ;; VPMOVUSDB - Truncate dwords to bytes with unsigned saturation
-(decl x64_512_vpmovusdb (XmmMem) Xmm)
-(rule (x64_512_vpmovusdb src)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512Cvt (Avx512CvtOp.Vpmovusdb)
-                                                 dst
-                                                 src
-                                                 (option_mask_reg_none)
-                                                 (MergeMode.Zeroing)))))
-        dst))
+(decl x64_512_vpmovusdb (Xmm) Xmm)
+(rule (x64_512_vpmovusdb src) (x64_vpmovusdb_xz src))
 
 ;; VPMOVSQD - Truncate qwords to dwords with signed saturation
-(decl x64_512_vpmovsqd (XmmMem) Xmm)
-(rule (x64_512_vpmovsqd src)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512Cvt (Avx512CvtOp.Vpmovsqd)
-                                                 dst
-                                                 src
-                                                 (option_mask_reg_none)
-                                                 (MergeMode.Zeroing)))))
-        dst))
+(decl x64_512_vpmovsqd (Xmm) Xmm)
+(rule (x64_512_vpmovsqd src) (x64_vpmovsqd_yz src))
 
 ;; VPMOVUSQD - Truncate qwords to dwords with unsigned saturation
-(decl x64_512_vpmovusqd (XmmMem) Xmm)
-(rule (x64_512_vpmovusqd src)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512Cvt (Avx512CvtOp.Vpmovusqd)
-                                                 dst
-                                                 src
-                                                 (option_mask_reg_none)
-                                                 (MergeMode.Zeroing)))))
-        dst))
+(decl x64_512_vpmovusqd (Xmm) Xmm)
+(rule (x64_512_vpmovusqd src) (x64_vpmovusqd_yz src))
 
 ;; =============================================================================
 ;; Shuffle/Permute helpers
@@ -7272,16 +6132,7 @@
 ;; For each byte in dst, the corresponding byte in indices selects which byte from src to use
 ;; If index[7] is 1, the result byte is 0
 (decl x64_512_vpshufb (Xmm XmmMem) Xmm)
-(rule (x64_512_vpshufb src indices)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512Alu (Avx512AluOp.Vpshufb)
-                                                 (OperandSize.Size32)
-                                                 dst
-                                                 src
-                                                 indices
-                                                 (option_mask_reg_none)
-                                                 (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vpshufb src indices) (x64_vpshufb_z src indices))
 
 ;; =============================================================================
 ;; Multiply-Add helpers (dot products)
@@ -7290,30 +6141,12 @@
 ;; VPMADDWD - Multiply packed words, add adjacent pairs to dwords
 ;; dst[i] = src1[2*i] * src2[2*i] + src1[2*i+1] * src2[2*i+1]
 (decl x64_512_vpmaddwd (Xmm XmmMem) Xmm)
-(rule (x64_512_vpmaddwd src1 src2)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512Alu (Avx512AluOp.Vpmaddwd)
-                                                 (OperandSize.Size32)
-                                                 dst
-                                                 src1
-                                                 src2
-                                                 (option_mask_reg_none)
-                                                 (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vpmaddwd src1 src2) (x64_vpmaddwd_z src1 src2))
 
 ;; VPMADDUBSW - Multiply packed unsigned/signed bytes, add adjacent pairs to words
 ;; dst[i] = saturate16(src1_u8[2*i] * src2_s8[2*i] + src1_u8[2*i+1] * src2_s8[2*i+1])
 (decl x64_512_vpmaddubsw (Xmm XmmMem) Xmm)
-(rule (x64_512_vpmaddubsw src1 src2)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512Alu (Avx512AluOp.Vpmaddubsw)
-                                                 (OperandSize.Size32)
-                                                 dst
-                                                 src1
-                                                 src2
-                                                 (option_mask_reg_none)
-                                                 (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vpmaddubsw src1 src2) (x64_vpmaddubsw_z src1 src2))
 
 ;; =============================================================================
 ;; Masked unsigned min/max operations (I32X16 / I64X8)
@@ -7322,22 +6155,22 @@
 ;; Masked VPMINUD - unsigned min I32X16
 (decl x64_512_masked_vpminud (Reg Xmm XmmMem Xmm) Xmm)
 (rule (x64_512_masked_vpminud mask src1 src2 passthrough)
-      (x64_512_masked_alu_d (Avx512AluOp.Vpminud) mask src1 src2 passthrough))
+      (x64_vpminud_z_km passthrough (reg_to_kmask mask) src1 src2))
 
 ;; Masked VPMAXUD - unsigned max I32X16
 (decl x64_512_masked_vpmaxud (Reg Xmm XmmMem Xmm) Xmm)
 (rule (x64_512_masked_vpmaxud mask src1 src2 passthrough)
-      (x64_512_masked_alu_d (Avx512AluOp.Vpmaxud) mask src1 src2 passthrough))
+      (x64_vpmaxud_z_km passthrough (reg_to_kmask mask) src1 src2))
 
 ;; Masked VPMINUQ - unsigned min I64X8
 (decl x64_512_masked_vpminuq (Reg Xmm XmmMem Xmm) Xmm)
 (rule (x64_512_masked_vpminuq mask src1 src2 passthrough)
-      (x64_512_masked_alu_q (Avx512AluOp.Vpminuq) mask src1 src2 passthrough))
+      (x64_vpminuq_z_km passthrough (reg_to_kmask mask) src1 src2))
 
 ;; Masked VPMAXUQ - unsigned max I64X8
 (decl x64_512_masked_vpmaxuq (Reg Xmm XmmMem Xmm) Xmm)
 (rule (x64_512_masked_vpmaxuq mask src1 src2 passthrough)
-      (x64_512_masked_alu_q (Avx512AluOp.Vpmaxuq) mask src1 src2 passthrough))
+      (x64_vpmaxuq_z_km passthrough (reg_to_kmask mask) src1 src2))
 
 ;; =============================================================================
 ;; Masked FP ALU helpers (F32X16 / F64X8)
@@ -7345,177 +6178,103 @@
 ;; Strategy: Execute with zeroing mask, then blend with passthrough using
 ;; VPBLENDMD/Q (integer blend works fine for FP bits)
 
-;; Generic zeroing FP ALU (32-bit elements / single-precision)
-(decl x64_512_zeroing_fp_alu_ps (Avx512FpAluOp Reg Xmm XmmMem) Xmm)
-(rule (x64_512_zeroing_fp_alu_ps op mask src1 src2)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (mask_reg OptionMaskReg (x64_512_mask_reg mask))
-            (_ Unit (emit (MInst.Avx512Avx512FpAlu op
-                                                  dst
-                                                  src1
-                                                  src2
-                                                  mask_reg
-                                                  (MergeMode.Zeroing)))))
-        dst))
-
-;; Generic zeroing FP ALU (64-bit elements / double-precision)
-(decl x64_512_zeroing_fp_alu_pd (Avx512FpAluOp Reg Xmm XmmMem) Xmm)
-(rule (x64_512_zeroing_fp_alu_pd op mask src1 src2)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (mask_reg OptionMaskReg (x64_512_mask_reg mask))
-            (_ Unit (emit (MInst.Avx512Avx512FpAlu op
-                                                  dst
-                                                  src1
-                                                  src2
-                                                  mask_reg
-                                                  (MergeMode.Zeroing)))))
-        dst))
-
-;; Generic masked FP ALU (32-bit elements / single-precision)
-;; Strategy: Execute with zeroing mask, then blend with passthrough
-;; Uses VPBLENDMD since it works on bits (same 32-bit element size)
-(decl x64_512_masked_fp_alu_ps (Avx512FpAluOp Reg Xmm XmmMem Xmm) Xmm)
-(rule (x64_512_masked_fp_alu_ps op mask src1 src2 passthrough)
-      (let ((raw_result Xmm (x64_512_zeroing_fp_alu_ps op mask src1 src2)))
-        ;; Blend: where mask=1 take raw_result, where mask=0 take passthrough
-        (x64_512_vpblendmd mask passthrough (xmm_to_xmm_mem raw_result))))
-
-;; Generic masked FP ALU (64-bit elements / double-precision)
-;; Strategy: Execute with zeroing mask, then blend with passthrough
-;; Uses VPBLENDMQ since it works on bits (same 64-bit element size)
-(decl x64_512_masked_fp_alu_pd (Avx512FpAluOp Reg Xmm XmmMem Xmm) Xmm)
-(rule (x64_512_masked_fp_alu_pd op mask src1 src2 passthrough)
-      (let ((raw_result Xmm (x64_512_zeroing_fp_alu_pd op mask src1 src2)))
-        ;; Blend: where mask=1 take raw_result, where mask=0 take passthrough
-        (x64_512_vpblendmq mask passthrough (xmm_to_xmm_mem raw_result))))
+;; =============================================================================
+;; Masked FP ALU Operations - using DSL-generated merge-masking constructors
+;; =============================================================================
 
 ;; Masked VADDPS - add F32X16
 (decl x64_512_masked_vaddps (Reg Xmm XmmMem Xmm) Xmm)
 (rule (x64_512_masked_vaddps mask src1 src2 passthrough)
-      (x64_512_masked_fp_alu_ps (Avx512FpAluOp.Vaddps) mask src1 src2 passthrough))
+      (x64_vaddps_z_km passthrough (reg_to_kmask mask) src1 src2))
 
 ;; Masked VADDPD - add F64X8
 (decl x64_512_masked_vaddpd (Reg Xmm XmmMem Xmm) Xmm)
 (rule (x64_512_masked_vaddpd mask src1 src2 passthrough)
-      (x64_512_masked_fp_alu_pd (Avx512FpAluOp.Vaddpd) mask src1 src2 passthrough))
+      (x64_vaddpd_z_km passthrough (reg_to_kmask mask) src1 src2))
 
 ;; Masked VSUBPS - subtract F32X16
 (decl x64_512_masked_vsubps (Reg Xmm XmmMem Xmm) Xmm)
 (rule (x64_512_masked_vsubps mask src1 src2 passthrough)
-      (x64_512_masked_fp_alu_ps (Avx512FpAluOp.Vsubps) mask src1 src2 passthrough))
+      (x64_vsubps_z_km passthrough (reg_to_kmask mask) src1 src2))
 
 ;; Masked VSUBPD - subtract F64X8
 (decl x64_512_masked_vsubpd (Reg Xmm XmmMem Xmm) Xmm)
 (rule (x64_512_masked_vsubpd mask src1 src2 passthrough)
-      (x64_512_masked_fp_alu_pd (Avx512FpAluOp.Vsubpd) mask src1 src2 passthrough))
+      (x64_vsubpd_z_km passthrough (reg_to_kmask mask) src1 src2))
 
 ;; Masked VMULPS - multiply F32X16
 (decl x64_512_masked_vmulps (Reg Xmm XmmMem Xmm) Xmm)
 (rule (x64_512_masked_vmulps mask src1 src2 passthrough)
-      (x64_512_masked_fp_alu_ps (Avx512FpAluOp.Vmulps) mask src1 src2 passthrough))
+      (x64_vmulps_z_km passthrough (reg_to_kmask mask) src1 src2))
 
 ;; Masked VMULPD - multiply F64X8
 (decl x64_512_masked_vmulpd (Reg Xmm XmmMem Xmm) Xmm)
 (rule (x64_512_masked_vmulpd mask src1 src2 passthrough)
-      (x64_512_masked_fp_alu_pd (Avx512FpAluOp.Vmulpd) mask src1 src2 passthrough))
+      (x64_vmulpd_z_km passthrough (reg_to_kmask mask) src1 src2))
 
 ;; Masked VDIVPS - divide F32X16
 (decl x64_512_masked_vdivps (Reg Xmm XmmMem Xmm) Xmm)
 (rule (x64_512_masked_vdivps mask src1 src2 passthrough)
-      (x64_512_masked_fp_alu_ps (Avx512FpAluOp.Vdivps) mask src1 src2 passthrough))
+      (x64_vdivps_z_km passthrough (reg_to_kmask mask) src1 src2))
 
 ;; Masked VDIVPD - divide F64X8
 (decl x64_512_masked_vdivpd (Reg Xmm XmmMem Xmm) Xmm)
 (rule (x64_512_masked_vdivpd mask src1 src2 passthrough)
-      (x64_512_masked_fp_alu_pd (Avx512FpAluOp.Vdivpd) mask src1 src2 passthrough))
+      (x64_vdivpd_z_km passthrough (reg_to_kmask mask) src1 src2))
 
 ;; Masked VMINPS - min F32X16
 (decl x64_512_masked_vminps (Reg Xmm XmmMem Xmm) Xmm)
 (rule (x64_512_masked_vminps mask src1 src2 passthrough)
-      (x64_512_masked_fp_alu_ps (Avx512FpAluOp.Vminps) mask src1 src2 passthrough))
+      (x64_vminps_z_km passthrough (reg_to_kmask mask) src1 src2))
 
 ;; Masked VMINPD - min F64X8
 (decl x64_512_masked_vminpd (Reg Xmm XmmMem Xmm) Xmm)
 (rule (x64_512_masked_vminpd mask src1 src2 passthrough)
-      (x64_512_masked_fp_alu_pd (Avx512FpAluOp.Vminpd) mask src1 src2 passthrough))
+      (x64_vminpd_z_km passthrough (reg_to_kmask mask) src1 src2))
 
 ;; Masked VMAXPS - max F32X16
 (decl x64_512_masked_vmaxps (Reg Xmm XmmMem Xmm) Xmm)
 (rule (x64_512_masked_vmaxps mask src1 src2 passthrough)
-      (x64_512_masked_fp_alu_ps (Avx512FpAluOp.Vmaxps) mask src1 src2 passthrough))
+      (x64_vmaxps_z_km passthrough (reg_to_kmask mask) src1 src2))
 
 ;; Masked VMAXPD - max F64X8
 (decl x64_512_masked_vmaxpd (Reg Xmm XmmMem Xmm) Xmm)
 (rule (x64_512_masked_vmaxpd mask src1 src2 passthrough)
-      (x64_512_masked_fp_alu_pd (Avx512FpAluOp.Vmaxpd) mask src1 src2 passthrough))
+      (x64_vmaxpd_z_km passthrough (reg_to_kmask mask) src1 src2))
 
 ;; =============================================================================
-;; Masked shift operations - execute with zeroing mask, then blend with passthru
+;; Masked shift operations (using DSL-generated merge-mask instructions)
 ;; =============================================================================
-
-;; Generic zeroing shift for 32-bit elements
-(decl x64_512_zeroing_shift_d (Avx512AluOp Reg Xmm XmmMem) Xmm)
-(rule (x64_512_zeroing_shift_d op mask data shift)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (mask_reg OptionMaskReg (x64_512_mask_reg mask))
-            (_ Unit (emit (MInst.Avx512Avx512Alu op
-                                                (OperandSize.Size32)
-                                                dst data shift
-                                                mask_reg (MergeMode.Zeroing)))))
-        dst))
-
-;; Generic zeroing shift for 64-bit elements
-(decl x64_512_zeroing_shift_q (Avx512AluOp Reg Xmm XmmMem) Xmm)
-(rule (x64_512_zeroing_shift_q op mask data shift)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (mask_reg OptionMaskReg (x64_512_mask_reg mask))
-            (_ Unit (emit (MInst.Avx512Avx512Alu op
-                                                (OperandSize.Size64)
-                                                dst data shift
-                                                mask_reg (MergeMode.Zeroing)))))
-        dst))
-
-;; Generic masked shift for 32-bit elements - zeroing + blend
-(decl x64_512_masked_shift_d (Avx512AluOp Reg Xmm XmmMem Xmm) Xmm)
-(rule (x64_512_masked_shift_d op mask data shift passthrough)
-      (let ((raw_result Xmm (x64_512_zeroing_shift_d op mask data shift)))
-        (x64_512_vpblendmd mask passthrough (xmm_to_xmm_mem raw_result))))
-
-;; Generic masked shift for 64-bit elements - zeroing + blend
-(decl x64_512_masked_shift_q (Avx512AluOp Reg Xmm XmmMem Xmm) Xmm)
-(rule (x64_512_masked_shift_q op mask data shift passthrough)
-      (let ((raw_result Xmm (x64_512_zeroing_shift_q op mask data shift)))
-        (x64_512_vpblendmq mask passthrough (xmm_to_xmm_mem raw_result))))
 
 ;; Masked VPSLLVD - variable left shift I32X16
 (decl x64_512_masked_vpsllvd (Reg Xmm XmmMem Xmm) Xmm)
 (rule (x64_512_masked_vpsllvd mask data shift passthrough)
-      (x64_512_masked_shift_d (Avx512AluOp.Vpsllvd) mask data shift passthrough))
+      (x64_vpsllvd_z_km passthrough (reg_to_kmask mask) data shift))
 
 ;; Masked VPSLLVQ - variable left shift I64X8
 (decl x64_512_masked_vpsllvq (Reg Xmm XmmMem Xmm) Xmm)
 (rule (x64_512_masked_vpsllvq mask data shift passthrough)
-      (x64_512_masked_shift_q (Avx512AluOp.Vpsllvq) mask data shift passthrough))
+      (x64_vpsllvq_z_km passthrough (reg_to_kmask mask) data shift))
 
 ;; Masked VPSRLVD - variable logical right shift I32X16
 (decl x64_512_masked_vpsrlvd (Reg Xmm XmmMem Xmm) Xmm)
 (rule (x64_512_masked_vpsrlvd mask data shift passthrough)
-      (x64_512_masked_shift_d (Avx512AluOp.Vpsrlvd) mask data shift passthrough))
+      (x64_vpsrlvd_z_km passthrough (reg_to_kmask mask) data shift))
 
 ;; Masked VPSRLVQ - variable logical right shift I64X8
 (decl x64_512_masked_vpsrlvq (Reg Xmm XmmMem Xmm) Xmm)
 (rule (x64_512_masked_vpsrlvq mask data shift passthrough)
-      (x64_512_masked_shift_q (Avx512AluOp.Vpsrlvq) mask data shift passthrough))
+      (x64_vpsrlvq_z_km passthrough (reg_to_kmask mask) data shift))
 
 ;; Masked VPSRAVD - variable arithmetic right shift I32X16
 (decl x64_512_masked_vpsravd (Reg Xmm XmmMem Xmm) Xmm)
 (rule (x64_512_masked_vpsravd mask data shift passthrough)
-      (x64_512_masked_shift_d (Avx512AluOp.Vpsravd) mask data shift passthrough))
+      (x64_vpsravd_z_km passthrough (reg_to_kmask mask) data shift))
 
 ;; Masked VPSRAVQ - variable arithmetic right shift I64X8
 (decl x64_512_masked_vpsravq (Reg Xmm XmmMem Xmm) Xmm)
 (rule (x64_512_masked_vpsravq mask data shift passthrough)
-      (x64_512_masked_shift_q (Avx512AluOp.Vpsravq) mask data shift passthrough))
+      (x64_vpsravq_z_km passthrough (reg_to_kmask mask) data shift))
 
 ;; =============================================================================
 ;; AVX-512 Extract Lane operations (VEXTRACTI32X4, VEXTRACTI64X2)
@@ -7524,20 +6283,12 @@
 ;; VEXTRACTI32X4 - Extract 128-bit lane from 512-bit vector (as I32X4)
 ;; lane: 0-3 selects which 128-bit lane to extract
 (decl x64_512_vextracti32x4 (Xmm u8) Xmm)
-(rule (x64_512_vextracti32x4 src lane)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512Extract (Avx512ExtractOp.Vextracti32x4)
-                                                     dst src lane))))
-        dst))
+(rule (x64_512_vextracti32x4 src lane) (x64_vextracti32x4_ze src lane))
 
 ;; VEXTRACTI64X2 - Extract 128-bit lane from 512-bit vector (as I64X2)
 ;; lane: 0-3 selects which 128-bit lane to extract
 (decl x64_512_vextracti64x2 (Xmm u8) Xmm)
-(rule (x64_512_vextracti64x2 src lane)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512Extract (Avx512ExtractOp.Vextracti64x2)
-                                                     dst src lane))))
-        dst))
+(rule (x64_512_vextracti64x2 src lane) (x64_vextracti64x2_ze src lane))
 
 ;; =============================================================================
 ;; AVX-512 Insert operations (VINSERTI32X4, VINSERTI64X2, etc.)
@@ -7546,50 +6297,22 @@
 ;; VINSERTI32X4 - Insert 128-bit lane into 512-bit vector (as I32X4)
 ;; lane: 0-3 selects which 128-bit lane to insert into
 (decl x64_512_vinserti32x4 (Xmm XmmMem u8) Xmm)
-(rule (x64_512_vinserti32x4 src1 src2 lane)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (src2_rm RegMem (x64_512_xmm_mem_to_reg_mem src2))
-            (_ Unit (emit (MInst.Avx512Avx512Insert (Avx512InsertOp.Vinserti32x4)
-                                                    dst src1 src2_rm lane
-                                                    (option_mask_reg_none)
-                                                    (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vinserti32x4 src1 src2 lane) (x64_vinserti32x4_zi src1 src2 lane))
 
 ;; VINSERTI64X2 - Insert 128-bit lane into 512-bit vector (as I64X2)
 ;; lane: 0-3 selects which 128-bit lane to insert into
 (decl x64_512_vinserti64x2 (Xmm XmmMem u8) Xmm)
-(rule (x64_512_vinserti64x2 src1 src2 lane)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (src2_rm RegMem (x64_512_xmm_mem_to_reg_mem src2))
-            (_ Unit (emit (MInst.Avx512Avx512Insert (Avx512InsertOp.Vinserti64x2)
-                                                    dst src1 src2_rm lane
-                                                    (option_mask_reg_none)
-                                                    (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vinserti64x2 src1 src2 lane) (x64_vinserti64x2_zi src1 src2 lane))
 
 ;; VINSERTI32X8 - Insert 256-bit lane into 512-bit vector (as I32X8)
 ;; lane: 0-1 selects which 256-bit lane to insert into
 (decl x64_512_vinserti32x8 (Xmm XmmMem u8) Xmm)
-(rule (x64_512_vinserti32x8 src1 src2 lane)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (src2_rm RegMem (x64_512_xmm_mem_to_reg_mem src2))
-            (_ Unit (emit (MInst.Avx512Avx512Insert (Avx512InsertOp.Vinserti32x8)
-                                                    dst src1 src2_rm lane
-                                                    (option_mask_reg_none)
-                                                    (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vinserti32x8 src1 src2 lane) (x64_vinserti32x8_zi8 src1 src2 lane))
 
 ;; VINSERTI64X4 - Insert 256-bit lane into 512-bit vector (as I64X4)
 ;; lane: 0-1 selects which 256-bit lane to insert into
 (decl x64_512_vinserti64x4 (Xmm XmmMem u8) Xmm)
-(rule (x64_512_vinserti64x4 src1 src2 lane)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (src2_rm RegMem (x64_512_xmm_mem_to_reg_mem src2))
-            (_ Unit (emit (MInst.Avx512Avx512Insert (Avx512InsertOp.Vinserti64x4)
-                                                    dst src1 src2_rm lane
-                                                    (option_mask_reg_none)
-                                                    (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vinserti64x4 src1 src2 lane) (x64_vinserti64x4_zi4 src1 src2 lane))
 
 ;; =============================================================================
 ;; AVX-512 FP Special operations (VRCP14PS/PD, VRSQRT14PS/PD)
@@ -7597,40 +6320,16 @@
 
 ;; VRCP14PS - Reciprocal approximation of F32X16 elements (1/x)
 (decl x64_512_vrcp14ps (XmmMem) Xmm)
-(rule (x64_512_vrcp14ps src)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512FpSpecial (Avx512FpSpecialOp.Vrcp14ps)
-                                                       dst src
-                                                       (option_mask_reg_none)
-                                                       (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vrcp14ps src) (x64_vrcp14ps_zu src))
 
 ;; VRCP14PD - Reciprocal approximation of F64X8 elements (1/x)
 (decl x64_512_vrcp14pd (XmmMem) Xmm)
-(rule (x64_512_vrcp14pd src)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512FpSpecial (Avx512FpSpecialOp.Vrcp14pd)
-                                                       dst src
-                                                       (option_mask_reg_none)
-                                                       (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vrcp14pd src) (x64_vrcp14pd_zu src))
 
 ;; VRSQRT14PS - Reciprocal square root approximation of F32X16 (1/sqrt(x))
 (decl x64_512_vrsqrt14ps (XmmMem) Xmm)
-(rule (x64_512_vrsqrt14ps src)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512FpSpecial (Avx512FpSpecialOp.Vrsqrt14ps)
-                                                       dst src
-                                                       (option_mask_reg_none)
-                                                       (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vrsqrt14ps src) (x64_vrsqrt14ps_zu src))
 
 ;; VRSQRT14PD - Reciprocal square root approximation of F64X8 (1/sqrt(x))
 (decl x64_512_vrsqrt14pd (XmmMem) Xmm)
-(rule (x64_512_vrsqrt14pd src)
-      (let ((dst WritableXmm (temp_writable_xmm))
-            (_ Unit (emit (MInst.Avx512Avx512FpSpecial (Avx512FpSpecialOp.Vrsqrt14pd)
-                                                       dst src
-                                                       (option_mask_reg_none)
-                                                       (MergeMode.Zeroing)))))
-        dst))
+(rule (x64_512_vrsqrt14pd src) (x64_vrsqrt14pd_zu src))

@@ -277,6 +277,9 @@ impl Registers for FuzzRegs {
     type ReadXmm = FuzzReg;
     type ReadWriteXmm = FuzzReg;
     type WriteXmm = FuzzReg;
+    type ReadKmask = FuzzReg;
+    type ReadWriteKmask = FuzzReg;
+    type WriteKmask = FuzzReg;
 }
 
 /// A simple `u8` register type for fuzzing only.
@@ -352,6 +355,12 @@ impl<'a, R: AsReg> Arbitrary<'a> for Xmm<R> {
         Ok(Self(R::new(u.int_in_range(0..=15)?)))
     }
 }
+impl<'a, R: AsReg> Arbitrary<'a> for crate::Kmask<R> {
+    fn arbitrary(u: &mut Unstructured<'a>) -> Result<Self> {
+        // K-mask registers are k0-k7 (0..=7)
+        Ok(Self::new(R::new(u.int_in_range(0..=7)?)))
+    }
+}
 
 /// Helper trait that's used to be the same as `Registers` except with an extra
 /// `for<'a> Arbitrary<'a>` bound on all of the associated types.
@@ -363,6 +372,9 @@ pub trait RegistersArbitrary:
         ReadXmm: for<'a> Arbitrary<'a>,
         ReadWriteXmm: for<'a> Arbitrary<'a>,
         WriteXmm: for<'a> Arbitrary<'a>,
+        ReadKmask: for<'a> Arbitrary<'a>,
+        ReadWriteKmask: for<'a> Arbitrary<'a>,
+        WriteKmask: for<'a> Arbitrary<'a>,
     >
 {
 }
@@ -376,6 +388,9 @@ where
     R::ReadXmm: for<'a> Arbitrary<'a>,
     R::ReadWriteXmm: for<'a> Arbitrary<'a>,
     R::WriteXmm: for<'a> Arbitrary<'a>,
+    R::ReadKmask: for<'a> Arbitrary<'a>,
+    R::ReadWriteKmask: for<'a> Arbitrary<'a>,
+    R::WriteKmask: for<'a> Arbitrary<'a>,
 {
 }
 

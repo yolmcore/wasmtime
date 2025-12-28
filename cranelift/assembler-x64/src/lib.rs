@@ -17,6 +17,9 @@
 //!     type ReadXmm = u8;
 //!     type ReadWriteXmm = u8;
 //!     type WriteXmm = u8;
+//!     type ReadKmask = u8;
+//!     type ReadWriteKmask = u8;
+//!     type WriteKmask = u8;
 //! }
 //!
 //! // Then, build one of the `AND` instructions; this one operates on an
@@ -54,6 +57,7 @@ mod mem;
 mod rex;
 mod vex;
 pub mod xmm;
+pub mod kmask;
 
 #[cfg(any(test, feature = "fuzz"))]
 pub mod fuzz;
@@ -79,3 +83,4 @@ pub use mem::{
 };
 pub use rex::RexPrefix;
 pub use xmm::Xmm;
+pub use kmask::Kmask;

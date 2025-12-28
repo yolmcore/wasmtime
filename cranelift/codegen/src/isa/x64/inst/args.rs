@@ -365,6 +365,13 @@ pub fn option_reg_none() -> OptionReg {
     None
 }
 
+/// Type alias for k-mask registers (used by assembler DSL).
+/// This maps to the same underlying type as `Mask` for register allocation.
+pub type Kmask = Mask;
+
+/// Type alias for writable k-mask registers (used by assembler DSL).
+pub type WritableKmask = WritableMask;
+
 // =================================================================
 // End AVX-512 Extensions
 // =================================================================

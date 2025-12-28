@@ -157,7 +157,7 @@ impl dsl::Inst {
                     );
                 }
                 RegMem(_) => {
-                    let ty = op.reg_class().unwrap();
+                    let ty = op.reg_class().unwrap().mem_type_name();
                     f.add_block(&format!("if let {ty}Mem::Mem({op}) = &self.{op}"), |f| {
                         f.add_block(&format!("if let Some(trap_code) = {op}.trap_code()"), |f| {
                             fmtln!(f, "buf.add_trap(trap_code);");
@@ -200,18 +200,17 @@ impl dsl::Inst {
                         fmtln!(f, "let _ = visitor;");
                     }
                     FixedReg(loc) => {
-                        let reg_lower = reg.unwrap().to_string().to_lowercase();
+                        let visitor_suffix = reg.unwrap().visitor_suffix();
                         fmtln!(f, "let enc = self.{loc}.expected_enc();");
-                        fmtln!(f, "visitor.fixed_{mutability}_{reg_lower}(&mut self.{loc}.0, enc);");
+                        fmtln!(f, "visitor.fixed_{mutability}_{visitor_suffix}(&mut self.{loc}.0, enc);");
                     }
                     Reg(loc) => {
-                        let reg_lower = reg.unwrap().to_string().to_lowercase();
-                        fmtln!(f, "visitor.{mutability}_{reg_lower}(self.{loc}.as_mut());");
+                        let visitor_suffix = reg.unwrap().visitor_suffix();
+                        fmtln!(f, "visitor.{mutability}_{visitor_suffix}(self.{loc}.as_mut());");
                     }
                     RegMem(loc) => {
-                        let reg = reg.unwrap();
-                        let reg_lower = reg.to_string().to_lowercase();
-                        fmtln!(f, "visitor.{mutability}_{reg_lower}_mem(&mut self.{loc});");
+                        let visitor_suffix = reg.unwrap().visitor_suffix();
+                        fmtln!(f, "visitor.{mutability}_{visitor_suffix}_mem(&mut self.{loc});");
                     }
                     Mem(loc) => {
                         // Note that this is always "read" because from a
@@ -285,7 +284,13 @@ impl dsl::Inst {
                             let to_string = location.generate_to_string(op.extension);
                             fmtln!(f, "let {location} = {to_string};");
                         }
-                        let ordered_ops = self.format.generate_att_style_operands();
+                        // Check if this instruction has EVEX encoding with masking
+                        let has_masking = match &self.encoding {
+                            crate::dsl::Encoding::Evex(evex) => evex.supports_masking(),
+                            _ => false,
+                        };
+                        let ordered_ops =
+                            self.format.generate_att_style_operands_with_masking(has_masking);
                         let mut implicit_ops = self.format.generate_implicit_operands();
                         if self.has_trap {
                             fmtln!(f, "let trap = self.trap;");

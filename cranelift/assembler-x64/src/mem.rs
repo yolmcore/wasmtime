@@ -332,10 +332,26 @@ pub enum XmmMem<R: AsReg, M: AsReg> {
 }
 
 impl<R: AsReg, M: AsReg> XmmMem<R, M> {
-    /// Pretty-print the operand.
+    /// Pretty-print the operand (as XMM).
     pub fn to_string(&self) -> String {
         match self {
             XmmMem::Xmm(xmm) => xmm.to_string(None),
+            XmmMem::Mem(amode) => amode.to_string(),
+        }
+    }
+
+    /// Pretty-print the operand as YMM (256-bit).
+    pub fn to_ymm_string(&self) -> String {
+        match self {
+            XmmMem::Xmm(xmm) => format!("%ymm{}", xmm.enc()),
+            XmmMem::Mem(amode) => amode.to_string(),
+        }
+    }
+
+    /// Pretty-print the operand as ZMM (512-bit).
+    pub fn to_zmm_string(&self) -> String {
+        match self {
+            XmmMem::Xmm(xmm) => format!("%zmm{}", xmm.enc()),
             XmmMem::Mem(amode) => amode.to_string(),
         }
     }
