@@ -4935,6 +4935,31 @@
         (x64_kortestw_kt kmask kmask)))
 
 ;; =============================================================================
+;; KMOV k-register to GPR helpers
+;; =============================================================================
+;; These instructions extract k-register mask bits to a general-purpose register.
+;; Essential for POPCNT-based lane counting optimization.
+
+;; KMOVW - Move 16-bit mask from k-register to GPR (zero-extended to 32/64 bits)
+;; Returns a GPR containing the mask bits.
+;; Uses DSL-generated kmovw_gpr_rk constructor
+(decl x64_512_kmovw_gpr (Kmask) Gpr)
+(rule (x64_512_kmovw_gpr kmask)
+      (x64_kmovw_gpr_rk kmask))
+
+;; KMOVD - Move 32-bit mask from k-register to GPR
+;; For I8X64 comparisons (requires AVX-512BW)
+(decl x64_512_kmovd_gpr (Kmask) Gpr)
+(rule (x64_512_kmovd_gpr kmask)
+      (x64_kmovd_gpr_rk kmask))
+
+;; Helper: Extract k-register mask bits to GPR for popcnt
+;; Takes a k-register Reg, returns a GPR Reg ready for scalar popcnt
+(decl x64_512_kmask_to_gpr (Reg) Gpr)
+(rule (x64_512_kmask_to_gpr kreg)
+      (x64_512_kmovw_gpr (reg_to_kmask kreg)))
+
+;; =============================================================================
 ;; Broadcast helpers (VPBROADCASTD/Q)
 ;; =============================================================================
 
@@ -5791,6 +5816,67 @@
 ;; lane: 0-3 selects which 128-bit lane to extract
 (decl x64_512_vextracti64x2 (Xmm u8) Xmm)
 (rule (x64_512_vextracti64x2 src lane) (x64_vextracti64x2_ze src lane))
+
+;; VEXTRACTI32X8 - Extract 256-bit lane from 512-bit vector (as I32X8)
+;; lane: 0-1 selects which 256-bit half to extract
+(decl x64_512_vextracti32x8 (Xmm u8) Xmm)
+(rule (x64_512_vextracti32x8 src lane) (x64_vextracti32x8_ze8 src lane))
+
+;; VEXTRACTI64X4 - Extract 256-bit lane from 512-bit vector (as I64X4)
+;; lane: 0-1 selects which 256-bit half to extract
+(decl x64_512_vextracti64x4 (Xmm u8) Xmm)
+(rule (x64_512_vextracti64x4 src lane) (x64_vextracti64x4_ze4 src lane))
+
+;; =============================================================================
+;; AVX-512 Horizontal Reduction Helpers
+;; =============================================================================
+;; These implement efficient tree reduction for 512-bit vectors.
+;; Instead of 8-16x extractlane, we use a tree of extract + add operations.
+
+;; Horizontal sum for I64X8: 8 elements → 1 scalar
+;; Tree reduction: zmm → 2x ymm → vpaddq → 2x xmm → vpaddq → extractlane → add
+;; Total: ~6 ops instead of 15+ ops with extractlane
+(decl x64_512_horizontal_sum_i64x8 (Xmm) Gpr)
+(rule (x64_512_horizontal_sum_i64x8 vec)
+      (let (
+          ;; Extract low and high 256-bit halves
+          (lo Xmm (x64_512_vextracti64x4 vec 0))
+          (hi Xmm (x64_512_vextracti64x4 vec 1))
+          ;; Add them: 4 elements remain
+          (sum4 Xmm (x64_vpaddq_z lo (xmm_to_xmm_mem hi)))
+          ;; Extract low and high 128-bit from 256-bit result
+          (sum4_lo Xmm (x64_512_vextracti32x4 sum4 0))
+          (sum4_hi Xmm (x64_512_vextracti32x4 sum4 1))
+          ;; Add them: 2 elements remain (128-bit paddq)
+          (sum2 Xmm (x64_paddq sum4_lo (xmm_to_xmm_mem sum4_hi)))
+          ;; Final scalar reduction: extract both 64-bit lanes and add
+          (lane0 Gpr (x64_pextrq sum2 0))
+          (lane1 Gpr (x64_pextrq sum2 1))
+        )
+        (x64_add $I64 lane0 (gpr_to_gpr_mem_imm lane1))))
+
+;; Horizontal sum for I32X16: 16 elements → 1 scalar
+;; Tree reduction: zmm → 2x ymm → vpaddd → 2x xmm → vpaddd → phaddd → extractlane
+(decl x64_512_horizontal_sum_i32x16 (Xmm) Gpr)
+(rule (x64_512_horizontal_sum_i32x16 vec)
+      (let (
+          ;; Extract low and high 256-bit halves
+          (lo Xmm (x64_512_vextracti32x8 vec 0))
+          (hi Xmm (x64_512_vextracti32x8 vec 1))
+          ;; Add them: 8 elements remain
+          (sum8 Xmm (x64_vpaddd_z lo (xmm_to_xmm_mem hi)))
+          ;; Extract low and high 128-bit from 256-bit result
+          (sum8_lo Xmm (x64_512_vextracti32x4 sum8 0))
+          (sum8_hi Xmm (x64_512_vextracti32x4 sum8 1))
+          ;; Add them: 4 elements remain (128-bit paddd)
+          (sum4 Xmm (x64_paddd sum8_lo (xmm_to_xmm_mem sum8_hi)))
+          ;; Horizontal add within 128-bit: PHADDD reduces 4 → 2, then 2 → 1
+          (sum2 Xmm (x64_phaddd sum4 (xmm_to_xmm_mem sum4)))
+          (sum1 Xmm (x64_phaddd sum2 (xmm_to_xmm_mem sum2)))
+          ;; Extract final scalar
+          (result Gpr (x64_pextrd sum1 0))
+        )
+        result))
 
 ;; =============================================================================
 ;; AVX-512 Insert operations (VINSERTI32X4, VINSERTI64X2, etc.)

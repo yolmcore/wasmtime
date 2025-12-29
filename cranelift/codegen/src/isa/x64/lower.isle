@@ -4937,6 +4937,24 @@
             (tmp Gpr (x64_pmovmskb tmp)))
         (x64_shrq_mi tmp 8)))
 
+;; AVX-512: Extract high bits from 512-bit vectors (I32X16, I64X8)
+;; Use VPMOVD2M/VPMOVQ2M to convert vector to k-mask, then KMOVW to GPR.
+;; This enables efficient POPCNT-based lane counting.
+
+;; I32X16: VPMOVD2M extracts the sign bit of each 32-bit lane into k-register,
+;; then KMOVW moves the 16-bit mask to a GPR.
+(rule 20 (lower (vhigh_bits val @ (value_type (multi_lane 32 16))))
+      (if-let true (has_avx512dq))
+      (let ((kmask Kmask (x64_vpmovd2m_kz val)))
+        (x64_512_kmovw_gpr kmask)))
+
+;; I64X8: VPMOVQ2M extracts the sign bit of each 64-bit lane into k-register,
+;; then KMOVW moves the 8-bit mask to a GPR (only low 8 bits are meaningful).
+(rule 20 (lower (vhigh_bits val @ (value_type (multi_lane 64 8))))
+      (if-let true (has_avx512dq))
+      (let ((kmask Kmask (x64_vpmovq2m_kz val)))
+        (x64_512_kmovw_gpr kmask)))
+
 ;; Rules for `iconcat` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (rule (lower (iconcat lo @ (value_type $I64) hi))

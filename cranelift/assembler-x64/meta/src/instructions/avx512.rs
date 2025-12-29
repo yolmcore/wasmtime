@@ -1126,8 +1126,7 @@ pub fn list() -> Vec<Inst> {
         // =========================================
 
         // =========================================
-        // KMOV Operations (mask register moves) - k to k only
-        // Note: GPR variants require custom code generation support
+        // KMOV Operations (mask register moves)
         // =========================================
 
         // KMOVW - Move mask register (k to k)
@@ -1145,6 +1144,25 @@ pub fn list() -> Vec<Inst> {
         // KMOVQ - Move mask register (k to k)
         // VEX.L0.0F.W1 90 /r
         inst("kmovq", fmt("Kk", [w(k1), r(k2)]), vex(LZ)._0f().w1().op(0x90).r(), (_64b | compat) & avx512bw),
+
+        // KMOV - Move mask register to GPR variants
+        // These are essential for extracting mask bits for popcnt operations
+
+        // KMOVW r32, k - Move 16-bit mask to GPR (zero-extended)
+        // VEX.L0.0F.W0 93 /r
+        inst("kmovw_gpr", fmt("Rk", [w(r32), r(k1)]), vex(LZ)._0f().w0().op(0x93).r(), (_64b | compat) & avx512f),
+
+        // KMOVB r32, k - Move 8-bit mask to GPR (zero-extended)
+        // VEX.L0.66.0F.W0 93 /r
+        inst("kmovb_gpr", fmt("Rk", [w(r32), r(k1)]), vex(LZ)._66()._0f().w0().op(0x93).r(), (_64b | compat) & avx512dq),
+
+        // KMOVD r32, k - Move 32-bit mask to GPR
+        // VEX.L0.F2.0F.W0 93 /r
+        inst("kmovd_gpr", fmt("Rk", [w(r32), r(k1)]), vex(LZ)._f2()._0f().w0().op(0x93).r(), (_64b | compat) & avx512bw),
+
+        // KMOVQ r64, k - Move 64-bit mask to GPR
+        // VEX.L0.F2.0F.W1 93 /r
+        inst("kmovq_gpr", fmt("Rk64", [w(r64), r(k1)]), vex(LZ)._f2()._0f().w1().op(0x93).r(), (_64b | compat) & avx512bw),
 
         // =========================================
         // Mask Shift Operations
