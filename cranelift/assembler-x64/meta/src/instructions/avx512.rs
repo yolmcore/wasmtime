@@ -1130,38 +1130,38 @@ pub fn list() -> Vec<Inst> {
         // VPCOMPRESSD - Store sparse packed dwords
         // EVEX.512.66.0F38.W0 8B /r
         // Op/En A: ModRM:r/m (w) = dest, ModRM:reg (r) = src - uses .mr() for swapped encoding
-        inst("vpcompressd", fmt("Zs", [w(zmm_m512), r(zmm1)]), evex(L512, Full)._66()._0f38().w0().op(0x8B).mr(), (_64b | compat) & avx512f),
+        inst("vpcompressd", fmt("Zs", [w(zmm_m512), r(zmm1)]), evex(L512, Tuple1Scalar)._66()._0f38().w0().op(0x8B).mr(), (_64b | compat) & avx512f),
 
         // VPCOMPRESSQ - Store sparse packed qwords
         // EVEX.512.66.0F38.W1 8B /r
         // Op/En A: ModRM:r/m (w) = dest, ModRM:reg (r) = src - uses .mr() for swapped encoding
-        inst("vpcompressq", fmt("Zs", [w(zmm_m512), r(zmm1)]), evex(L512, Full)._66()._0f38().w1().op(0x8B).mr(), (_64b | compat) & avx512f),
+        inst("vpcompressq", fmt("Zs", [w(zmm_m512), r(zmm1)]), evex(L512, Tuple1Scalar)._66()._0f38().w1().op(0x8B).mr(), (_64b | compat) & avx512f),
 
         // VPEXPANDD - Load sparse packed dwords
         // EVEX.512.66.0F38.W0 89 /r
-        inst("vpexpandd", fmt("Zl", [w(zmm1), r(zmm_m512)]), evex(L512, Full)._66()._0f38().w0().op(0x89).r(), (_64b | compat) & avx512f),
+        inst("vpexpandd", fmt("Zl", [w(zmm1), r(zmm_m512)]), evex(L512, Tuple1Scalar)._66()._0f38().w0().op(0x89).r(), (_64b | compat) & avx512f),
 
         // VPEXPANDQ - Load sparse packed qwords
         // EVEX.512.66.0F38.W1 89 /r
-        inst("vpexpandq", fmt("Zl", [w(zmm1), r(zmm_m512)]), evex(L512, Full)._66()._0f38().w1().op(0x89).r(), (_64b | compat) & avx512f),
+        inst("vpexpandq", fmt("Zl", [w(zmm1), r(zmm_m512)]), evex(L512, Tuple1Scalar)._66()._0f38().w1().op(0x89).r(), (_64b | compat) & avx512f),
 
         // VCOMPRESSPS - Store sparse packed single-precision floats
         // EVEX.512.66.0F38.W0 8A /r
         // Op/En A: ModRM:r/m (w) = dest, ModRM:reg (r) = src - uses .mr() for swapped encoding
-        inst("vcompressps", fmt("Zs", [w(zmm_m512), r(zmm1)]), evex(L512, Full)._66()._0f38().w0().op(0x8A).mr(), (_64b | compat) & avx512f),
+        inst("vcompressps", fmt("Zs", [w(zmm_m512), r(zmm1)]), evex(L512, Tuple1Scalar)._66()._0f38().w0().op(0x8A).mr(), (_64b | compat) & avx512f),
 
         // VCOMPRESSPD - Store sparse packed double-precision floats
         // EVEX.512.66.0F38.W1 8A /r
         // Op/En A: ModRM:r/m (w) = dest, ModRM:reg (r) = src - uses .mr() for swapped encoding
-        inst("vcompresspd", fmt("Zs", [w(zmm_m512), r(zmm1)]), evex(L512, Full)._66()._0f38().w1().op(0x8A).mr(), (_64b | compat) & avx512f),
+        inst("vcompresspd", fmt("Zs", [w(zmm_m512), r(zmm1)]), evex(L512, Tuple1Scalar)._66()._0f38().w1().op(0x8A).mr(), (_64b | compat) & avx512f),
 
         // VEXPANDPS - Load sparse packed single-precision floats
         // EVEX.512.66.0F38.W0 88 /r
-        inst("vexpandps", fmt("Zl", [w(zmm1), r(zmm_m512)]), evex(L512, Full)._66()._0f38().w0().op(0x88).r(), (_64b | compat) & avx512f),
+        inst("vexpandps", fmt("Zl", [w(zmm1), r(zmm_m512)]), evex(L512, Tuple1Scalar)._66()._0f38().w0().op(0x88).r(), (_64b | compat) & avx512f),
 
         // VEXPANDPD - Load sparse packed double-precision floats
         // EVEX.512.66.0F38.W1 88 /r
-        inst("vexpandpd", fmt("Zl", [w(zmm1), r(zmm_m512)]), evex(L512, Full)._66()._0f38().w1().op(0x88).r(), (_64b | compat) & avx512f),
+        inst("vexpandpd", fmt("Zl", [w(zmm1), r(zmm_m512)]), evex(L512, Tuple1Scalar)._66()._0f38().w1().op(0x88).r(), (_64b | compat) & avx512f),
 
         // Register-to-register compress/expand with masking
         // These use the mask to control which elements participate in compress/expand
@@ -1182,14 +1182,14 @@ pub fn list() -> Vec<Inst> {
         // Memory compress/expand with masking
         // VPCOMPRESSD memory form with mask - store compressed dwords to memory
         // Note: Stores use merge_mask (z=0) because there's no destination register to zero
-        inst("vpcompressd", fmt("Zs_km_c", [r(k1), w(m512), r(zmm1)]), evex(L512, Full)._66()._0f38().w0().op(0x8B).r().merge_mask(), (_64b | compat) & avx512f),
+        inst("vpcompressd", fmt("Zs_km_c", [r(k1), w(m512), r(zmm1)]), evex(L512, Tuple1Scalar)._66()._0f38().w0().op(0x8B).r().merge_mask(), (_64b | compat) & avx512f),
         // VPCOMPRESSQ memory form with mask - store compressed qwords to memory
         // Note: Stores use merge_mask (z=0) because there's no destination register to zero
-        inst("vpcompressq", fmt("Zs_km_c", [r(k1), w(m512), r(zmm1)]), evex(L512, Full)._66()._0f38().w1().op(0x8B).r().merge_mask(), (_64b | compat) & avx512f),
+        inst("vpcompressq", fmt("Zs_km_c", [r(k1), w(m512), r(zmm1)]), evex(L512, Tuple1Scalar)._66()._0f38().w1().op(0x8B).r().merge_mask(), (_64b | compat) & avx512f),
         // VPEXPANDD memory form with mask - load and expand dwords from memory
-        inst("vpexpandd", fmt("Zl_km_e", [w(zmm1), r(k1), r(m512)]), evex(L512, Full)._66()._0f38().w0().op(0x89).r().zero_mask(), (_64b | compat) & avx512f),
+        inst("vpexpandd", fmt("Zl_km_e", [w(zmm1), r(k1), r(m512)]), evex(L512, Tuple1Scalar)._66()._0f38().w0().op(0x89).r().zero_mask(), (_64b | compat) & avx512f),
         // VPEXPANDQ memory form with mask - load and expand qwords from memory
-        inst("vpexpandq", fmt("Zl_km_e", [w(zmm1), r(k1), r(m512)]), evex(L512, Full)._66()._0f38().w1().op(0x89).r().zero_mask(), (_64b | compat) & avx512f),
+        inst("vpexpandq", fmt("Zl_km_e", [w(zmm1), r(k1), r(m512)]), evex(L512, Tuple1Scalar)._66()._0f38().w1().op(0x89).r().zero_mask(), (_64b | compat) & avx512f),
 
         // =========================================
         // Gather/Scatter Operations
@@ -1354,11 +1354,11 @@ pub fn list() -> Vec<Inst> {
 
         // VEXTRACTI32X8 - Extract 256-bit from 512-bit
         // EVEX.512.66.0F3A.W0 3B /r ib
-        inst("vextracti32x8", fmt("Ze8", [w(ymm_m256), r(zmm1), r(imm8)]), evex(L512, Full)._66()._0f3a().w0().op(0x3B).r().ib(), (_64b | compat) & avx512dq),
+        inst("vextracti32x8", fmt("Ze8", [w(ymm_m256), r(zmm1), r(imm8)]), evex(L512, Tuple8)._66()._0f3a().w0().op(0x3B).r().ib(), (_64b | compat) & avx512dq),
 
         // VEXTRACTI64X4 - Extract 256-bit from 512-bit (qword)
         // EVEX.512.66.0F3A.W1 3B /r ib
-        inst("vextracti64x4", fmt("Ze4", [w(ymm_m256), r(zmm1), r(imm8)]), evex(L512, Full)._66()._0f3a().w1().op(0x3B).r().ib(), (_64b | compat) & avx512f),
+        inst("vextracti64x4", fmt("Ze4", [w(ymm_m256), r(zmm1), r(imm8)]), evex(L512, Tuple4)._66()._0f3a().w1().op(0x3B).r().ib(), (_64b | compat) & avx512f),
 
         // VINSERTI32X4 - Insert 128-bit into 512-bit
         // EVEX.512.66.0F3A.W0 38 /r ib
@@ -1370,11 +1370,11 @@ pub fn list() -> Vec<Inst> {
 
         // VINSERTI32X8 - Insert 256-bit into 512-bit
         // EVEX.512.66.0F3A.W0 3A /r ib
-        inst("vinserti32x8", fmt("Zi8", [w(zmm1), r(zmm2), r(ymm_m256), r(imm8)]), evex(L512, Full)._66()._0f3a().w0().op(0x3A).r().ib(), (_64b | compat) & avx512dq),
+        inst("vinserti32x8", fmt("Zi8", [w(zmm1), r(zmm2), r(ymm_m256), r(imm8)]), evex(L512, Tuple8)._66()._0f3a().w0().op(0x3A).r().ib(), (_64b | compat) & avx512dq),
 
         // VINSERTI64X4 - Insert 256-bit into 512-bit (qword)
         // EVEX.512.66.0F3A.W1 3A /r ib
-        inst("vinserti64x4", fmt("Zi4", [w(zmm1), r(zmm2), r(ymm_m256), r(imm8)]), evex(L512, Full)._66()._0f3a().w1().op(0x3A).r().ib(), (_64b | compat) & avx512f),
+        inst("vinserti64x4", fmt("Zi4", [w(zmm1), r(zmm2), r(ymm_m256), r(imm8)]), evex(L512, Tuple4)._66()._0f3a().w1().op(0x3A).r().ib(), (_64b | compat) & avx512f),
 
         // =========================================
         // FP Extract/Insert
@@ -1390,11 +1390,11 @@ pub fn list() -> Vec<Inst> {
 
         // VEXTRACTF32X8 - Extract 256-bit FP from 512-bit
         // EVEX.512.66.0F3A.W0 1B /r ib
-        inst("vextractf32x8", fmt("Ze8", [w(ymm_m256), r(zmm1), r(imm8)]), evex(L512, Full)._66()._0f3a().w0().op(0x1B).r().ib(), (_64b | compat) & avx512dq),
+        inst("vextractf32x8", fmt("Ze8", [w(ymm_m256), r(zmm1), r(imm8)]), evex(L512, Tuple8)._66()._0f3a().w0().op(0x1B).r().ib(), (_64b | compat) & avx512dq),
 
         // VEXTRACTF64X4 - Extract 256-bit FP from 512-bit (qword)
         // EVEX.512.66.0F3A.W1 1B /r ib
-        inst("vextractf64x4", fmt("Ze4", [w(ymm_m256), r(zmm1), r(imm8)]), evex(L512, Full)._66()._0f3a().w1().op(0x1B).r().ib(), (_64b | compat) & avx512f),
+        inst("vextractf64x4", fmt("Ze4", [w(ymm_m256), r(zmm1), r(imm8)]), evex(L512, Tuple4)._66()._0f3a().w1().op(0x1B).r().ib(), (_64b | compat) & avx512f),
 
         // VINSERTF32X4 - Insert 128-bit FP into 512-bit
         // EVEX.512.66.0F3A.W0 18 /r ib
@@ -1406,11 +1406,11 @@ pub fn list() -> Vec<Inst> {
 
         // VINSERTF32X8 - Insert 256-bit FP into 512-bit
         // EVEX.512.66.0F3A.W0 1A /r ib
-        inst("vinsertf32x8", fmt("Zi8", [w(zmm1), r(zmm2), r(ymm_m256), r(imm8)]), evex(L512, Full)._66()._0f3a().w0().op(0x1A).r().ib(), (_64b | compat) & avx512dq),
+        inst("vinsertf32x8", fmt("Zi8", [w(zmm1), r(zmm2), r(ymm_m256), r(imm8)]), evex(L512, Tuple8)._66()._0f3a().w0().op(0x1A).r().ib(), (_64b | compat) & avx512dq),
 
         // VINSERTF64X4 - Insert 256-bit FP into 512-bit (qword)
         // EVEX.512.66.0F3A.W1 1A /r ib
-        inst("vinsertf64x4", fmt("Zi4", [w(zmm1), r(zmm2), r(ymm_m256), r(imm8)]), evex(L512, Full)._66()._0f3a().w1().op(0x1A).r().ib(), (_64b | compat) & avx512f),
+        inst("vinsertf64x4", fmt("Zi4", [w(zmm1), r(zmm2), r(ymm_m256), r(imm8)]), evex(L512, Tuple4)._66()._0f3a().w1().op(0x1A).r().ib(), (_64b | compat) & avx512f),
 
         // =========================================
         // FP Special Operations

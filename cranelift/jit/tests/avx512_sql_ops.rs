@@ -1691,7 +1691,6 @@ fn test_f64x8_compare() {
     let count2 = func(values2.as_ptr(), 0.0);
     // Values > 0.0: 1.0, 2.0, 3.0, 4.0, 5.0, 6.0 = 6
     assert_eq!(count2, 6);
-
 }
 
 #[test]
@@ -3101,7 +3100,6 @@ fn test_between_filter() {
     // BETWEEN 10 AND 50 should match: 10, 15, 20, 25, 30, 35, 40, 45, 50 = 9 elements
     let count = func(data.as_ptr(), 10, 50);
     assert_eq!(count, 9, "BETWEEN filter failed");
-
 }
 
 /// Test COALESCE pattern: COALESCE(a, b) = if a is not null then a else b
@@ -3185,7 +3183,6 @@ fn test_coalesce() {
         let expected = if a_null[i] == 0 { a[i] } else { b[i] };
         assert_eq!(result[i], expected, "COALESCE failed at index {i}");
     }
-
 }
 
 /// Test conversion: i64 -> f64 -> i64 round-trip
@@ -3257,7 +3254,6 @@ fn test_conversion_roundtrip() {
             "Conversion round-trip failed at index {i}"
         );
     }
-
 }
 
 /// Test FMA: fma (a*b+c) for F64X8
@@ -3326,7 +3322,6 @@ fn test_fma_f64x8_basic() {
         // fma: 2*3+1 = 7
         assert!((fma_out[i] - 7.0).abs() < 0.001, "fma failed at {i}");
     }
-
 }
 
 /// Test integer comparison with all IntCC variants
@@ -3419,7 +3414,6 @@ fn test_icmp_all_conditions() {
         assert_eq!(slt_out[i], exp_slt, "SLT failed at {i}");
         assert_eq!(sgt_out[i], exp_sgt, "SGT failed at {i}");
     }
-
 }
 
 /// Test floating point comparison with FloatCC variants
@@ -3501,7 +3495,6 @@ fn test_fcmp_all_conditions() {
         assert_eq!(lt_out[i], exp_lt, "fcmp LT failed at {i}");
         assert_eq!(le_out[i], exp_le, "fcmp LE failed at {i}");
     }
-
 }
 
 // =============================================================================

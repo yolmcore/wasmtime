@@ -4416,8 +4416,29 @@
 ;; AVX-512 Masked Operations
 ;; =============================================================================
 ;;
-;; These helpers support masked AVX-512 operations using k-registers.
-;; The mask determines which lanes are updated:
+;; AVX-512 K-Register Allocation in Cranelift
+;; ------------------------------------------
+;;
+;; K-registers (k0-k7) are AVX-512 mask registers. They're handled specially:
+;;
+;; 1. **PReg Encoding**: K-registers use PReg indices 32-39 (k0=32, k1=33, etc.)
+;;    This avoids conflicts with XMM/ZMM registers (0-31).
+;;
+;; 2. **k0 is special**: k0 means "no masking" (all lanes active). It's never
+;;    used for actual masking operations - only k1-k7 are used for masking.
+;;
+;; 3. **Current allocation**: K-registers are allocated dynamically via
+;;    `temp_kmask_writable_k1_k7()` which requests a temp from regalloc.
+;;    The allocator picks from k1-k7 (k0 excluded since it means "no mask").
+;;
+;; 4. **Spill/Fill**: K-registers use KMOVQ for spill/fill operations
+;;    (see emit.rs `emit_mask_spill`/`emit_mask_fill`).
+;;
+;; 5. **Future work**: Dynamic k-register allocation with proper liveness
+;;    analysis could improve register pressure for complex masked operations.
+;;
+;; Masking Modes
+;; -------------
 ;; - Merging mode: lanes where mask bit is 0 keep their value from passthrough
 ;; - Zeroing mode: lanes where mask bit is 0 are set to zero
 ;;

@@ -1381,7 +1381,6 @@ fn test_i64x8_iadd() {
         func(&a, &b, &mut result);
     }
     assert_eq!(result, I64x8::splat(0));
-
 }
 
 #[test]
@@ -1413,7 +1412,6 @@ fn test_i32x16_iadd() {
             101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116
         ])
     );
-
 }
 
 // =============================================================================
@@ -1444,7 +1442,6 @@ fn test_i64x8_isub() {
     }
 
     assert_eq!(result, I64x8::new([99, 198, 297, 396, 495, 594, 693, 792]));
-
 }
 
 #[test]
@@ -1476,7 +1473,6 @@ fn test_i32x16_isub() {
             999, 998, 997, 996, 995, 994, 993, 992, 991, 990, 989, 988, 987, 986, 985, 984
         ])
     );
-
 }
 
 // =============================================================================
@@ -1516,7 +1512,6 @@ fn test_i64x8_band() {
         func(&a, &b, &mut result);
     }
     assert_eq!(result, I64x8::new([1, 2, 3, 4, 5, 6, 7, 8]));
-
 }
 
 #[test]
@@ -1543,7 +1538,6 @@ fn test_i32x16_band() {
     }
 
     assert_eq!(result, I32x16::splat(0x00FF));
-
 }
 
 // =============================================================================
@@ -1574,7 +1568,6 @@ fn test_i64x8_bor() {
     }
 
     assert_eq!(result, I64x8::splat(0xFF));
-
 }
 
 #[test]
@@ -1601,7 +1594,6 @@ fn test_i32x16_bor() {
     }
 
     assert_eq!(result, I32x16::splat(0xFFFF));
-
 }
 
 // =============================================================================
@@ -1640,7 +1632,6 @@ fn test_i64x8_bxor() {
         func(&a, &b, &mut result);
     }
     assert_eq!(result, I64x8::splat(-1));
-
 }
 
 #[test]
@@ -1667,7 +1658,6 @@ fn test_i32x16_bxor() {
     }
 
     assert_eq!(result, I32x16::splat(0xFFFF));
-
 }
 
 // =============================================================================
@@ -1698,7 +1688,6 @@ fn test_i64x8_smin() {
     }
 
     assert_eq!(result, I64x8::new([5, -5, -100, -100, 0, -50, -50, -1000]));
-
 }
 
 #[test]
@@ -1725,7 +1714,6 @@ fn test_i64x8_smax() {
     }
 
     assert_eq!(result, I64x8::new([10, 10, 100, 100, 0, 50, 50, 1000]));
-
 }
 
 #[test]
@@ -1757,7 +1745,6 @@ fn test_i32x16_smin() {
             5, -5, -100, -100, 0, -50, -50, -1000, 1, 2, 3, 4, 4, 3, 2, 1
         ])
     );
-
 }
 
 #[test]
@@ -1787,7 +1774,6 @@ fn test_i32x16_smax() {
         result,
         I32x16::new([10, 10, 100, 100, 0, 50, 50, 1000, 8, 7, 6, 5, 5, 6, 7, 8])
     );
-
 }
 
 // =============================================================================
@@ -1819,7 +1805,6 @@ fn test_i64x8_umin() {
     }
 
     assert_eq!(result, I64x8::new([5, 5, 100, 100, 0, 50, 1, 500]));
-
 }
 
 #[test]
@@ -1846,7 +1831,6 @@ fn test_i64x8_umax() {
     }
 
     assert_eq!(result, I64x8::new([10, 10, 200, 200, 0, 100, 2, 1000]));
-
 }
 
 // =============================================================================
@@ -1951,7 +1935,6 @@ fn test_columnar_sum_pattern() {
         result,
         I64x8::new([1111, 2222, 3333, 4444, 5555, 6666, 7777, 8888])
     );
-
 }
 
 /// Test a vectorized comparison pattern (useful for WHERE clauses)
@@ -2024,7 +2007,6 @@ fn test_vectorized_filter_mask() {
 
     compiler.module.clear_context(&mut compiler.ctx);
     compiler.module.finalize_definitions().unwrap();
-
 }
 
 // =============================================================================
@@ -2099,7 +2081,6 @@ fn test_vcode_vpaddq_used() {
         found_vmovdqu64,
         "Expected VMOVDQU64 (512-bit load) instruction, but it wasn't generated"
     );
-
 }
 
 /// Test that verifies VPADDD (512-bit 32-bit element add) instruction is generated.
@@ -2174,7 +2155,6 @@ fn test_vcode_vpaddd_used() {
         found_vmovdqu32,
         "Expected VMOVDQU32 (512-bit load) instruction, but it wasn't generated"
     );
-
 }
 
 /// Test that verifies VPANDQ/VPORD/VPXORQ (512-bit bitwise) instructions are generated.
@@ -2256,7 +2236,6 @@ fn test_vcode_bitwise_ops_used() {
         found_vporq,
         "Expected VPORQ instruction for I64X8 bor, but it wasn't generated"
     );
-
 }
 
 /// Test that verifies VPMINSQ/VPMAXSQ (512-bit signed min/max) instructions are generated.
@@ -2331,7 +2310,6 @@ fn test_vcode_minmax_ops_used() {
         found_vpmaxsq,
         "Expected VPMAXSQ instruction for I64X8 smax, but it wasn't generated"
     );
-
 }
 
 /// Test that verifies VMOVDQU64 (512-bit load/store) instructions are generated.
@@ -2394,7 +2372,6 @@ fn test_vcode_load_store_512bit() {
         found_vmovdqu,
         "Expected VMOVDQU64/32 instruction for 512-bit load/store, but it wasn't generated"
     );
-
 }
 
 // NOTE: VPOPCNTD/Q tests are disabled because they require AVX-512 VPOPCNTDQ extension.
@@ -2458,7 +2435,6 @@ fn test_i64x8_imul() {
         func(&a, &b, &mut result);
     }
     assert_eq!(result, I64x8::new([-1, -4, 9, -16, 25, -36, 49, -64]));
-
 }
 
 /// Test 32-bit multiply low (VPMULLD).
@@ -2491,7 +2467,6 @@ fn test_i32x16_imul() {
             10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160
         ])
     );
-
 }
 
 // =============================================================================
@@ -2545,7 +2520,6 @@ fn test_i64x8_clz() {
         func(&a, &mut result);
     }
     assert_eq!(result, I64x8::new([63, 62, 61, 60, 59, 58, 57, 56]));
-
 }
 
 /// Test I32X16 clz - VPLZCNTD instruction (AVX-512CD).
@@ -2597,7 +2571,6 @@ fn test_i32x16_clz() {
         result,
         I32x16::new([32, 31, 30, 29, 23, 16, 15, 8, 7, 3, 1, 0, 3, 19, 27, 31])
     );
-
 }
 
 // =============================================================================
@@ -2650,7 +2623,6 @@ fn test_i64x8_vpsllv() {
             0xFF0000000
         ])
     );
-
 }
 
 /// Test I32X16 per-element variable left shift (VPSLLVD).
@@ -2684,7 +2656,6 @@ fn test_i32x16_vpsllv() {
             1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768
         ])
     );
-
 }
 
 /// Test I64X8 per-element variable unsigned right shift (VPSRLVQ).
@@ -2725,7 +2696,6 @@ fn test_i64x8_vpsrlv() {
             1,
         ])
     );
-
 }
 
 /// Test I32X16 per-element variable unsigned right shift (VPSRLVD).
@@ -2774,7 +2744,6 @@ fn test_i32x16_vpsrlv() {
             0x8000_0000u32 as i32,
         ])
     );
-
 }
 
 /// Test I64X8 per-element variable signed right shift (VPSRAVQ).
@@ -2824,7 +2793,6 @@ fn test_i64x8_vpsrav() {
             -1, // all 1s
         ])
     );
-
 }
 
 /// Test I32X16 per-element variable signed right shift (VPSRAVD).
@@ -2860,7 +2828,6 @@ fn test_i32x16_vpsrav() {
             -128, -64, -32, -16, -8, -4, -2, -1, 128, 64, 32, 16, 8, 4, 2, 1,
         ])
     );
-
 }
 
 // =============================================================================
@@ -2959,7 +2926,6 @@ fn test_i64x8_pmullq_low() {
     // High bits should be ignored, only low 32 bits matter
     // 5*3=15, 10*5=50, 100*2=200, 1000*4=4000
     assert_eq!(result, I64x8::new([15, 50, 200, 4000, 15, 50, 200, 4000]));
-
 }
 
 /// Test I64X8 signed widening multiply (VPMULDQ).
@@ -3044,7 +3010,6 @@ fn test_i64x8_smullq_low() {
         (0xEDCBA988_u32 as i32 as i64) * (0x12345678_i32 as i64), // signed multiply
     ]);
     assert_eq!(result, expected);
-
 }
 
 // =============================================================================
@@ -3122,7 +3087,6 @@ fn test_f64x8_fmin() {
     assert_eq!(result.0[1], -1e308);
     assert_eq!(result.0[6], f64::MIN);
     assert_eq!(result.0[7], f64::MIN);
-
 }
 
 /// Test F64X8 maximum (VMAXPD).
@@ -3163,7 +3127,6 @@ fn test_f64x8_fmax() {
         result,
         F64x8::new([2.0, -3.0, -3.0, 0.0, 2.0, 6.0, 4.0, 0.5])
     );
-
 }
 
 /// Test F32X16 minimum (VMINPS).
@@ -3199,7 +3162,6 @@ fn test_f32x16_fmin() {
             1.0, 3.0, 3.0, 1.0, 2.0, 6.0, 4.0, 0.5, -1.0, -5.0, -4.0, -1.0, -5.0, -9.0, -7.0, -7.0,
         ])
     );
-
 }
 
 /// Test F32X16 maximum (VMAXPS).
@@ -3235,7 +3197,6 @@ fn test_f32x16_fmax() {
             2.0, 5.0, 4.0, 8.0, 5.0, 9.0, 7.0, 7.0, 2.0, -3.0, -3.0, 0.0, 2.0, 6.0, 4.0, 0.5,
         ])
     );
-
 }
 
 // =============================================================================
@@ -3302,7 +3263,6 @@ fn test_i64x8_to_f64x8() {
     assert_eq!(result.0[5], 1.0);
     assert_eq!(result.0[6], -1.0);
     assert_eq!(result.0[7], 123456789012345.0);
-
 }
 
 /// Test F64X8 -> I64X8 conversion with saturation (VCVTTPD2QQ).
@@ -3356,7 +3316,6 @@ fn test_f64x8_to_i64x8() {
     assert_eq!(result.0[5], -1);
     assert_eq!(result.0[6], -2);
     assert_eq!(result.0[7], -3);
-
 }
 
 /// Test I32X16 -> F32X16 conversion (VCVTDQ2PS).
@@ -3409,7 +3368,6 @@ fn test_i32x16_to_f32x16() {
     assert_eq!(result.0[6], -1000.0);
     assert_eq!(result.0[7], 10000.0);
     assert_eq!(result.0[15], 42.0);
-
 }
 
 /// Test F32X16 -> I32X16 conversion with saturation (VCVTTPS2DQ).
@@ -3452,7 +3410,6 @@ fn test_f32x16_to_i32x16() {
     assert_eq!(result.0[9], 1); // 1.9 truncated
     assert_eq!(result.0[10], -1); // -1.9 truncated toward zero
     assert_eq!(result.0[15], 42); // 42.7 truncated
-
 }
 
 // =============================================================================
@@ -3492,7 +3449,6 @@ fn test_f64x8_fma() {
     assert_eq!(result.0[5], 6.0 * 7.0 + 60.0); // 102.0
     assert_eq!(result.0[6], 7.0 * 8.0 + 70.0); // 126.0
     assert_eq!(result.0[7], 8.0 * 9.0 + 80.0); // 152.0
-
 }
 
 /// Test F64X8 fused multiply-subtract fusion: fsub(fmul(x, y), z) = x * y - z (VFMSUB213PD).
@@ -3532,7 +3488,6 @@ fn test_f64x8_fmsub_fusion() {
     assert_eq!(result.0[5], 60.0 * 2.0 - 30.0); // 90.0
     assert_eq!(result.0[6], 70.0 * 2.0 - 35.0); // 105.0
     assert_eq!(result.0[7], 80.0 * 2.0 - 40.0); // 120.0
-
 }
 
 /// Test F64X8 fused negate-multiply-add fusion: fsub(z, fmul(x, y)) = z - x * y (VFNMADD213PD).
@@ -3572,7 +3527,6 @@ fn test_f64x8_fnmadd_fusion() {
     assert_eq!(result.0[5], 100.0 - 6.0 * 2.0); // 88.0
     assert_eq!(result.0[6], 100.0 - 7.0 * 2.0); // 86.0
     assert_eq!(result.0[7], 100.0 - 8.0 * 2.0); // 84.0
-
 }
 
 // =============================================================================
@@ -3623,7 +3577,6 @@ fn test_i64x8_iabs() {
             1000000,
         ])
     );
-
 }
 
 /// Test I32X16 iabs - VPABSD instruction.
@@ -3686,7 +3639,6 @@ fn test_i32x16_iabs() {
             0,
         ])
     );
-
 }
 
 // =============================================================================
@@ -3731,7 +3683,6 @@ fn test_i64x8_splat() {
         func(0x123456789ABCDEF0, &mut result);
     }
     assert_eq!(result, I64x8::splat(0x123456789ABCDEF0));
-
 }
 
 /// Test I32X16 splat - VPBROADCASTD instruction.
@@ -3772,7 +3723,6 @@ fn test_i32x16_splat() {
         func(0x12345678, &mut result);
     }
     assert_eq!(result, I32x16::splat(0x12345678));
-
 }
 
 // =============================================================================
@@ -3825,7 +3775,6 @@ fn test_i64x8_popcnt() {
     assert_eq!(result.0[5], 32); // popcnt(0xFFFF_FFFF)
     assert_eq!(result.0[6], 64); // popcnt(all 1s)
     assert_eq!(result.0[7], (0x1234_5678_9ABC_DEF0_u64).count_ones() as i64);
-
 }
 
 /// Test I32X16 popcnt - VPOPCNTD instruction (AVX-512 VPOPCNTDQ).
@@ -3889,7 +3838,6 @@ fn test_i32x16_popcnt() {
     assert_eq!(result.0[13], 4); // 0x80808080
     assert_eq!(result.0[14], 0xDEADBEEF_u32.count_ones() as i32);
     assert_eq!(result.0[15], 0xCAFEBABE_u32.count_ones() as i32);
-
 }
 
 // =============================================================================
@@ -4007,7 +3955,6 @@ fn test_i32x16_masked_iadd() {
             11, -2, 33, -4, 55, -6, 77, -8, 99, -10, 121, -12, 143, -14, 165, -16,
         ])
     );
-
 }
 
 /// Test masked iadd fusion for I64X8: bitselect(mask, iadd(x, y), passthru)
@@ -4103,7 +4050,6 @@ fn test_i64x8_masked_iadd() {
         result,
         I64x8::new([11, -200, 33, -400, 55, -600, 77, -800,])
     );
-
 }
 
 // =============================================================================
@@ -4210,7 +4156,6 @@ fn test_i32x16_masked_umin_fusion() {
             -999, -999, -999, -999, -999, -999, -999, -999, // passthru
         ])
     );
-
 }
 
 /// Test masked umax fusion for I32X16: bitselect(mask, umax(x, y), passthru)
@@ -4311,7 +4256,6 @@ fn test_i32x16_masked_umax_fusion() {
             -999, -999, -999, -999, -999, -999, -999, -999, // passthru
         ])
     );
-
 }
 
 /// Test masked umin fusion for I64X8: bitselect(mask, umin(x, y), passthru)
@@ -4400,7 +4344,6 @@ fn test_i64x8_masked_umin_fusion() {
         result,
         I64x8::new([100, -999, 150, -999, 150, -999, 150, -999,])
     );
-
 }
 
 // =============================================================================
@@ -4509,7 +4452,6 @@ fn test_f32x16_masked_fadd_fusion() {
             -100.0, -100.0, -100.0, -100.0, -100.0, -100.0, -100.0, -100.0, // passthru
         ])
     );
-
 }
 
 /// Test masked fmul fusion for F32X16: bitselect(mask, fmul(x, y), passthru)
@@ -4609,7 +4551,6 @@ fn test_f32x16_masked_fmul_fusion() {
             -100.0, -100.0, -100.0, -100.0, -100.0, -100.0, -100.0, -100.0, // passthru
         ])
     );
-
 }
 
 /// Test masked fmin fusion for F32X16: bitselect(mask, fmin(x, y), passthru)
@@ -4709,7 +4650,6 @@ fn test_f32x16_masked_fmin_fusion() {
             -100.0, -100.0, -100.0, -100.0, -100.0, -100.0, -100.0, -100.0, // passthru
         ])
     );
-
 }
 
 // =============================================================================
@@ -4804,7 +4744,6 @@ fn test_f64x8_masked_fadd_fusion() {
         result,
         F64x8::new([1.5, -100.0, 3.5, -100.0, 5.5, -100.0, 7.5, -100.0,])
     );
-
 }
 
 /// Test masked fmul fusion for F64X8: bitselect(mask, fmul(x, y), passthru)
@@ -4894,7 +4833,6 @@ fn test_f64x8_masked_fmul_fusion() {
         result,
         F64x8::new([2.0, -100.0, 6.0, -100.0, 10.0, -100.0, 14.0, -100.0,])
     );
-
 }
 
 /// Test masked fmin fusion for F64X8: bitselect(mask, fmin(x, y), passthru)
@@ -4984,7 +4922,6 @@ fn test_f64x8_masked_fmin_fusion() {
         result,
         F64x8::new([1.0, -100.0, 3.0, -100.0, 5.0, -100.0, 5.0, -100.0,])
     );
-
 }
 
 /// Test masked fsub fusion for F32X16: bitselect(mask, fsub(x, y), passthru)
@@ -5085,7 +5022,6 @@ fn test_f32x16_masked_fsub_fusion() {
             125.0, -100.0, 145.0, -100.0,
         ])
     );
-
 }
 
 /// Test masked fdiv fusion for F32X16: bitselect(mask, fdiv(x, y), passthru)
@@ -5186,7 +5122,6 @@ fn test_f32x16_masked_fdiv_fusion() {
             65.0, -100.0, 75.0, -100.0,
         ])
     );
-
 }
 
 /// Test masked fmax fusion for F32X16: bitselect(mask, fmax(x, y), passthru)
@@ -5286,7 +5221,6 @@ fn test_f32x16_masked_fmax_fusion() {
             -100.0, 15.0, -100.0,
         ])
     );
-
 }
 
 /// Test masked fsub fusion for F64X8: bitselect(mask, fsub(x, y), passthru)
@@ -5376,7 +5310,6 @@ fn test_f64x8_masked_fsub_fusion() {
         result,
         F64x8::new([5.0, -100.0, 25.0, -100.0, 45.0, -100.0, 65.0, -100.0,])
     );
-
 }
 
 /// Test masked fdiv fusion for F64X8: bitselect(mask, fdiv(x, y), passthru)
@@ -5466,7 +5399,6 @@ fn test_f64x8_masked_fdiv_fusion() {
         result,
         F64x8::new([5.0, -100.0, 15.0, -100.0, 25.0, -100.0, 35.0, -100.0,])
     );
-
 }
 
 /// Test masked fmax fusion for F64X8: bitselect(mask, fmax(x, y), passthru)
@@ -5556,7 +5488,6 @@ fn test_f64x8_masked_fmax_fusion() {
         result,
         F64x8::new([5.0, -100.0, 5.0, -100.0, 5.0, -100.0, 7.0, -100.0,])
     );
-
 }
 // NOTE: Masked shift fusion patterns are not implemented because CLIF's ishl/ushr/sshr
 // instructions take a scalar shift amount, not a per-element vector. Implementing masked
@@ -8269,7 +8200,21 @@ fn test_i32x16_isub_boundary_values() {
 
     // Test self-subtraction
     let a = I32x16::new([
-        i32::MIN, i32::MAX, 0, -1, 1, 100, -100, 12345, i32::MIN, i32::MAX, 0, -1, 1, 100, -100,
+        i32::MIN,
+        i32::MAX,
+        0,
+        -1,
+        1,
+        100,
+        -100,
+        12345,
+        i32::MIN,
+        i32::MAX,
+        0,
+        -1,
+        1,
+        100,
+        -100,
         12345,
     ]);
     unsafe { func(&a, &a, &mut result) };
@@ -8858,7 +8803,9 @@ fn test_i32x16_lane_patterns() {
     };
 
     let code = compiler
-        .compile_binary_i32x16("i32x16_iadd_lanes", |builder, a, b| builder.ins().iadd(a, b))
+        .compile_binary_i32x16("i32x16_iadd_lanes", |builder, a, b| {
+            builder.ins().iadd(a, b)
+        })
         .expect("Failed to compile");
 
     let func: BinaryI32x16Fn = unsafe { mem::transmute(code) };

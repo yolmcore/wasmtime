@@ -394,7 +394,14 @@ impl dsl::Format {
             }
             dsl::TupleType::Tuple1Fixed => unimplemented!(),
             dsl::TupleType::Tuple2 => unimplemented!(),
-            dsl::TupleType::Tuple4 => unimplemented!(),
+            // Tuple4: 4 elements × element size (W=0: 4 bytes, W=1: 8 bytes)
+            dsl::TupleType::Tuple4 => {
+                if evex.w.as_bool() {
+                    32 // 4 × 8 bytes
+                } else {
+                    16 // 4 × 4 bytes
+                }
+            }
             dsl::TupleType::Tuple8 => 32,
             dsl::TupleType::HalfMem => length_bytes / 2,
             dsl::TupleType::QuarterMem => length_bytes / 4,

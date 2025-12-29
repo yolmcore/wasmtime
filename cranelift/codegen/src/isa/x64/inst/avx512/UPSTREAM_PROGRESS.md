@@ -119,3 +119,63 @@ Last Updated: 2025-12-29
   - VSIB addressing mode (vector index) not yet supported in DSL
   - Instructions like VPGATHERD/VPSCATTERD need this first
   - Appropriately deferred until DSL supports VSIB
+
+### 2025-12-29 (Quality Fixes)
+- Fixed assembler test flakiness caused by incorrect tuple types
+  - Implemented `Tuple4` tuple type for 256-bit extract/insert instructions
+  - Fixed 8 instructions using wrong tuple type (`Full` → `Tuple4`/`Tuple8`):
+    - vextractf64x4, vextracti64x4, vinsertf64x4, vinserti64x4 → Tuple4
+    - vextractf32x8, vextracti32x8, vinsertf32x8, vinserti32x8 → Tuple8
+  - Fixed compress/expand instructions to use `Tuple1Scalar` (12 instruction forms)
+- Changed `unimplemented!()` to `unreachable!()` in emit.rs FP special ops
+- Removed remaining vendor branding from defs.rs and emit.rs
+- Added comprehensive emit.rs documentation (module overview, K-register encoding, MergeMode)
+- Enhanced K-register allocation documentation in inst.isle
+- Created README.md for avx512 module with architecture overview
+
+---
+
+## AVX-512 Feature Matrix
+
+### Supported Vector Types
+
+| Type | Lanes | Element | Width | Status |
+|------|-------|---------|-------|--------|
+| I8X64 | 64 | i8 | 512-bit | ✅ Full |
+| I16X32 | 32 | i16 | 512-bit | ✅ Full |
+| I32X16 | 16 | i32 | 512-bit | ✅ Full |
+| I64X8 | 8 | i64 | 512-bit | ✅ Full |
+| F32X16 | 16 | f32 | 512-bit | ✅ Full |
+| F64X8 | 8 | f64 | 512-bit | ✅ Full |
+
+### Instruction Coverage
+
+| Category | Instructions | Status |
+|----------|-------------|--------|
+| Integer ALU | VPADD/SUB/MULL (B/W/D/Q) | ✅ Complete |
+| Integer Compare | VPCMP (signed/unsigned) | ✅ Complete |
+| Integer Min/Max | VPMIN/MAX (signed/unsigned) | ✅ Complete |
+| Bitwise | VPAND/OR/XOR/ANDN | ✅ Complete |
+| Shifts | VPSLL/SRL/SRA (D/Q) | ✅ Complete |
+| FP ALU | VADD/SUB/MUL/DIV (PS/PD) | ✅ Complete |
+| FP Compare | VCMPPS/VCMPPD | ✅ Complete |
+| FP Min/Max | VMINPS/VMAXPS/etc | ✅ Complete |
+| FP Special | VSQRT, VRCP14, VRSQRT14 | ✅ Complete |
+| FMA | VFMADD/SUB 132/213/231 | ✅ Complete |
+| Conversions | VCVT (int↔fp, precision) | ✅ Complete |
+| Shuffles | VPSHUFB, VPERMD, etc | ✅ Complete |
+| Insert/Extract | VEXTRACTI/VINSERTI | ✅ Complete |
+| K-mask ALU | KAND/OR/XOR/NOT | ✅ Complete |
+| Compress/Expand | VPCOMPRESS/VPEXPAND | ✅ Complete |
+| Conflict Detection | VPCONFLICT | ✅ Complete |
+| Gather/Scatter | VPGATHER/VPSCATTER | ⏸️ Deferred |
+| VL variants | 128/256-bit EVEX | ⏸️ Deferred |
+
+### Required CPU Features
+
+| Feature | Purpose | Required For |
+|---------|---------|--------------|
+| AVX-512F | Foundation | All 512-bit ops |
+| AVX-512BW | Byte/Word | I8X64, I16X32 ops |
+| AVX-512DQ | DQ extensions | VPMULLQ, VEXTRACTI64X2 |
+| AVX-512VL | VL variants | Future 128/256-bit work |

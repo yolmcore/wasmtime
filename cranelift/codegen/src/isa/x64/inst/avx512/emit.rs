@@ -2,9 +2,38 @@
 //
 // AVX-512 EVEX instruction emission.
 // This module handles the encoding and emission of AVX-512 instructions
-// for AMD EPYC 5th Generation (Avx512 / Zen 5) processors.
+// using standard EVEX encoding for 512-bit vector operations.
 //
-// Reference: Intel 64 and IA-32 Architectures Software Developer's Manual
+// ## Architecture
+//
+// This module provides emit functions for each category of AVX-512 operations:
+//
+// - **ALU operations** (`emit_x64_512_inst`): Integer arithmetic (VPADDD, VPSUBQ, etc.)
+// - **FP ALU operations** (`emit_x64_512_fp_inst`): Floating-point arithmetic (VADDPS, VMULPD, etc.)
+// - **Comparison operations** (`emit_x64_512_cmp_inst`): Vector comparisons to k-mask
+// - **Conversion operations** (`emit_x64_512_cvt_inst`): Type conversions (VCVTPS2PD, etc.)
+// - **FMA operations** (`emit_x64_512_fma_inst`): Fused multiply-add (VFMADD132PS, etc.)
+// - **Shuffle operations** (`emit_x64_512_shuffle_inst`): Lane permutations
+// - **Insert/Extract** (`emit_x64_512_insert_inst`, `emit_x64_512_extract_inst`)
+// - **K-mask operations** (`emit_mask_*`): Mask register manipulation
+// - **Aligned load/store** (`emit_x64_512_aligned_op`): VMOVAPS, VMOVDQA64, etc.
+//
+// ## K-Register Encoding
+//
+// K-registers (k0-k7) are encoded differently than general/vector registers:
+// - PReg indices: 32-39 (k0=32, k1=33, ... k7=39)
+// - EVEX aaa field: 0-7 (requires subtracting 32 from PReg index)
+// - k0 is special: it means "no masking" (all lanes active)
+//
+// ## MergeMode
+//
+// EVEX instructions support two masking modes:
+// - `MergeMode::Merge` (z=0): Masked-off lanes preserve destination values
+// - `MergeMode::Zero` (z=1): Masked-off lanes are zeroed
+//
+// ## Reference
+//
+// Intel 64 and IA-32 Architectures Software Developer's Manual
 // Volume 2: Instruction Set Reference (EVEX Encoding)
 
 use super::super::args::{Amode, OperandSize, SyntheticAmode, Xmm};
@@ -2207,10 +2236,15 @@ pub fn emit_x64_512_fp_special(
                                 }
                             }
                         }
-                        _ => unimplemented!("Unsupported amode for FP special op: {:?}", amode),
+                        _ => unreachable!(
+                            "FP special ops only support ImmReg addressing mode, got: {:?}",
+                            amode
+                        ),
                     }
                 }
-                _ => unimplemented!("Unsupported synthetic amode for FP special op"),
+                _ => unreachable!(
+                    "FP special ops only support Real synthetic amode, got non-Real variant"
+                ),
             }
         }
     }

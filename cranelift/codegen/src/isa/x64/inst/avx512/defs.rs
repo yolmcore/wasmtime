@@ -1,9 +1,9 @@
 // cranelift/codegen/src/isa/x64/inst/avx512/defs.rs
 //
-// AVX-512 instruction definitions for Avx512/Zen 5.
+// AVX-512 instruction definitions.
 //
 // This module defines the AVX-512 instruction opcodes, merge modes,
-// and related types used for Avx512-native SIMD operations.
+// and related types used for 512-bit SIMD operations.
 
 /// Merge mode for AVX-512 masked operations.
 ///
@@ -56,9 +56,9 @@ pub enum Avx512Cond {
     Gt = 6,
 }
 
-/// AVX-512 ALU operations for Avx512.
+/// AVX-512 ALU operations.
 ///
-/// These operations are optimized for the AMD EPYC Avx512 (Zen 5) architecture.
+/// These operations use standard AVX-512 EVEX encoding for 512-bit vector operations.
 /// All operations use 512-bit vectors (ZMM registers) with EVEX encoding.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]

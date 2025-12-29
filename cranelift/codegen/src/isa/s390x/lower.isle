@@ -3371,7 +3371,7 @@
 ;; (e.g. when directly emitting an `icmp`), or whether it is not (e.g. when
 ;; sinking the `icmp` result into a conditional branch or select).
 
-;; Main `icmp` entry point.  Generate a `ProducesBool` capavx512g the
+;; Main `icmp` entry point.  Generate a `ProducesBool` capturing the
 ;; integer comparison and immediately lower it to a 0/1 integer result.
 ;; In this case, it is safe to sink memory loads.
 (rule -1 (lower (has_type (fits_in_64 ty) (icmp int_cc x y)))
@@ -3520,7 +3520,7 @@
 
 ;;;; Rules for `fcmp` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-;; Main `fcmp` entry point.  Generate a `ProducesBool` capavx512g the
+;; Main `fcmp` entry point.  Generate a `ProducesBool` capturing the
 ;; integer comparison and immediately lower it to a 0/1 integer result.
 (rule -1 (lower (has_type (fits_in_64 ty) (fcmp float_cc x y)))
       (lower_bool ty (fcmp_val float_cc x y)))
@@ -3566,7 +3566,7 @@
 
 ;;;; Rules for `vall_true` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-;; Main `vall_true` entry point.  Generate a `ProducesBool` capavx512g the
+;; Main `vall_true` entry point.  Generate a `ProducesBool` capturing the
 ;; comparison and immediately lower it to a 0/1 integer result.
 (rule (lower (has_type (fits_in_64 ty) (vall_true x)))
       (lower_bool ty (vall_true_val x)))
@@ -3644,7 +3644,7 @@
 
 ;;;; Rules for `vany_true` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-;; Main `vany_true` entry point.  Generate a `ProducesBool` capavx512g the
+;; Main `vany_true` entry point.  Generate a `ProducesBool` capturing the
 ;; comparison and immediately lower it to a 0/1 integer result.
 (rule (lower (has_type (fits_in_64 ty) (vany_true x)))
       (lower_bool ty (vany_true_val x)))
