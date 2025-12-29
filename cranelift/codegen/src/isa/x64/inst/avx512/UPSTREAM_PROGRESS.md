@@ -12,7 +12,7 @@ Last Updated: 2025-12-28
 |---|-------|--------|-------|
 | C1 | Missing ZMM16-31 registers | DONE | Fully implemented! 32 registers now available |
 | C2 | Vendor-specific branding | DONE | Removed Turin/Zen 5/AMD EPYC from avx512.isle + tests |
-| C3 | Missing CLIF filetests | PENDING | Add compile-only tests |
+| C3 | Missing CLIF filetests | DONE | Added avx512.clif with 17 compile tests |
 | C4 | Platform gating missing | DONE | Added #![cfg(target_arch)] to all 3 test files |
 | C5 | Operand corrections | DONE | Fixed VCVTPD2PS/VCVTPD2DQ/VCVTTPD2DQ to use zmm_m512 |
 
@@ -80,3 +80,9 @@ Last Updated: 2025-12-28
 - M2: Added #[must_use] to Kmask methods
 - Fixed fuzz test vcmpps/vcmpngeps/vpcmp mnemonic comparison issues
 - All tests passing (265+ total)
+
+### 2025-12-28 (cont'd)
+- Fixed OnceLock static naming in abi.rs (PINNED_SIMD32_ENV, PINNED_ENV, SIMD32_ENV, DEFAULT_ENV)
+- C3: Added CLIF filetests at cranelift/filetests/filetests/isa/x64/avx512.clif
+  - 17 functions testing: iadd, isub, imul, band, bor, bxor, fadd, fsub, fmul, fdiv, sqrt, ineg
+  - Covers i64x8, i32x16, f64x8, f32x16 types

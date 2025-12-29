@@ -882,20 +882,20 @@ impl ABIMachineSpec for X64ABIMachineSpec {
         // - enable_simd32: includes xmm16-31 (AVX-512 extended registers)
         match (flags.enable_pinned_reg(), flags.enable_simd32()) {
             (true, true) => {
-                static MACHINE_ENV: OnceLock<MachineEnv> = OnceLock::new();
-                MACHINE_ENV.get_or_init(|| create_reg_env_systemv(true, true))
+                static PINNED_SIMD32_ENV: OnceLock<MachineEnv> = OnceLock::new();
+                PINNED_SIMD32_ENV.get_or_init(|| create_reg_env_systemv(true, true))
             }
             (true, false) => {
-                static MACHINE_ENV: OnceLock<MachineEnv> = OnceLock::new();
-                MACHINE_ENV.get_or_init(|| create_reg_env_systemv(true, false))
+                static PINNED_ENV: OnceLock<MachineEnv> = OnceLock::new();
+                PINNED_ENV.get_or_init(|| create_reg_env_systemv(true, false))
             }
             (false, true) => {
-                static MACHINE_ENV: OnceLock<MachineEnv> = OnceLock::new();
-                MACHINE_ENV.get_or_init(|| create_reg_env_systemv(false, true))
+                static SIMD32_ENV: OnceLock<MachineEnv> = OnceLock::new();
+                SIMD32_ENV.get_or_init(|| create_reg_env_systemv(false, true))
             }
             (false, false) => {
-                static MACHINE_ENV: OnceLock<MachineEnv> = OnceLock::new();
-                MACHINE_ENV.get_or_init(|| create_reg_env_systemv(false, false))
+                static DEFAULT_ENV: OnceLock<MachineEnv> = OnceLock::new();
+                DEFAULT_ENV.get_or_init(|| create_reg_env_systemv(false, false))
             }
         }
     }

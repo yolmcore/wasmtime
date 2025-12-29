@@ -1,0 +1,117 @@
+test compile
+target x86_64 has_avx512f has_avx512bw has_avx512dq has_avx512vl
+
+;; Basic 512-bit Integer Add (VPADDQ/VPADDD)
+function %iadd_i64x8(i64x8, i64x8) -> i64x8 {
+block0(v0: i64x8, v1: i64x8):
+    v2 = iadd v0, v1
+    return v2
+}
+
+function %iadd_i32x16(i32x16, i32x16) -> i32x16 {
+block0(v0: i32x16, v1: i32x16):
+    v2 = iadd v0, v1
+    return v2
+}
+
+;; Basic 512-bit Integer Subtract (VPSUBQ/VPSUBD)
+function %isub_i64x8(i64x8, i64x8) -> i64x8 {
+block0(v0: i64x8, v1: i64x8):
+    v2 = isub v0, v1
+    return v2
+}
+
+function %isub_i32x16(i32x16, i32x16) -> i32x16 {
+block0(v0: i32x16, v1: i32x16):
+    v2 = isub v0, v1
+    return v2
+}
+
+;; 512-bit Integer Multiply (VPMULLQ requires AVX512DQ)
+function %imul_i64x8(i64x8, i64x8) -> i64x8 {
+block0(v0: i64x8, v1: i64x8):
+    v2 = imul v0, v1
+    return v2
+}
+
+function %imul_i32x16(i32x16, i32x16) -> i32x16 {
+block0(v0: i32x16, v1: i32x16):
+    v2 = imul v0, v1
+    return v2
+}
+
+;; Bitwise Operations (VPANDQ/VPANDD, VPORQ/VPORD, VPXORQ/VPXORD)
+function %band_i64x8(i64x8, i64x8) -> i64x8 {
+block0(v0: i64x8, v1: i64x8):
+    v2 = band v0, v1
+    return v2
+}
+
+function %bor_i64x8(i64x8, i64x8) -> i64x8 {
+block0(v0: i64x8, v1: i64x8):
+    v2 = bor v0, v1
+    return v2
+}
+
+function %bxor_i64x8(i64x8, i64x8) -> i64x8 {
+block0(v0: i64x8, v1: i64x8):
+    v2 = bxor v0, v1
+    return v2
+}
+
+;; 512-bit Floating-point Add/Sub/Mul/Div (VADDPD/VADDPS)
+function %fadd_f64x8(f64x8, f64x8) -> f64x8 {
+block0(v0: f64x8, v1: f64x8):
+    v2 = fadd v0, v1
+    return v2
+}
+
+function %fadd_f32x16(f32x16, f32x16) -> f32x16 {
+block0(v0: f32x16, v1: f32x16):
+    v2 = fadd v0, v1
+    return v2
+}
+
+function %fsub_f64x8(f64x8, f64x8) -> f64x8 {
+block0(v0: f64x8, v1: f64x8):
+    v2 = fsub v0, v1
+    return v2
+}
+
+function %fmul_f64x8(f64x8, f64x8) -> f64x8 {
+block0(v0: f64x8, v1: f64x8):
+    v2 = fmul v0, v1
+    return v2
+}
+
+function %fdiv_f64x8(f64x8, f64x8) -> f64x8 {
+block0(v0: f64x8, v1: f64x8):
+    v2 = fdiv v0, v1
+    return v2
+}
+
+;; Floating-point Sqrt (VSQRTPD/VSQRTPS)
+function %sqrt_f64x8(f64x8) -> f64x8 {
+block0(v0: f64x8):
+    v1 = sqrt v0
+    return v1
+}
+
+function %sqrt_f32x16(f32x16) -> f32x16 {
+block0(v0: f32x16):
+    v1 = sqrt v0
+    return v1
+}
+
+;; Integer negation (via vpsubd/vpsubq)
+function %ineg_i32x16(i32x16) -> i32x16 {
+block0(v0: i32x16):
+    v1 = ineg v0
+    return v1
+}
+
+function %ineg_i64x8(i64x8) -> i64x8 {
+block0(v0: i64x8):
+    v1 = ineg v0
+    return v1
+}
