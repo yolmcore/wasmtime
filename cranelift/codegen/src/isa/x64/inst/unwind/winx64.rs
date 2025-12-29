@@ -11,7 +11,9 @@ impl crate::isa::unwind::winx64::RegisterMapper<Reg> for RegisterMapper {
             RegClass::Int => MappedRegister::Int(reg.to_real_reg().unwrap().hw_enc()),
             RegClass::Float => MappedRegister::Xmm(reg.to_real_reg().unwrap().hw_enc()),
             // K-registers are volatile and don't need unwind info
-            RegClass::Vector => panic!("K-registers are volatile and shouldn't appear in unwind info"),
+            RegClass::Vector => {
+                panic!("K-registers are volatile and shouldn't appear in unwind info")
+            }
         }
     }
 }

@@ -879,23 +879,50 @@ impl PrettyPrint for Inst {
                 format!("kmovq {addr}, {src}")
             }
 
-            Inst::Avx512Gather { op, dst, base, index, scale, disp, mask } => {
+            Inst::Avx512Gather {
+                op,
+                dst,
+                base,
+                index,
+                scale,
+                disp,
+                mask,
+            } => {
                 let dst = pretty_print_reg(dst.to_reg(), 64);
                 let base = pretty_print_reg(*base, 8);
                 let index = pretty_print_reg(*index, 64);
                 let mask = pretty_print_reg(*mask, 8);
-                format!("{} {dst} {{{mask}}}, [{base} + {index}*{scale} + {disp}]", op.name())
+                format!(
+                    "{} {dst} {{{mask}}}, [{base} + {index}*{scale} + {disp}]",
+                    op.name()
+                )
             }
 
-            Inst::Avx512Scatter { op, src, base, index, scale, disp, mask } => {
+            Inst::Avx512Scatter {
+                op,
+                src,
+                base,
+                index,
+                scale,
+                disp,
+                mask,
+            } => {
                 let src = pretty_print_reg(*src, 64);
                 let base = pretty_print_reg(*base, 8);
                 let index = pretty_print_reg(*index, 64);
                 let mask = pretty_print_reg(*mask, 8);
-                format!("{} [{base} + {index}*{scale} + {disp}] {{{mask}}}, {src}", op.name())
+                format!(
+                    "{} [{base} + {index}*{scale} + {disp}] {{{mask}}}, {src}",
+                    op.name()
+                )
             }
 
-            Inst::Avx512Vp2Intersect { op, dst_k, src1, src2 } => {
+            Inst::Avx512Vp2Intersect {
+                op,
+                dst_k,
+                src1,
+                src2,
+            } => {
                 let dst = pretty_print_reg(dst_k.to_reg(), 8);
                 let src1 = pretty_print_reg(*src1, 64);
                 let src2 = src2.pretty_print(64);
@@ -1286,21 +1313,35 @@ fn x64_get_operands(inst: &mut Inst, collector: &mut impl OperandVisitor) {
             addr.get_operands(collector);
         }
 
-        Inst::Avx512Gather { dst, base, index, mask, .. } => {
+        Inst::Avx512Gather {
+            dst,
+            base,
+            index,
+            mask,
+            ..
+        } => {
             collector.reg_def(dst);
             collector.reg_use(base);
             collector.reg_use(index);
             collector.reg_use(mask);
         }
 
-        Inst::Avx512Scatter { src, base, index, mask, .. } => {
+        Inst::Avx512Scatter {
+            src,
+            base,
+            index,
+            mask,
+            ..
+        } => {
             collector.reg_use(src);
             collector.reg_use(base);
             collector.reg_use(index);
             collector.reg_use(mask);
         }
 
-        Inst::Avx512Vp2Intersect { dst_k, src1, src2, .. } => {
+        Inst::Avx512Vp2Intersect {
+            dst_k, src1, src2, ..
+        } => {
             collector.reg_def(dst_k);
             collector.reg_use(src1);
             src2.get_operands(collector);

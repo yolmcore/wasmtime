@@ -1,3 +1,5 @@
+#![cfg(target_arch = "x86_64")]
+
 //! AVX-512 SQL Operations Benchmarks
 //!
 //! Tests real SQL query patterns for columnar HTAP workloads:
@@ -9,12 +11,12 @@
 //!
 //! Run with: cargo test -p cranelift-jit --test avx512_sql_ops --release -- --nocapture
 
-use cranelift_codegen::ir::condcodes::{IntCC, FloatCC};
+use cranelift_codegen::Context;
+use cranelift_codegen::ir::condcodes::{FloatCC, IntCC};
 use cranelift_codegen::ir::types::*;
 use cranelift_codegen::ir::*;
 use cranelift_codegen::isa::{CallConv, OwnedTargetIsa};
 use cranelift_codegen::settings::{self, Configurable};
-use cranelift_codegen::Context;
 use cranelift_frontend::*;
 use cranelift_jit::*;
 use cranelift_module::*;
@@ -58,7 +60,10 @@ fn isa_with_avx512() -> Option<OwnedTargetIsa> {
 
 fn jit_module() -> Option<JITModule> {
     let isa = isa_with_avx512()?;
-    Some(JITModule::new(JITBuilder::with_isa(isa, default_libcall_names())))
+    Some(JITModule::new(JITBuilder::with_isa(
+        isa,
+        default_libcall_names(),
+    )))
 }
 
 struct SqlCompiler {
@@ -72,7 +77,11 @@ impl SqlCompiler {
         let module = jit_module()?;
         let ctx = module.make_context();
         let func_ctx = FunctionBuilderContext::new();
-        Some(Self { module, ctx, func_ctx })
+        Some(Self {
+            module,
+            ctx,
+            func_ctx,
+        })
     }
 
     fn ptr(&self) -> Type {
@@ -81,9 +90,12 @@ impl SqlCompiler {
 }
 
 fn run_bench<F>(name: &str, rows: usize, bytes_per_row: usize, mut f: F)
-where F: FnMut()
+where
+    F: FnMut(),
 {
-    for _ in 0..WARMUP_ITERS { f(); }
+    for _ in 0..WARMUP_ITERS {
+        f();
+    }
 
     let mut times = Vec::with_capacity(BENCH_ITERS);
     for _ in 0..BENCH_ITERS {
@@ -119,16 +131,13 @@ impl SqlCompiler {
     /// Returns: 1 if in set, 0 otherwise
     fn compile_enum_in_bitmask(&mut self, name: &str) -> Result<*const u8, ModuleError> {
         let mut sig = self.module.make_signature();
-        sig.params.push(AbiParam::new(I32));    // enum ordinal
-        sig.params.push(AbiParam::new(I64));    // bitmask
-        sig.returns.push(AbiParam::new(I8));    // result (0 or 1)
+        sig.params.push(AbiParam::new(I32)); // enum ordinal
+        sig.params.push(AbiParam::new(I64)); // bitmask
+        sig.returns.push(AbiParam::new(I8)); // result (0 or 1)
         sig.call_conv = CallConv::SystemV;
 
         let func_id = self.module.declare_function(name, Linkage::Local, &sig)?;
-        self.ctx.func = Function::with_name_signature(
-            UserFuncName::user(0, func_id.as_u32()),
-            sig,
-        );
+        self.ctx.func = Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), sig);
 
         {
             let mut builder = FunctionBuilder::new(&mut self.ctx.func, &mut self.func_ctx);
@@ -137,14 +146,14 @@ impl SqlCompiler {
             builder.switch_to_block(block);
 
             let params = builder.block_params(block).to_vec();
-            let ordinal = params[0];  // i32
-            let bitmask = params[1];  // i64
+            let ordinal = params[0]; // i32
+            let bitmask = params[1]; // i64
 
             // Pattern: (1 << ordinal) & bitmask != 0
             let one = builder.ins().iconst(I64, 1);
             let ordinal_i64 = builder.ins().uextend(I64, ordinal);
-            let shifted = builder.ins().ishl(one, ordinal_i64);  // 1 << ordinal
-            let masked = builder.ins().band(shifted, bitmask);   // & bitmask
+            let shifted = builder.ins().ishl(one, ordinal_i64); // 1 << ordinal
+            let masked = builder.ins().band(shifted, bitmask); // & bitmask
             let zero = builder.ins().iconst(I64, 0);
             let is_set = builder.ins().icmp(IntCC::NotEqual, masked, zero);
 
@@ -169,16 +178,13 @@ impl SqlCompiler {
     fn compile_enum_in_bitmask_vec(&mut self, name: &str) -> Result<*const u8, ModuleError> {
         let ptr = self.ptr();
         let mut sig = self.module.make_signature();
-        sig.params.push(AbiParam::new(ptr));    // ordinals ptr (i32 x 16)
-        sig.params.push(AbiParam::new(I64));    // bitmask
-        sig.params.push(AbiParam::new(ptr));    // results ptr (i32 x 16, 0/-1)
+        sig.params.push(AbiParam::new(ptr)); // ordinals ptr (i32 x 16)
+        sig.params.push(AbiParam::new(I64)); // bitmask
+        sig.params.push(AbiParam::new(ptr)); // results ptr (i32 x 16, 0/-1)
         sig.call_conv = CallConv::SystemV;
 
         let func_id = self.module.declare_function(name, Linkage::Local, &sig)?;
-        self.ctx.func = Function::with_name_signature(
-            UserFuncName::user(0, func_id.as_u32()),
-            sig,
-        );
+        self.ctx.func = Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), sig);
 
         {
             let mut builder = FunctionBuilder::new(&mut self.ctx.func, &mut self.func_ctx);
@@ -192,7 +198,9 @@ impl SqlCompiler {
             let results_ptr = params[2];
 
             // Load 16 ordinals
-            let ordinals = builder.ins().load(I32X16, MemFlags::trusted(), ordinals_ptr, 0);
+            let ordinals = builder
+                .ins()
+                .load(I32X16, MemFlags::trusted(), ordinals_ptr, 0);
 
             // Scalarize: extract each lane, shift, and build result vector
             // This is required because CLIF doesn't have per-lane variable shift
@@ -222,7 +230,9 @@ impl SqlCompiler {
             }
 
             // Store result
-            builder.ins().store(MemFlags::trusted(), result_vec, results_ptr, 0);
+            builder
+                .ins()
+                .store(MemFlags::trusted(), result_vec, results_ptr, 0);
             builder.ins().return_(&[]);
 
             builder.seal_all_blocks();
@@ -240,7 +250,10 @@ impl SqlCompiler {
 fn test_enum_in_bitmask_scalar() {
     let mut c = match SqlCompiler::new() {
         Some(c) => c,
-        None => { println!("AVX-512 not available"); return; }
+        None => {
+            println!("AVX-512 not available");
+            return;
+        }
     };
 
     let func_ptr = c.compile_enum_in_bitmask("enum_in").unwrap();
@@ -273,7 +286,10 @@ fn test_enum_in_bitmask_scalar() {
 fn test_enum_in_bitmask_vectorized() {
     let mut c = match SqlCompiler::new() {
         Some(c) => c,
-        None => { println!("AVX-512 not available"); return; }
+        None => {
+            println!("AVX-512 not available");
+            return;
+        }
     };
 
     let func_ptr = c.compile_enum_in_bitmask_vec("enum_in_vec").unwrap();
@@ -291,7 +307,11 @@ fn test_enum_in_bitmask_vectorized() {
     // Verify: odd numbers should be -1, even should be 0
     for i in 0..16 {
         let expected = if i % 2 == 1 && i < 8 { -1 } else { 0 };
-        assert_eq!(results[i], expected, "Lane {} incorrect: got {}, expected {}", i, results[i], expected);
+        assert_eq!(
+            results[i], expected,
+            "Lane {} incorrect: got {}, expected {}",
+            i, results[i], expected
+        );
     }
     println!("Enum IN bitmask vectorized: PASS");
 
@@ -304,7 +324,7 @@ fn test_enum_in_bitmask_vectorized() {
             func(
                 test_data[i..].as_ptr(),
                 bitmask,
-                results_buf[i..].as_mut_ptr()
+                results_buf[i..].as_mut_ptr(),
             );
         }
     });
@@ -320,17 +340,14 @@ impl SqlCompiler {
     fn compile_filter_count_i32x16(&mut self, name: &str) -> Result<*const u8, ModuleError> {
         let ptr = self.ptr();
         let mut sig = self.module.make_signature();
-        sig.params.push(AbiParam::new(ptr));    // values ptr
-        sig.params.push(AbiParam::new(I32));    // threshold
-        sig.params.push(AbiParam::new(ptr));    // mask output ptr (i32 x 16)
-        sig.returns.push(AbiParam::new(I64));   // count of matches
+        sig.params.push(AbiParam::new(ptr)); // values ptr
+        sig.params.push(AbiParam::new(I32)); // threshold
+        sig.params.push(AbiParam::new(ptr)); // mask output ptr (i32 x 16)
+        sig.returns.push(AbiParam::new(I64)); // count of matches
         sig.call_conv = CallConv::SystemV;
 
         let func_id = self.module.declare_function(name, Linkage::Local, &sig)?;
-        self.ctx.func = Function::with_name_signature(
-            UserFuncName::user(0, func_id.as_u32()),
-            sig,
-        );
+        self.ctx.func = Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), sig);
 
         {
             let mut builder = FunctionBuilder::new(&mut self.ctx.func, &mut self.func_ctx);
@@ -344,13 +361,17 @@ impl SqlCompiler {
             let mask_ptr = params[2];
 
             // Load values
-            let values = builder.ins().load(I32X16, MemFlags::trusted(), values_ptr, 0);
+            let values = builder
+                .ins()
+                .load(I32X16, MemFlags::trusted(), values_ptr, 0);
 
             // Splat threshold
             let threshold_vec = builder.ins().splat(I32X16, threshold);
 
             // Compare: values > threshold (generates I32X16 with 0/-1)
-            let mask = builder.ins().icmp(IntCC::SignedGreaterThan, values, threshold_vec);
+            let mask = builder
+                .ins()
+                .icmp(IntCC::SignedGreaterThan, values, threshold_vec);
 
             // Store mask
             builder.ins().store(MemFlags::trusted(), mask, mask_ptr, 0);
@@ -376,7 +397,10 @@ impl SqlCompiler {
 fn test_filter_compare_i32x16() {
     let mut c = match SqlCompiler::new() {
         Some(c) => c,
-        None => { println!("AVX-512 not available"); return; }
+        None => {
+            println!("AVX-512 not available");
+            return;
+        }
     };
 
     let func_ptr = c.compile_filter_count_i32x16("filter_cmp").unwrap();
@@ -418,16 +442,13 @@ impl SqlCompiler {
     fn compile_masked_sum_i64x8(&mut self, name: &str) -> Result<*const u8, ModuleError> {
         let ptr = self.ptr();
         let mut sig = self.module.make_signature();
-        sig.params.push(AbiParam::new(ptr));    // values ptr (i64 x 8)
-        sig.params.push(AbiParam::new(ptr));    // mask ptr (i64 x 8, 0/-1)
-        sig.params.push(AbiParam::new(ptr));    // accumulator ptr (i64 x 8)
+        sig.params.push(AbiParam::new(ptr)); // values ptr (i64 x 8)
+        sig.params.push(AbiParam::new(ptr)); // mask ptr (i64 x 8, 0/-1)
+        sig.params.push(AbiParam::new(ptr)); // accumulator ptr (i64 x 8)
         sig.call_conv = CallConv::SystemV;
 
         let func_id = self.module.declare_function(name, Linkage::Local, &sig)?;
-        self.ctx.func = Function::with_name_signature(
-            UserFuncName::user(0, func_id.as_u32()),
-            sig,
-        );
+        self.ctx.func = Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), sig);
 
         {
             let mut builder = FunctionBuilder::new(&mut self.ctx.func, &mut self.func_ctx);
@@ -441,7 +462,9 @@ impl SqlCompiler {
             let acc_ptr = params[2];
 
             // Load values and mask
-            let values = builder.ins().load(I64X8, MemFlags::trusted(), values_ptr, 0);
+            let values = builder
+                .ins()
+                .load(I64X8, MemFlags::trusted(), values_ptr, 0);
             let mask = builder.ins().load(I64X8, MemFlags::trusted(), mask_ptr, 0);
             let acc = builder.ins().load(I64X8, MemFlags::trusted(), acc_ptr, 0);
 
@@ -452,7 +475,9 @@ impl SqlCompiler {
             let new_acc = builder.ins().iadd(acc, masked_values);
 
             // Store back
-            builder.ins().store(MemFlags::trusted(), new_acc, acc_ptr, 0);
+            builder
+                .ins()
+                .store(MemFlags::trusted(), new_acc, acc_ptr, 0);
             builder.ins().return_(&[]);
 
             builder.seal_all_blocks();
@@ -464,14 +489,16 @@ impl SqlCompiler {
         self.module.finalize_definitions()?;
         Ok(self.module.get_finalized_function(func_id))
     }
-
 }
 
 #[test]
 fn test_masked_sum() {
     let mut c = match SqlCompiler::new() {
         Some(c) => c,
-        None => { println!("AVX-512 not available"); return; }
+        None => {
+            println!("AVX-512 not available");
+            return;
+        }
     };
 
     let func_ptr = c.compile_masked_sum_i64x8("masked_sum").unwrap();
@@ -487,21 +514,31 @@ fn test_masked_sum() {
     func(values.as_ptr(), mask.as_ptr(), acc.as_mut_ptr());
 
     let sum: i64 = acc.iter().sum();
-    assert_eq!(sum, 160, "Masked sum should be 160 (10+30+50+70), got {sum}");
+    assert_eq!(
+        sum, 160,
+        "Masked sum should be 160 (10+30+50+70), got {sum}"
+    );
     println!("Masked SUM I64X8: PASS");
 
     // Benchmark
     let values: Vec<i64> = (0..BENCH_ROWS as i64).collect();
-    let mask: Vec<i64> = (0..BENCH_ROWS as i64).map(|i| if i % 2 == 0 { -1 } else { 0 }).collect();
+    let mask: Vec<i64> = (0..BENCH_ROWS as i64)
+        .map(|i| if i % 2 == 0 { -1 } else { 0 })
+        .collect();
     let mut acc = [0i64; 8];
 
-    run_bench("Masked SUM (I64X8, 50% selectivity)", BENCH_ROWS, 16, || {
-        acc = [0; 8];
-        for i in (0..BENCH_ROWS).step_by(8) {
-            func(values[i..].as_ptr(), mask[i..].as_ptr(), acc.as_mut_ptr());
-        }
-        std::hint::black_box(&acc);
-    });
+    run_bench(
+        "Masked SUM (I64X8, 50% selectivity)",
+        BENCH_ROWS,
+        16,
+        || {
+            acc = [0; 8];
+            for i in (0..BENCH_ROWS).step_by(8) {
+                func(values[i..].as_ptr(), mask[i..].as_ptr(), acc.as_mut_ptr());
+            }
+            std::hint::black_box(&acc);
+        },
+    );
 }
 
 // =============================================================================
@@ -513,17 +550,14 @@ impl SqlCompiler {
     fn compile_blend_i64x8(&mut self, name: &str) -> Result<*const u8, ModuleError> {
         let ptr = self.ptr();
         let mut sig = self.module.make_signature();
-        sig.params.push(AbiParam::new(ptr));    // a ptr (true branch)
-        sig.params.push(AbiParam::new(ptr));    // b ptr (false branch)
-        sig.params.push(AbiParam::new(ptr));    // mask ptr (0/-1)
-        sig.params.push(AbiParam::new(ptr));    // result ptr
+        sig.params.push(AbiParam::new(ptr)); // a ptr (true branch)
+        sig.params.push(AbiParam::new(ptr)); // b ptr (false branch)
+        sig.params.push(AbiParam::new(ptr)); // mask ptr (0/-1)
+        sig.params.push(AbiParam::new(ptr)); // result ptr
         sig.call_conv = CallConv::SystemV;
 
         let func_id = self.module.declare_function(name, Linkage::Local, &sig)?;
-        self.ctx.func = Function::with_name_signature(
-            UserFuncName::user(0, func_id.as_u32()),
-            sig,
-        );
+        self.ctx.func = Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), sig);
 
         {
             let mut builder = FunctionBuilder::new(&mut self.ctx.func, &mut self.func_ctx);
@@ -547,7 +581,9 @@ impl SqlCompiler {
             let b_selected = builder.ins().band(b, not_mask);
             let result = builder.ins().bor(a_selected, b_selected);
 
-            builder.ins().store(MemFlags::trusted(), result, result_ptr, 0);
+            builder
+                .ins()
+                .store(MemFlags::trusted(), result, result_ptr, 0);
             builder.ins().return_(&[]);
 
             builder.seal_all_blocks();
@@ -565,15 +601,19 @@ impl SqlCompiler {
 fn test_blend_operation() {
     let mut c = match SqlCompiler::new() {
         Some(c) => c,
-        None => { println!("AVX-512 not available"); return; }
+        None => {
+            println!("AVX-512 not available");
+            return;
+        }
     };
 
     let func_ptr = c.compile_blend_i64x8("blend").unwrap();
-    let func: fn(*const i64, *const i64, *const i64, *mut i64) = unsafe { mem::transmute(func_ptr) };
+    let func: fn(*const i64, *const i64, *const i64, *mut i64) =
+        unsafe { mem::transmute(func_ptr) };
 
     let a: [i64; 8] = [100, 100, 100, 100, 100, 100, 100, 100];
     let b: [i64; 8] = [0, 0, 0, 0, 0, 0, 0, 0];
-    let mask: [i64; 8] = [-1, 0, -1, 0, -1, 0, -1, 0];  // alternating
+    let mask: [i64; 8] = [-1, 0, -1, 0, -1, 0, -1, 0]; // alternating
     let mut result = [0i64; 8];
 
     func(a.as_ptr(), b.as_ptr(), mask.as_ptr(), result.as_mut_ptr());
@@ -585,12 +625,19 @@ fn test_blend_operation() {
     // Benchmark
     let a: Vec<i64> = vec![100; BENCH_ROWS];
     let b: Vec<i64> = vec![0; BENCH_ROWS];
-    let mask: Vec<i64> = (0..BENCH_ROWS as i64).map(|i| if i % 2 == 0 { -1 } else { 0 }).collect();
+    let mask: Vec<i64> = (0..BENCH_ROWS as i64)
+        .map(|i| if i % 2 == 0 { -1 } else { 0 })
+        .collect();
     let mut result = vec![0i64; 8];
 
     run_bench("Blend/Select (I64X8)", BENCH_ROWS, 24, || {
         for i in (0..BENCH_ROWS).step_by(8) {
-            func(a[i..].as_ptr(), b[i..].as_ptr(), mask[i..].as_ptr(), result.as_mut_ptr());
+            func(
+                a[i..].as_ptr(),
+                b[i..].as_ptr(),
+                mask[i..].as_ptr(),
+                result.as_mut_ptr(),
+            );
         }
     });
 }
@@ -604,18 +651,15 @@ impl SqlCompiler {
     fn compile_range_filter_i32x16(&mut self, name: &str) -> Result<*const u8, ModuleError> {
         let ptr = self.ptr();
         let mut sig = self.module.make_signature();
-        sig.params.push(AbiParam::new(ptr));    // values ptr
-        sig.params.push(AbiParam::new(I32));    // low
-        sig.params.push(AbiParam::new(I32));    // high
-        sig.params.push(AbiParam::new(ptr));    // mask output
-        sig.returns.push(AbiParam::new(I64));   // count
+        sig.params.push(AbiParam::new(ptr)); // values ptr
+        sig.params.push(AbiParam::new(I32)); // low
+        sig.params.push(AbiParam::new(I32)); // high
+        sig.params.push(AbiParam::new(ptr)); // mask output
+        sig.returns.push(AbiParam::new(I64)); // count
         sig.call_conv = CallConv::SystemV;
 
         let func_id = self.module.declare_function(name, Linkage::Local, &sig)?;
-        self.ctx.func = Function::with_name_signature(
-            UserFuncName::user(0, func_id.as_u32()),
-            sig,
-        );
+        self.ctx.func = Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), sig);
 
         {
             let mut builder = FunctionBuilder::new(&mut self.ctx.func, &mut self.func_ctx);
@@ -629,16 +673,24 @@ impl SqlCompiler {
             let high = params[2];
             let mask_ptr = params[3];
 
-            let values = builder.ins().load(I32X16, MemFlags::trusted(), values_ptr, 0);
+            let values = builder
+                .ins()
+                .load(I32X16, MemFlags::trusted(), values_ptr, 0);
             let low_vec = builder.ins().splat(I32X16, low);
             let high_vec = builder.ins().splat(I32X16, high);
 
             // value >= low AND value <= high
-            let ge_low = builder.ins().icmp(IntCC::SignedGreaterThanOrEqual, values, low_vec);
-            let le_high = builder.ins().icmp(IntCC::SignedLessThanOrEqual, values, high_vec);
+            let ge_low = builder
+                .ins()
+                .icmp(IntCC::SignedGreaterThanOrEqual, values, low_vec);
+            let le_high = builder
+                .ins()
+                .icmp(IntCC::SignedLessThanOrEqual, values, high_vec);
             let in_range = builder.ins().band(ge_low, le_high);
 
-            builder.ins().store(MemFlags::trusted(), in_range, mask_ptr, 0);
+            builder
+                .ins()
+                .store(MemFlags::trusted(), in_range, mask_ptr, 0);
 
             // OPTIMIZED: Use vhigh_bits + popcnt
             let high_bits = builder.ins().vhigh_bits(I32, in_range);
@@ -661,7 +713,10 @@ impl SqlCompiler {
 fn test_range_filter() {
     let mut c = match SqlCompiler::new() {
         Some(c) => c,
-        None => { println!("AVX-512 not available"); return; }
+        None => {
+            println!("AVX-512 not available");
+            return;
+        }
     };
 
     let func_ptr = c.compile_range_filter_i32x16("range_filter").unwrap();
@@ -698,15 +753,12 @@ impl SqlCompiler {
     fn compile_horizontal_sum(&mut self, name: &str) -> Result<*const u8, ModuleError> {
         let ptr = self.ptr();
         let mut sig = self.module.make_signature();
-        sig.params.push(AbiParam::new(ptr));    // vec ptr
-        sig.returns.push(AbiParam::new(I64));   // sum
+        sig.params.push(AbiParam::new(ptr)); // vec ptr
+        sig.returns.push(AbiParam::new(I64)); // sum
         sig.call_conv = CallConv::SystemV;
 
         let func_id = self.module.declare_function(name, Linkage::Local, &sig)?;
-        self.ctx.func = Function::with_name_signature(
-            UserFuncName::user(0, func_id.as_u32()),
-            sig,
-        );
+        self.ctx.func = Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), sig);
 
         {
             let mut builder = FunctionBuilder::new(&mut self.ctx.func, &mut self.func_ctx);
@@ -751,7 +803,10 @@ impl SqlCompiler {
 fn test_horizontal_sum() {
     let mut c = match SqlCompiler::new() {
         Some(c) => c,
-        None => { println!("AVX-512 not available"); return; }
+        None => {
+            println!("AVX-512 not available");
+            return;
+        }
     };
 
     let func_ptr = c.compile_horizontal_sum("hsum").unwrap();
@@ -781,16 +836,13 @@ impl SqlCompiler {
     fn compile_gstring_prefix_match(&mut self, name: &str) -> Result<*const u8, ModuleError> {
         let ptr = self.ptr();
         let mut sig = self.module.make_signature();
-        sig.params.push(AbiParam::new(ptr));    // GermanString array ptr (8 strings = 128 bytes)
-        sig.params.push(AbiParam::new(I32));    // prefix to match (4 bytes as i32)
-        sig.returns.push(AbiParam::new(I64));   // count of matches
+        sig.params.push(AbiParam::new(ptr)); // GermanString array ptr (8 strings = 128 bytes)
+        sig.params.push(AbiParam::new(I32)); // prefix to match (4 bytes as i32)
+        sig.returns.push(AbiParam::new(I64)); // count of matches
         sig.call_conv = CallConv::SystemV;
 
         let func_id = self.module.declare_function(name, Linkage::Local, &sig)?;
-        self.ctx.func = Function::with_name_signature(
-            UserFuncName::user(0, func_id.as_u32()),
-            sig,
-        );
+        self.ctx.func = Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), sig);
 
         {
             let mut builder = FunctionBuilder::new(&mut self.ctx.func, &mut self.func_ctx);
@@ -811,7 +863,9 @@ impl SqlCompiler {
             for i in 0i32..8 {
                 let offset = i * 16;
                 // Load just the first 4 bytes (prefix) from each GermanString
-                let prefix_i = builder.ins().load(I32, MemFlags::trusted(), gstrings_ptr, offset);
+                let prefix_i = builder
+                    .ins()
+                    .load(I32, MemFlags::trusted(), gstrings_ptr, offset);
 
                 // Compare with target prefix
                 let is_match = builder.ins().icmp(IntCC::Equal, prefix_i, prefix_to_match);
@@ -840,17 +894,14 @@ impl SqlCompiler {
     fn compile_gstring_length_filter(&mut self, name: &str) -> Result<*const u8, ModuleError> {
         let ptr = self.ptr();
         let mut sig = self.module.make_signature();
-        sig.params.push(AbiParam::new(ptr));    // GermanString array ptr
-        sig.params.push(AbiParam::new(I32));    // min_length
-        sig.params.push(AbiParam::new(I32));    // max_length
-        sig.returns.push(AbiParam::new(I64));   // count in range
+        sig.params.push(AbiParam::new(ptr)); // GermanString array ptr
+        sig.params.push(AbiParam::new(I32)); // min_length
+        sig.params.push(AbiParam::new(I32)); // max_length
+        sig.returns.push(AbiParam::new(I64)); // count in range
         sig.call_conv = CallConv::SystemV;
 
         let func_id = self.module.declare_function(name, Linkage::Local, &sig)?;
-        self.ctx.func = Function::with_name_signature(
-            UserFuncName::user(0, func_id.as_u32()),
-            sig,
-        );
+        self.ctx.func = Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), sig);
 
         {
             let mut builder = FunctionBuilder::new(&mut self.ctx.func, &mut self.func_ctx);
@@ -864,7 +915,7 @@ impl SqlCompiler {
             let max_len = params[2];
 
             // Constants for GermanString decoding
-            let tag_inline_base = builder.ins().iconst(I32, 192);  // 0xC0
+            let tag_inline_base = builder.ins().iconst(I32, 192); // 0xC0
             let tag_heap = builder.ins().iconst(I32, 0xFD);
             let len_mask = builder.ins().iconst(I32, 0x3FFF_FFFF); // 30-bit length mask
 
@@ -875,8 +926,14 @@ impl SqlCompiler {
                 let offset = i * 16;
 
                 // Load byte[15] (tag/length byte) and bytes[4..8] (len_tag32)
-                let tag_byte = builder.ins().load(I8, MemFlags::trusted(), gstrings_ptr, offset + 15);
-                let len_tag32 = builder.ins().load(I32, MemFlags::trusted(), gstrings_ptr, offset + 4);
+                let tag_byte =
+                    builder
+                        .ins()
+                        .load(I8, MemFlags::trusted(), gstrings_ptr, offset + 15);
+                let len_tag32 =
+                    builder
+                        .ins()
+                        .load(I32, MemFlags::trusted(), gstrings_ptr, offset + 4);
 
                 let tag_i32 = builder.ins().uextend(I32, tag_byte);
 
@@ -885,8 +942,14 @@ impl SqlCompiler {
                 // elif tag < 0xFD: length = tag - 192
                 // else: length = len_tag32 & 0x3FFFFFFF
 
-                let is_full_inline = builder.ins().icmp(IntCC::UnsignedLessThan, tag_i32, tag_inline_base);
-                let is_heap = builder.ins().icmp(IntCC::UnsignedGreaterThanOrEqual, tag_i32, tag_heap);
+                let is_full_inline =
+                    builder
+                        .ins()
+                        .icmp(IntCC::UnsignedLessThan, tag_i32, tag_inline_base);
+                let is_heap =
+                    builder
+                        .ins()
+                        .icmp(IntCC::UnsignedGreaterThanOrEqual, tag_i32, tag_heap);
 
                 // Calculate inline length (tag - 192)
                 let inline_len = builder.ins().isub(tag_i32, tag_inline_base);
@@ -899,8 +962,13 @@ impl SqlCompiler {
                 let final_len = builder.ins().select(is_heap, heap_len, len_if_not_heap);
 
                 // Check if in range [min_len, max_len]
-                let ge_min = builder.ins().icmp(IntCC::SignedGreaterThanOrEqual, final_len, min_len);
-                let le_max = builder.ins().icmp(IntCC::SignedLessThanOrEqual, final_len, max_len);
+                let ge_min =
+                    builder
+                        .ins()
+                        .icmp(IntCC::SignedGreaterThanOrEqual, final_len, min_len);
+                let le_max = builder
+                    .ins()
+                    .icmp(IntCC::SignedLessThanOrEqual, final_len, max_len);
                 let in_range = builder.ins().band(ge_min, le_max);
 
                 // Add to count
@@ -927,17 +995,14 @@ impl SqlCompiler {
     fn compile_gstring_eq_check(&mut self, name: &str) -> Result<*const u8, ModuleError> {
         let ptr = self.ptr();
         let mut sig = self.module.make_signature();
-        sig.params.push(AbiParam::new(ptr));    // GermanString array ptr (8 strings)
-        sig.params.push(AbiParam::new(I64));    // target low 64 bits
-        sig.params.push(AbiParam::new(I64));    // target high 64 bits
-        sig.returns.push(AbiParam::new(I64));   // count of matches
+        sig.params.push(AbiParam::new(ptr)); // GermanString array ptr (8 strings)
+        sig.params.push(AbiParam::new(I64)); // target low 64 bits
+        sig.params.push(AbiParam::new(I64)); // target high 64 bits
+        sig.returns.push(AbiParam::new(I64)); // count of matches
         sig.call_conv = CallConv::SystemV;
 
         let func_id = self.module.declare_function(name, Linkage::Local, &sig)?;
-        self.ctx.func = Function::with_name_signature(
-            UserFuncName::user(0, func_id.as_u32()),
-            sig,
-        );
+        self.ctx.func = Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), sig);
 
         {
             let mut builder = FunctionBuilder::new(&mut self.ctx.func, &mut self.func_ctx);
@@ -959,8 +1024,12 @@ impl SqlCompiler {
                 let offset = i * 16;
 
                 // Load both halves of the GermanString
-                let lo = builder.ins().load(I64, MemFlags::trusted(), gstrings_ptr, offset);
-                let hi = builder.ins().load(I64, MemFlags::trusted(), gstrings_ptr, offset + 8);
+                let lo = builder
+                    .ins()
+                    .load(I64, MemFlags::trusted(), gstrings_ptr, offset);
+                let hi = builder
+                    .ins()
+                    .load(I64, MemFlags::trusted(), gstrings_ptr, offset + 8);
 
                 // Compare both halves
                 let lo_eq = builder.ins().icmp(IntCC::Equal, lo, target_lo);
@@ -1007,7 +1076,10 @@ fn make_inline_gstring(s: &[u8]) -> i128 {
 fn test_gstring_prefix_match() {
     let mut c = match SqlCompiler::new() {
         Some(c) => c,
-        None => { println!("AVX-512 not available"); return; }
+        None => {
+            println!("AVX-512 not available");
+            return;
+        }
     };
 
     let func_ptr = c.compile_gstring_prefix_match("gstring_prefix").unwrap();
@@ -1015,21 +1087,24 @@ fn test_gstring_prefix_match() {
 
     // Create test GermanStrings with various prefixes
     let gstrings: [i128; 8] = [
-        make_inline_gstring(b"ABCD1234"),     // matches "ABCD"
-        make_inline_gstring(b"ABCDxyz"),      // matches "ABCD"
-        make_inline_gstring(b"XYZabc"),       // no match
-        make_inline_gstring(b"ABCD"),         // matches "ABCD"
-        make_inline_gstring(b"ABC"),          // no match (only 3 chars)
-        make_inline_gstring(b"ABCDefgh"),     // matches "ABCD"
-        make_inline_gstring(b"abcd1234"),     // no match (lowercase)
-        make_inline_gstring(b"ABCD!@#$"),     // matches "ABCD"
+        make_inline_gstring(b"ABCD1234"), // matches "ABCD"
+        make_inline_gstring(b"ABCDxyz"),  // matches "ABCD"
+        make_inline_gstring(b"XYZabc"),   // no match
+        make_inline_gstring(b"ABCD"),     // matches "ABCD"
+        make_inline_gstring(b"ABC"),      // no match (only 3 chars)
+        make_inline_gstring(b"ABCDefgh"), // matches "ABCD"
+        make_inline_gstring(b"abcd1234"), // no match (lowercase)
+        make_inline_gstring(b"ABCD!@#$"), // matches "ABCD"
     ];
 
     // Prefix "ABCD" as i32 (little-endian)
     let prefix = i32::from_le_bytes([b'A', b'B', b'C', b'D']);
 
     let count = func(gstrings.as_ptr(), prefix);
-    assert_eq!(count, 5, "Should find 5 strings starting with ABCD, got {count}");
+    assert_eq!(
+        count, 5,
+        "Should find 5 strings starting with ABCD, got {count}"
+    );
     println!("GermanString prefix match: PASS");
 
     // Benchmark
@@ -1040,20 +1115,28 @@ fn test_gstring_prefix_match() {
         })
         .collect();
 
-    run_bench("GermanString Prefix (8 strings/call)", BENCH_ROWS, 4, || {
-        let mut total = 0u64;
-        for i in (0..BENCH_ROWS).step_by(8) {
-            total += func(test_gstrings[i..].as_ptr(), prefix) as u64;
-        }
-        std::hint::black_box(total);
-    });
+    run_bench(
+        "GermanString Prefix (8 strings/call)",
+        BENCH_ROWS,
+        4,
+        || {
+            let mut total = 0u64;
+            for i in (0..BENCH_ROWS).step_by(8) {
+                total += func(test_gstrings[i..].as_ptr(), prefix) as u64;
+            }
+            std::hint::black_box(total);
+        },
+    );
 }
 
 #[test]
 fn test_gstring_length_filter() {
     let mut c = match SqlCompiler::new() {
         Some(c) => c,
-        None => { println!("AVX-512 not available"); return; }
+        None => {
+            println!("AVX-512 not available");
+            return;
+        }
     };
 
     let func_ptr = c.compile_gstring_length_filter("gstring_len").unwrap();
@@ -1061,13 +1144,13 @@ fn test_gstring_length_filter() {
 
     // Create test GermanStrings with various lengths
     let gstrings: [i128; 8] = [
-        make_inline_gstring(b""),             // len 0
-        make_inline_gstring(b"A"),            // len 1
-        make_inline_gstring(b"AB"),           // len 2
-        make_inline_gstring(b"ABC"),          // len 3
-        make_inline_gstring(b"ABCD"),         // len 4
-        make_inline_gstring(b"ABCDE"),        // len 5
-        make_inline_gstring(b"ABCDEFGHIJ"),   // len 10
+        make_inline_gstring(b""),               // len 0
+        make_inline_gstring(b"A"),              // len 1
+        make_inline_gstring(b"AB"),             // len 2
+        make_inline_gstring(b"ABC"),            // len 3
+        make_inline_gstring(b"ABCD"),           // len 4
+        make_inline_gstring(b"ABCDE"),          // len 5
+        make_inline_gstring(b"ABCDEFGHIJ"),     // len 10
         make_inline_gstring(b"ABCDEFGHIJKLMN"), // len 14
     ];
 
@@ -1075,7 +1158,10 @@ fn test_gstring_length_filter() {
     // Lengths: 0, 1, 2, 3, 4, 5, 10, 14
     // In range [3,10]: 3, 4, 5, 10 = 4 strings
     let count = func(gstrings.as_ptr(), 3, 10);
-    assert_eq!(count, 4, "Should find 4 strings with length 3-10, got {count}");
+    assert_eq!(
+        count, 4,
+        "Should find 4 strings with length 3-10, got {count}"
+    );
     println!("GermanString length filter: PASS");
 }
 
@@ -1083,7 +1169,10 @@ fn test_gstring_length_filter() {
 fn test_gstring_equality() {
     let mut c = match SqlCompiler::new() {
         Some(c) => c,
-        None => { println!("AVX-512 not available"); return; }
+        None => {
+            println!("AVX-512 not available");
+            return;
+        }
     };
 
     let func_ptr = c.compile_gstring_eq_check("gstring_eq").unwrap();
@@ -1093,14 +1182,14 @@ fn test_gstring_equality() {
 
     // Create test GermanStrings
     let gstrings: [i128; 8] = [
-        make_inline_gstring(b"Hello"),        // match
-        make_inline_gstring(b"World"),        // no match
-        make_inline_gstring(b"Hello"),        // match
-        make_inline_gstring(b"hello"),        // no match (case)
-        make_inline_gstring(b"Hello!"),       // no match (length)
-        make_inline_gstring(b"Hello"),        // match
-        make_inline_gstring(b"Hellp"),        // no match (typo)
-        make_inline_gstring(b"Hell"),         // no match (short)
+        make_inline_gstring(b"Hello"),  // match
+        make_inline_gstring(b"World"),  // no match
+        make_inline_gstring(b"Hello"),  // match
+        make_inline_gstring(b"hello"),  // no match (case)
+        make_inline_gstring(b"Hello!"), // no match (length)
+        make_inline_gstring(b"Hello"),  // match
+        make_inline_gstring(b"Hellp"),  // no match (typo)
+        make_inline_gstring(b"Hell"),   // no match (short)
     ];
 
     // Split target into two i64 halves
@@ -1109,7 +1198,10 @@ fn test_gstring_equality() {
     let target_hi = i64::from_le_bytes(target_bytes[8..16].try_into().unwrap());
 
     let count = func(gstrings.as_ptr(), target_lo, target_hi);
-    assert_eq!(count, 3, "Should find 3 exact matches for 'Hello', got {count}");
+    assert_eq!(
+        count, 3,
+        "Should find 3 exact matches for 'Hello', got {count}"
+    );
     println!("GermanString equality: PASS");
 
     // Benchmark
@@ -1123,13 +1215,18 @@ fn test_gstring_equality() {
         })
         .collect();
 
-    run_bench("GermanString Equality (8 strings/call)", BENCH_ROWS, 4, || {
-        let mut total = 0u64;
-        for i in (0..BENCH_ROWS).step_by(8) {
-            total += func(test_gstrings[i..].as_ptr(), target_lo, target_hi) as u64;
-        }
-        std::hint::black_box(total);
-    });
+    run_bench(
+        "GermanString Equality (8 strings/call)",
+        BENCH_ROWS,
+        4,
+        || {
+            let mut total = 0u64;
+            for i in (0..BENCH_ROWS).step_by(8) {
+                total += func(test_gstrings[i..].as_ptr(), target_lo, target_hi) as u64;
+            }
+            std::hint::black_box(total);
+        },
+    );
 }
 
 // =============================================================================
@@ -1183,10 +1280,7 @@ impl SqlCompiler {
         sig.call_conv = CallConv::SystemV;
 
         let func_id = self.module.declare_function(name, Linkage::Local, &sig)?;
-        self.ctx.func = Function::with_name_signature(
-            UserFuncName::user(0, func_id.as_u32()),
-            sig,
-        );
+        self.ctx.func = Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), sig);
 
         {
             let mut builder = FunctionBuilder::new(&mut self.ctx.func, &mut self.func_ctx);
@@ -1202,7 +1296,9 @@ impl SqlCompiler {
             let product = builder.ins().fmul(a, b);
 
             builder.ins().store(MemFlags::trusted(), sum, params[2], 0);
-            builder.ins().store(MemFlags::trusted(), product, params[3], 0);
+            builder
+                .ins()
+                .store(MemFlags::trusted(), product, params[3], 0);
 
             builder.ins().return_(&[]);
             builder.seal_all_blocks();
@@ -1226,10 +1322,7 @@ impl SqlCompiler {
         sig.call_conv = CallConv::SystemV;
 
         let func_id = self.module.declare_function(name, Linkage::Local, &sig)?;
-        self.ctx.func = Function::with_name_signature(
-            UserFuncName::user(0, func_id.as_u32()),
-            sig,
-        );
+        self.ctx.func = Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), sig);
 
         {
             let mut builder = FunctionBuilder::new(&mut self.ctx.func, &mut self.func_ctx);
@@ -1243,7 +1336,9 @@ impl SqlCompiler {
             let c = builder.ins().load(F64X8, MemFlags::trusted(), params[2], 0);
 
             let fma_result = builder.ins().fma(a, b, c);
-            builder.ins().store(MemFlags::trusted(), fma_result, params[3], 0);
+            builder
+                .ins()
+                .store(MemFlags::trusted(), fma_result, params[3], 0);
 
             builder.ins().return_(&[]);
             builder.seal_all_blocks();
@@ -1266,10 +1361,7 @@ impl SqlCompiler {
         sig.call_conv = CallConv::SystemV;
 
         let func_id = self.module.declare_function(name, Linkage::Local, &sig)?;
-        self.ctx.func = Function::with_name_signature(
-            UserFuncName::user(0, func_id.as_u32()),
-            sig,
-        );
+        self.ctx.func = Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), sig);
 
         {
             let mut builder = FunctionBuilder::new(&mut self.ctx.func, &mut self.func_ctx);
@@ -1286,7 +1378,9 @@ impl SqlCompiler {
             let threshold_vec = builder.ins().splat(F64X8, threshold);
 
             // fcmp returns a mask: all 1s for true, all 0s for false in each lane
-            let mask = builder.ins().fcmp(FloatCC::GreaterThan, values, threshold_vec);
+            let mask = builder
+                .ins()
+                .fcmp(FloatCC::GreaterThan, values, threshold_vec);
 
             // OPTIMIZED: Use vhigh_bits + popcnt
             // vhigh_bits extracts sign bit of each 64-bit lane -> 8 bits in I64
@@ -1313,10 +1407,7 @@ impl SqlCompiler {
         sig.call_conv = CallConv::SystemV;
 
         let func_id = self.module.declare_function(name, Linkage::Local, &sig)?;
-        self.ctx.func = Function::with_name_signature(
-            UserFuncName::user(0, func_id.as_u32()),
-            sig,
-        );
+        self.ctx.func = Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), sig);
 
         {
             let mut builder = FunctionBuilder::new(&mut self.ctx.func, &mut self.func_ctx);
@@ -1327,7 +1418,9 @@ impl SqlCompiler {
             let params = builder.block_params(block).to_vec();
             let ints = builder.ins().load(I64X8, MemFlags::trusted(), params[0], 0);
             let floats = builder.ins().fcvt_from_sint(F64X8, ints);
-            builder.ins().store(MemFlags::trusted(), floats, params[1], 0);
+            builder
+                .ins()
+                .store(MemFlags::trusted(), floats, params[1], 0);
 
             builder.ins().return_(&[]);
             builder.seal_all_blocks();
@@ -1349,10 +1442,7 @@ impl SqlCompiler {
         sig.call_conv = CallConv::SystemV;
 
         let func_id = self.module.declare_function(name, Linkage::Local, &sig)?;
-        self.ctx.func = Function::with_name_signature(
-            UserFuncName::user(0, func_id.as_u32()),
-            sig,
-        );
+        self.ctx.func = Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), sig);
 
         {
             let mut builder = FunctionBuilder::new(&mut self.ctx.func, &mut self.func_ctx);
@@ -1393,10 +1483,7 @@ impl SqlCompiler {
         sig.call_conv = CallConv::SystemV;
 
         let func_id = self.module.declare_function(name, Linkage::Local, &sig)?;
-        self.ctx.func = Function::with_name_signature(
-            UserFuncName::user(0, func_id.as_u32()),
-            sig,
-        );
+        self.ctx.func = Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), sig);
 
         {
             let mut builder = FunctionBuilder::new(&mut self.ctx.func, &mut self.func_ctx);
@@ -1408,7 +1495,9 @@ impl SqlCompiler {
             let values = builder.ins().load(I64X8, MemFlags::trusted(), params[0], 0);
             let rotate_amt = builder.ins().uextend(I64, params[1]);
             let rotated = builder.ins().rotl(values, rotate_amt);
-            builder.ins().store(MemFlags::trusted(), rotated, params[2], 0);
+            builder
+                .ins()
+                .store(MemFlags::trusted(), rotated, params[2], 0);
 
             builder.ins().return_(&[]);
             builder.seal_all_blocks();
@@ -1430,10 +1519,7 @@ impl SqlCompiler {
         sig.call_conv = CallConv::SystemV;
 
         let func_id = self.module.declare_function(name, Linkage::Local, &sig)?;
-        self.ctx.func = Function::with_name_signature(
-            UserFuncName::user(0, func_id.as_u32()),
-            sig,
-        );
+        self.ctx.func = Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), sig);
 
         {
             let mut builder = FunctionBuilder::new(&mut self.ctx.func, &mut self.func_ctx);
@@ -1444,7 +1530,9 @@ impl SqlCompiler {
             let params = builder.block_params(block).to_vec();
             let values = builder.ins().load(I64X8, MemFlags::trusted(), params[0], 0);
             let popcnt = builder.ins().popcnt(values);
-            builder.ins().store(MemFlags::trusted(), popcnt, params[1], 0);
+            builder
+                .ins()
+                .store(MemFlags::trusted(), popcnt, params[1], 0);
 
             builder.ins().return_(&[]);
             builder.seal_all_blocks();
@@ -1468,10 +1556,7 @@ impl SqlCompiler {
         sig.call_conv = CallConv::SystemV;
 
         let func_id = self.module.declare_function(name, Linkage::Local, &sig)?;
-        self.ctx.func = Function::with_name_signature(
-            UserFuncName::user(0, func_id.as_u32()),
-            sig,
-        );
+        self.ctx.func = Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), sig);
 
         {
             let mut builder = FunctionBuilder::new(&mut self.ctx.func, &mut self.func_ctx);
@@ -1485,7 +1570,9 @@ impl SqlCompiler {
             let else_vals = builder.ins().load(I64X8, MemFlags::trusted(), params[2], 0);
 
             let result = builder.ins().bitselect(mask, then_vals, else_vals);
-            builder.ins().store(MemFlags::trusted(), result, params[3], 0);
+            builder
+                .ins()
+                .store(MemFlags::trusted(), result, params[3], 0);
 
             builder.ins().return_(&[]);
             builder.seal_all_blocks();
@@ -1507,10 +1594,7 @@ impl SqlCompiler {
         sig.call_conv = CallConv::SystemV;
 
         let func_id = self.module.declare_function(name, Linkage::Local, &sig)?;
-        self.ctx.func = Function::with_name_signature(
-            UserFuncName::user(0, func_id.as_u32()),
-            sig,
-        );
+        self.ctx.func = Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), sig);
 
         {
             let mut builder = FunctionBuilder::new(&mut self.ctx.func, &mut self.func_ctx);
@@ -1543,7 +1627,10 @@ impl SqlCompiler {
 fn test_f64x8_arithmetic() {
     let mut c = match SqlCompiler::new() {
         Some(c) => c,
-        None => { println!("AVX-512 not available"); return; }
+        None => {
+            println!("AVX-512 not available");
+            return;
+        }
     };
 
     let func_ptr = c.compile_f64x8_arithmetic("f64_arith").unwrap();
@@ -1554,7 +1641,12 @@ fn test_f64x8_arithmetic() {
     let mut add_result = [0.0f64; 8];
     let mut mul_result = [0.0f64; 8];
 
-    func(a.as_ptr(), b.as_ptr(), add_result.as_mut_ptr(), mul_result.as_mut_ptr());
+    func(
+        a.as_ptr(),
+        b.as_ptr(),
+        add_result.as_mut_ptr(),
+        mul_result.as_mut_ptr(),
+    );
 
     assert_eq!(add_result[0], 1.5);
     assert_eq!(mul_result[4], 10.0);
@@ -1565,11 +1657,15 @@ fn test_f64x8_arithmetic() {
 fn test_fma_f64x8() {
     let mut c = match SqlCompiler::new() {
         Some(c) => c,
-        None => { println!("AVX-512 not available"); return; }
+        None => {
+            println!("AVX-512 not available");
+            return;
+        }
     };
 
     let func_ptr = c.compile_fma_f64x8("fma").unwrap();
-    let func: fn(*const f64, *const f64, *const f64, *mut f64) = unsafe { mem::transmute(func_ptr) };
+    let func: fn(*const f64, *const f64, *const f64, *mut f64) =
+        unsafe { mem::transmute(func_ptr) };
 
     let a: [f64; 8] = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
     let b: [f64; 8] = [2.0; 8];
@@ -1578,7 +1674,7 @@ fn test_fma_f64x8() {
 
     func(a.as_ptr(), b.as_ptr(), c.as_ptr(), result.as_mut_ptr());
 
-    assert_eq!(result[0], 3.0);  // 1*2+1
+    assert_eq!(result[0], 3.0); // 1*2+1
     assert_eq!(result[7], 17.0); // 8*2+1
     println!("FMA F64X8 (VFMADD): PASS");
 }
@@ -1587,7 +1683,10 @@ fn test_fma_f64x8() {
 fn test_f64x8_compare() {
     let mut c = match SqlCompiler::new() {
         Some(c) => c,
-        None => { println!("AVX-512 not available"); return; }
+        None => {
+            println!("AVX-512 not available");
+            return;
+        }
     };
 
     let func_ptr = c.compile_f64x8_compare("cmp").unwrap();
@@ -1612,7 +1711,10 @@ fn test_f64x8_compare() {
 fn test_i64_to_f64_conversion() {
     let mut c = match SqlCompiler::new() {
         Some(c) => c,
-        None => { println!("AVX-512 not available"); return; }
+        None => {
+            println!("AVX-512 not available");
+            return;
+        }
     };
 
     let func_ptr = c.compile_i64_to_f64("cvt").unwrap();
@@ -1632,7 +1734,10 @@ fn test_i64_to_f64_conversion() {
 fn test_fnv_hash() {
     let mut c = match SqlCompiler::new() {
         Some(c) => c,
-        None => { println!("AVX-512 not available"); return; }
+        None => {
+            println!("AVX-512 not available");
+            return;
+        }
     };
 
     let func_ptr = c.compile_fnv_hash("fnv").unwrap();
@@ -1666,13 +1771,25 @@ fn test_fnv_hash() {
 fn test_rotl_i64x8() {
     let mut c = match SqlCompiler::new() {
         Some(c) => c,
-        None => { println!("AVX-512 not available"); return; }
+        None => {
+            println!("AVX-512 not available");
+            return;
+        }
     };
 
     let func_ptr = c.compile_rotl_i64x8("rotl").unwrap();
     let func: fn(*const i64, i32, *mut i64) = unsafe { mem::transmute(func_ptr) };
 
-    let values: [i64; 8] = [1, 2, 4, 8, 0x8000_0000_0000_0000u64 as i64, 0xFF, 0x1234, 0xABCD];
+    let values: [i64; 8] = [
+        1,
+        2,
+        4,
+        8,
+        0x8000_0000_0000_0000u64 as i64,
+        0xFF,
+        0x1234,
+        0xABCD,
+    ];
     let mut result = [0i64; 8];
 
     func(values.as_ptr(), 1, result.as_mut_ptr());
@@ -1685,7 +1802,10 @@ fn test_rotl_i64x8() {
 fn test_popcnt_i64x8() {
     let mut c = match SqlCompiler::new() {
         Some(c) => c,
-        None => { println!("AVX-512 not available"); return; }
+        None => {
+            println!("AVX-512 not available");
+            return;
+        }
     };
 
     let func_ptr = c.compile_popcnt_i64x8("popcnt").unwrap();
@@ -1720,18 +1840,27 @@ fn test_popcnt_i64x8() {
 fn test_ternlog_select() {
     let mut c = match SqlCompiler::new() {
         Some(c) => c,
-        None => { println!("AVX-512 not available"); return; }
+        None => {
+            println!("AVX-512 not available");
+            return;
+        }
     };
 
     let func_ptr = c.compile_ternlog_select("ternlog").unwrap();
-    let func: fn(*const i64, *const i64, *const i64, *mut i64) = unsafe { mem::transmute(func_ptr) };
+    let func: fn(*const i64, *const i64, *const i64, *mut i64) =
+        unsafe { mem::transmute(func_ptr) };
 
     let mask: [i64; 8] = [-1, 0, -1, 0, -1, 0, -1, 0];
     let then_vals: [i64; 8] = [1; 8];
     let else_vals: [i64; 8] = [2; 8];
     let mut result = [0i64; 8];
 
-    func(mask.as_ptr(), then_vals.as_ptr(), else_vals.as_ptr(), result.as_mut_ptr());
+    func(
+        mask.as_ptr(),
+        then_vals.as_ptr(),
+        else_vals.as_ptr(),
+        result.as_mut_ptr(),
+    );
 
     assert_eq!(result[0], 1);
     assert_eq!(result[1], 2);
@@ -1742,13 +1871,25 @@ fn test_ternlog_select() {
 fn test_clz_i64x8() {
     let mut c = match SqlCompiler::new() {
         Some(c) => c,
-        None => { println!("AVX-512 not available"); return; }
+        None => {
+            println!("AVX-512 not available");
+            return;
+        }
     };
 
     let func_ptr = c.compile_clz_i64x8("clz").unwrap();
     let func: fn(*const i64, *mut i64) = unsafe { mem::transmute(func_ptr) };
 
-    let values: [i64; 8] = [1, 2, 0x8000_0000_0000_0000u64 as i64, 0x100000000, 0xFF, 0, 0x7FFFFFFFFFFFFFFF, -1];
+    let values: [i64; 8] = [
+        1,
+        2,
+        0x8000_0000_0000_0000u64 as i64,
+        0x100000000,
+        0xFF,
+        0,
+        0x7FFFFFFFFFFFFFFF,
+        -1,
+    ];
     let mut result = [0i64; 8];
 
     func(values.as_ptr(), result.as_mut_ptr());
@@ -1778,10 +1919,7 @@ impl SqlCompiler {
         sig.call_conv = CallConv::SystemV;
 
         let func_id = self.module.declare_function(name, Linkage::Local, &sig)?;
-        self.ctx.func = Function::with_name_signature(
-            UserFuncName::user(0, func_id.as_u32()),
-            sig,
-        );
+        self.ctx.func = Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), sig);
 
         {
             let mut builder = FunctionBuilder::new(&mut self.ctx.func, &mut self.func_ctx);
@@ -1790,14 +1928,22 @@ impl SqlCompiler {
             builder.switch_to_block(block);
 
             let params = builder.block_params(block).to_vec();
-            let data1 = builder.ins().load(I32X16, MemFlags::trusted(), params[0], 0);
-            let data2 = builder.ins().load(I32X16, MemFlags::trusted(), params[1], 0);
+            let data1 = builder
+                .ins()
+                .load(I32X16, MemFlags::trusted(), params[0], 0);
+            let data2 = builder
+                .ins()
+                .load(I32X16, MemFlags::trusted(), params[1], 0);
             let threshold1 = builder.ins().splat(I32X16, params[2]);
             let threshold2 = builder.ins().splat(I32X16, params[3]);
 
             // Create two predicate masks
-            let mask1 = builder.ins().icmp(IntCC::SignedGreaterThan, data1, threshold1);
-            let mask2 = builder.ins().icmp(IntCC::SignedGreaterThan, data2, threshold2);
+            let mask1 = builder
+                .ins()
+                .icmp(IntCC::SignedGreaterThan, data1, threshold1);
+            let mask2 = builder
+                .ins()
+                .icmp(IntCC::SignedGreaterThan, data2, threshold2);
 
             // AND the masks together using bitselect
             // The masks are I32X16 with 0/-1 per element
@@ -1832,10 +1978,7 @@ impl SqlCompiler {
         sig.call_conv = CallConv::SystemV;
 
         let func_id = self.module.declare_function(name, Linkage::Local, &sig)?;
-        self.ctx.func = Function::with_name_signature(
-            UserFuncName::user(0, func_id.as_u32()),
-            sig,
-        );
+        self.ctx.func = Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), sig);
 
         {
             let mut builder = FunctionBuilder::new(&mut self.ctx.func, &mut self.func_ctx);
@@ -1844,14 +1987,22 @@ impl SqlCompiler {
             builder.switch_to_block(block);
 
             let params = builder.block_params(block).to_vec();
-            let data1 = builder.ins().load(I32X16, MemFlags::trusted(), params[0], 0);
-            let data2 = builder.ins().load(I32X16, MemFlags::trusted(), params[1], 0);
+            let data1 = builder
+                .ins()
+                .load(I32X16, MemFlags::trusted(), params[0], 0);
+            let data2 = builder
+                .ins()
+                .load(I32X16, MemFlags::trusted(), params[1], 0);
             let threshold1 = builder.ins().splat(I32X16, params[2]);
             let threshold2 = builder.ins().splat(I32X16, params[3]);
 
             // Create two predicate masks
-            let mask1 = builder.ins().icmp(IntCC::SignedGreaterThan, data1, threshold1);
-            let mask2 = builder.ins().icmp(IntCC::SignedGreaterThan, data2, threshold2);
+            let mask1 = builder
+                .ins()
+                .icmp(IntCC::SignedGreaterThan, data1, threshold1);
+            let mask2 = builder
+                .ins()
+                .icmp(IntCC::SignedGreaterThan, data2, threshold2);
 
             // OR the masks together
             let combined = builder.ins().bor(mask1, mask2);
@@ -1883,10 +2034,7 @@ impl SqlCompiler {
         sig.call_conv = CallConv::SystemV;
 
         let func_id = self.module.declare_function(name, Linkage::Local, &sig)?;
-        self.ctx.func = Function::with_name_signature(
-            UserFuncName::user(0, func_id.as_u32()),
-            sig,
-        );
+        self.ctx.func = Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), sig);
 
         {
             let mut builder = FunctionBuilder::new(&mut self.ctx.func, &mut self.func_ctx);
@@ -1895,11 +2043,15 @@ impl SqlCompiler {
             builder.switch_to_block(block);
 
             let params = builder.block_params(block).to_vec();
-            let data = builder.ins().load(I32X16, MemFlags::trusted(), params[0], 0);
+            let data = builder
+                .ins()
+                .load(I32X16, MemFlags::trusted(), params[0], 0);
             let threshold = builder.ins().splat(I32X16, params[1]);
 
             // Create predicate mask
-            let mask = builder.ins().icmp(IntCC::SignedGreaterThan, data, threshold);
+            let mask = builder
+                .ins()
+                .icmp(IntCC::SignedGreaterThan, data, threshold);
 
             // NOT the mask
             let negated = builder.ins().bnot(mask);
@@ -1935,10 +2087,7 @@ impl SqlCompiler {
         sig.call_conv = CallConv::SystemV;
 
         let func_id = self.module.declare_function(name, Linkage::Local, &sig)?;
-        self.ctx.func = Function::with_name_signature(
-            UserFuncName::user(0, func_id.as_u32()),
-            sig,
-        );
+        self.ctx.func = Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), sig);
 
         {
             let mut builder = FunctionBuilder::new(&mut self.ctx.func, &mut self.func_ctx);
@@ -1947,9 +2096,15 @@ impl SqlCompiler {
             builder.switch_to_block(block);
 
             let params = builder.block_params(block).to_vec();
-            let data_a = builder.ins().load(I32X16, MemFlags::trusted(), params[0], 0);
-            let data_b = builder.ins().load(I32X16, MemFlags::trusted(), params[1], 0);
-            let data_c = builder.ins().load(I32X16, MemFlags::trusted(), params[2], 0);
+            let data_a = builder
+                .ins()
+                .load(I32X16, MemFlags::trusted(), params[0], 0);
+            let data_b = builder
+                .ins()
+                .load(I32X16, MemFlags::trusted(), params[1], 0);
+            let data_c = builder
+                .ins()
+                .load(I32X16, MemFlags::trusted(), params[2], 0);
             let t1 = builder.ins().splat(I32X16, params[3]);
             let t2 = builder.ins().splat(I32X16, params[4]);
             let t3 = builder.ins().splat(I32X16, params[5]);
@@ -1994,10 +2149,7 @@ impl SqlCompiler {
         sig.call_conv = CallConv::SystemV;
 
         let func_id = self.module.declare_function(name, Linkage::Local, &sig)?;
-        self.ctx.func = Function::with_name_signature(
-            UserFuncName::user(0, func_id.as_u32()),
-            sig,
-        );
+        self.ctx.func = Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), sig);
 
         {
             let mut builder = FunctionBuilder::new(&mut self.ctx.func, &mut self.func_ctx);
@@ -2006,18 +2158,24 @@ impl SqlCompiler {
             builder.switch_to_block(block);
 
             let params = builder.block_params(block).to_vec();
-            let data = builder.ins().load(I32X16, MemFlags::trusted(), params[0], 0);
+            let data = builder
+                .ins()
+                .load(I32X16, MemFlags::trusted(), params[0], 0);
             let threshold = builder.ins().splat(I32X16, params[1]);
             let then_val = builder.ins().splat(I32X16, params[2]);
             let else_val = builder.ins().splat(I32X16, params[3]);
 
             // Create predicate mask
-            let mask = builder.ins().icmp(IntCC::SignedGreaterThan, data, threshold);
+            let mask = builder
+                .ins()
+                .icmp(IntCC::SignedGreaterThan, data, threshold);
 
             // CASE WHEN data > threshold THEN then_val ELSE else_val END
             let result = builder.ins().bitselect(mask, then_val, else_val);
 
-            builder.ins().store(MemFlags::trusted(), result, params[4], 0);
+            builder
+                .ins()
+                .store(MemFlags::trusted(), result, params[4], 0);
             builder.ins().return_(&[]);
             builder.seal_all_blocks();
             builder.finalize();
@@ -2035,7 +2193,10 @@ impl SqlCompiler {
 fn test_kmask_and() {
     let mut c = match SqlCompiler::new() {
         Some(c) => c,
-        None => { println!("AVX-512 not available"); return; }
+        None => {
+            println!("AVX-512 not available");
+            return;
+        }
     };
 
     let func_ptr = c.compile_kmask_and("kand").unwrap();
@@ -2101,7 +2262,10 @@ fn test_kmask_and() {
 fn test_kmask_or() {
     let mut c = match SqlCompiler::new() {
         Some(c) => c,
-        None => { println!("AVX-512 not available"); return; }
+        None => {
+            println!("AVX-512 not available");
+            return;
+        }
     };
 
     let func_ptr = c.compile_kmask_or("kor").unwrap();
@@ -2124,7 +2288,10 @@ fn test_kmask_or() {
 fn test_kmask_not() {
     let mut c = match SqlCompiler::new() {
         Some(c) => c,
-        None => { println!("AVX-512 not available"); return; }
+        None => {
+            println!("AVX-512 not available");
+            return;
+        }
     };
 
     let func_ptr = c.compile_kmask_not("knot").unwrap();
@@ -2143,11 +2310,15 @@ fn test_kmask_not() {
 fn test_complex_predicate() {
     let mut c = match SqlCompiler::new() {
         Some(c) => c,
-        None => { println!("AVX-512 not available"); return; }
+        None => {
+            println!("AVX-512 not available");
+            return;
+        }
     };
 
     let func_ptr = c.compile_complex_predicate("complex").unwrap();
-    let func: fn(*const i32, *const i32, *const i32, i32, i32, i32) -> i64 = unsafe { mem::transmute(func_ptr) };
+    let func: fn(*const i32, *const i32, *const i32, i32, i32, i32) -> i64 =
+        unsafe { mem::transmute(func_ptr) };
 
     // Test: (a > 5) AND ((b > 10) OR (c > 10))
     let a: [i32; 16] = [10, 3, 8, 2, 15, 1, 12, 4, 20, 6, 7, 5, 9, 11, 14, 0];
@@ -2182,7 +2353,10 @@ fn test_complex_predicate() {
 fn test_bitselect_case_when() {
     let mut c = match SqlCompiler::new() {
         Some(c) => c,
-        None => { println!("AVX-512 not available"); return; }
+        None => {
+            println!("AVX-512 not available");
+            return;
+        }
     };
 
     let func_ptr = c.compile_bitselect_case_when("casewhen").unwrap();
@@ -2241,7 +2415,10 @@ fn test_kmask_ops_summary() {
 fn test_i32x16_arithmetic_register_pressure() {
     let mut c = match SqlCompiler::new() {
         Some(c) => c,
-        None => { println!("AVX-512 not available"); return; }
+        None => {
+            println!("AVX-512 not available");
+            return;
+        }
     };
 
     // Build function: compute (a + b) * (c - d) + (e * f) - (g + h)
@@ -2254,7 +2431,10 @@ fn test_i32x16_arithmetic_register_pressure() {
     sig.params.push(AbiParam::new(ptr)); // result
     sig.call_conv = CallConv::SystemV;
 
-    let func_id = c.module.declare_function("i32x16_arith", Linkage::Local, &sig).unwrap();
+    let func_id = c
+        .module
+        .declare_function("i32x16_arith", Linkage::Local, &sig)
+        .unwrap();
     c.ctx.func = Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), sig);
 
     {
@@ -2266,25 +2446,43 @@ fn test_i32x16_arithmetic_register_pressure() {
         let params = builder.block_params(block).to_vec();
 
         // Load all 8 vectors
-        let a = builder.ins().load(I32X16, MemFlags::trusted(), params[0], 0);
-        let b = builder.ins().load(I32X16, MemFlags::trusted(), params[1], 0);
-        let c_vec = builder.ins().load(I32X16, MemFlags::trusted(), params[2], 0);
-        let d = builder.ins().load(I32X16, MemFlags::trusted(), params[3], 0);
-        let e = builder.ins().load(I32X16, MemFlags::trusted(), params[4], 0);
-        let f = builder.ins().load(I32X16, MemFlags::trusted(), params[5], 0);
-        let g = builder.ins().load(I32X16, MemFlags::trusted(), params[6], 0);
-        let h = builder.ins().load(I32X16, MemFlags::trusted(), params[7], 0);
+        let a = builder
+            .ins()
+            .load(I32X16, MemFlags::trusted(), params[0], 0);
+        let b = builder
+            .ins()
+            .load(I32X16, MemFlags::trusted(), params[1], 0);
+        let c_vec = builder
+            .ins()
+            .load(I32X16, MemFlags::trusted(), params[2], 0);
+        let d = builder
+            .ins()
+            .load(I32X16, MemFlags::trusted(), params[3], 0);
+        let e = builder
+            .ins()
+            .load(I32X16, MemFlags::trusted(), params[4], 0);
+        let f = builder
+            .ins()
+            .load(I32X16, MemFlags::trusted(), params[5], 0);
+        let g = builder
+            .ins()
+            .load(I32X16, MemFlags::trusted(), params[6], 0);
+        let h = builder
+            .ins()
+            .load(I32X16, MemFlags::trusted(), params[7], 0);
 
         // Compute with many temporaries to stress register allocation
-        let ab = builder.ins().iadd(a, b);           // a + b
-        let cd = builder.ins().isub(c_vec, d);       // c - d
-        let abcd = builder.ins().imul(ab, cd);       // (a + b) * (c - d)
-        let ef = builder.ins().imul(e, f);           // e * f
-        let abcdef = builder.ins().iadd(abcd, ef);   // (a+b)*(c-d) + e*f
-        let gh = builder.ins().iadd(g, h);           // g + h
+        let ab = builder.ins().iadd(a, b); // a + b
+        let cd = builder.ins().isub(c_vec, d); // c - d
+        let abcd = builder.ins().imul(ab, cd); // (a + b) * (c - d)
+        let ef = builder.ins().imul(e, f); // e * f
+        let abcdef = builder.ins().iadd(abcd, ef); // (a+b)*(c-d) + e*f
+        let gh = builder.ins().iadd(g, h); // g + h
         let result = builder.ins().isub(abcdef, gh); // final result
 
-        builder.ins().store(MemFlags::trusted(), result, params[8], 0);
+        builder
+            .ins()
+            .store(MemFlags::trusted(), result, params[8], 0);
         builder.ins().return_(&[]);
         builder.seal_all_blocks();
         builder.finalize();
@@ -2296,9 +2494,17 @@ fn test_i32x16_arithmetic_register_pressure() {
     let code = c.module.get_finalized_function(func_id);
 
     // Test
-    let func: fn(*const i32, *const i32, *const i32, *const i32,
-                 *const i32, *const i32, *const i32, *const i32, *mut i32) =
-        unsafe { mem::transmute(code) };
+    let func: fn(
+        *const i32,
+        *const i32,
+        *const i32,
+        *const i32,
+        *const i32,
+        *const i32,
+        *const i32,
+        *const i32,
+        *mut i32,
+    ) = unsafe { mem::transmute(code) };
 
     let a: [i32; 16] = [1; 16];
     let b: [i32; 16] = [2; 16];
@@ -2310,8 +2516,17 @@ fn test_i32x16_arithmetic_register_pressure() {
     let h: [i32; 16] = [7; 16];
     let mut result = [0i32; 16];
 
-    func(a.as_ptr(), b.as_ptr(), c_arr.as_ptr(), d.as_ptr(),
-         e.as_ptr(), f.as_ptr(), g.as_ptr(), h.as_ptr(), result.as_mut_ptr());
+    func(
+        a.as_ptr(),
+        b.as_ptr(),
+        c_arr.as_ptr(),
+        d.as_ptr(),
+        e.as_ptr(),
+        f.as_ptr(),
+        g.as_ptr(),
+        h.as_ptr(),
+        result.as_mut_ptr(),
+    );
 
     // Expected: (1+2) * (10-3) + (4*5) - (6+7) = 3*7 + 20 - 13 = 21 + 20 - 13 = 28
     for i in 0..16 {
@@ -2325,7 +2540,10 @@ fn test_i32x16_arithmetic_register_pressure() {
 fn test_i64x8_arithmetic_complex() {
     let mut c = match SqlCompiler::new() {
         Some(c) => c,
-        None => { println!("AVX-512 not available"); return; }
+        None => {
+            println!("AVX-512 not available");
+            return;
+        }
     };
 
     let ptr = c.ptr();
@@ -2335,7 +2553,10 @@ fn test_i64x8_arithmetic_complex() {
     sig.params.push(AbiParam::new(ptr)); // result
     sig.call_conv = CallConv::SystemV;
 
-    let func_id = c.module.declare_function("i64x8_arith", Linkage::Local, &sig).unwrap();
+    let func_id = c
+        .module
+        .declare_function("i64x8_arith", Linkage::Local, &sig)
+        .unwrap();
     c.ctx.func = Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), sig);
 
     {
@@ -2355,7 +2576,9 @@ fn test_i64x8_arithmetic_complex() {
         let doubled = builder.ins().imul(sum, two_vec);
         let result = builder.ins().isub(doubled, a);
 
-        builder.ins().store(MemFlags::trusted(), result, params[2], 0);
+        builder
+            .ins()
+            .store(MemFlags::trusted(), result, params[2], 0);
         builder.ins().return_(&[]);
         builder.seal_all_blocks();
         builder.finalize();
@@ -2387,7 +2610,10 @@ fn test_i64x8_arithmetic_complex() {
 fn test_f32x16_arithmetic() {
     let mut c = match SqlCompiler::new() {
         Some(c) => c,
-        None => { println!("AVX-512 not available"); return; }
+        None => {
+            println!("AVX-512 not available");
+            return;
+        }
     };
 
     let ptr = c.ptr();
@@ -2397,7 +2623,10 @@ fn test_f32x16_arithmetic() {
     sig.params.push(AbiParam::new(ptr)); // result
     sig.call_conv = CallConv::SystemV;
 
-    let func_id = c.module.declare_function("f32x16_arith", Linkage::Local, &sig).unwrap();
+    let func_id = c
+        .module
+        .declare_function("f32x16_arith", Linkage::Local, &sig)
+        .unwrap();
     c.ctx.func = Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), sig);
 
     {
@@ -2407,15 +2636,21 @@ fn test_f32x16_arithmetic() {
         builder.switch_to_block(block);
 
         let params = builder.block_params(block).to_vec();
-        let a = builder.ins().load(F32X16, MemFlags::trusted(), params[0], 0);
-        let b = builder.ins().load(F32X16, MemFlags::trusted(), params[1], 0);
+        let a = builder
+            .ins()
+            .load(F32X16, MemFlags::trusted(), params[0], 0);
+        let b = builder
+            .ins()
+            .load(F32X16, MemFlags::trusted(), params[1], 0);
 
         // Compute: a * b + a - b
         let prod = builder.ins().fmul(a, b);
         let sum1 = builder.ins().fadd(prod, a);
         let result = builder.ins().fsub(sum1, b);
 
-        builder.ins().store(MemFlags::trusted(), result, params[2], 0);
+        builder
+            .ins()
+            .store(MemFlags::trusted(), result, params[2], 0);
         builder.ins().return_(&[]);
         builder.seal_all_blocks();
         builder.finalize();
@@ -2428,8 +2663,9 @@ fn test_f32x16_arithmetic() {
 
     let func: fn(*const f32, *const f32, *mut f32) = unsafe { mem::transmute(code) };
 
-    let a: [f32; 16] = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0,
-                        9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0];
+    let a: [f32; 16] = [
+        1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0,
+    ];
     let b: [f32; 16] = [0.5; 16];
     let mut result = [0.0f32; 16];
 
@@ -2438,8 +2674,13 @@ fn test_f32x16_arithmetic() {
     // Expected: a * 0.5 + a - 0.5 = 1.5a - 0.5
     for i in 0..16 {
         let expected = 1.5 * a[i] - 0.5;
-        assert!((result[i] - expected).abs() < 0.001,
-                "F32X16 arithmetic failed at index {}: got {}, expected {}", i, result[i], expected);
+        assert!(
+            (result[i] - expected).abs() < 0.001,
+            "F32X16 arithmetic failed at index {}: got {}, expected {}",
+            i,
+            result[i],
+            expected
+        );
     }
     println!("F32X16 arithmetic: PASS");
 }
@@ -2449,7 +2690,10 @@ fn test_f32x16_arithmetic() {
 fn test_i32x16_minmax() {
     let mut c = match SqlCompiler::new() {
         Some(c) => c,
-        None => { println!("AVX-512 not available"); return; }
+        None => {
+            println!("AVX-512 not available");
+            return;
+        }
     };
 
     let ptr = c.ptr();
@@ -2460,7 +2704,10 @@ fn test_i32x16_minmax() {
     sig.params.push(AbiParam::new(ptr)); // smax result
     sig.call_conv = CallConv::SystemV;
 
-    let func_id = c.module.declare_function("i32x16_minmax", Linkage::Local, &sig).unwrap();
+    let func_id = c
+        .module
+        .declare_function("i32x16_minmax", Linkage::Local, &sig)
+        .unwrap();
     c.ctx.func = Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), sig);
 
     {
@@ -2470,14 +2717,22 @@ fn test_i32x16_minmax() {
         builder.switch_to_block(block);
 
         let params = builder.block_params(block).to_vec();
-        let a = builder.ins().load(I32X16, MemFlags::trusted(), params[0], 0);
-        let b = builder.ins().load(I32X16, MemFlags::trusted(), params[1], 0);
+        let a = builder
+            .ins()
+            .load(I32X16, MemFlags::trusted(), params[0], 0);
+        let b = builder
+            .ins()
+            .load(I32X16, MemFlags::trusted(), params[1], 0);
 
         let smin_result = builder.ins().smin(a, b);
         let smax_result = builder.ins().smax(a, b);
 
-        builder.ins().store(MemFlags::trusted(), smin_result, params[2], 0);
-        builder.ins().store(MemFlags::trusted(), smax_result, params[3], 0);
+        builder
+            .ins()
+            .store(MemFlags::trusted(), smin_result, params[2], 0);
+        builder
+            .ins()
+            .store(MemFlags::trusted(), smax_result, params[3], 0);
         builder.ins().return_(&[]);
         builder.seal_all_blocks();
         builder.finalize();
@@ -2490,12 +2745,19 @@ fn test_i32x16_minmax() {
 
     let func: fn(*const i32, *const i32, *mut i32, *mut i32) = unsafe { mem::transmute(code) };
 
-    let a: [i32; 16] = [10, -5, 20, -10, 30, -15, 40, -20, 50, -25, 60, -30, 70, -35, 80, -40];
+    let a: [i32; 16] = [
+        10, -5, 20, -10, 30, -15, 40, -20, 50, -25, 60, -30, 70, -35, 80, -40,
+    ];
     let b: [i32; 16] = [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5];
     let mut smin_result = [0i32; 16];
     let mut smax_result = [0i32; 16];
 
-    func(a.as_ptr(), b.as_ptr(), smin_result.as_mut_ptr(), smax_result.as_mut_ptr());
+    func(
+        a.as_ptr(),
+        b.as_ptr(),
+        smin_result.as_mut_ptr(),
+        smax_result.as_mut_ptr(),
+    );
 
     for i in 0..16 {
         let expected_min = a[i].min(b[i]);
@@ -2511,7 +2773,10 @@ fn test_i32x16_minmax() {
 fn test_f64x8_minmax() {
     let mut c = match SqlCompiler::new() {
         Some(c) => c,
-        None => { println!("AVX-512 not available"); return; }
+        None => {
+            println!("AVX-512 not available");
+            return;
+        }
     };
 
     let ptr = c.ptr();
@@ -2522,7 +2787,10 @@ fn test_f64x8_minmax() {
     sig.params.push(AbiParam::new(ptr)); // fmax result
     sig.call_conv = CallConv::SystemV;
 
-    let func_id = c.module.declare_function("f64x8_minmax", Linkage::Local, &sig).unwrap();
+    let func_id = c
+        .module
+        .declare_function("f64x8_minmax", Linkage::Local, &sig)
+        .unwrap();
     c.ctx.func = Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), sig);
 
     {
@@ -2538,8 +2806,12 @@ fn test_f64x8_minmax() {
         let fmin_result = builder.ins().fmin(a, b);
         let fmax_result = builder.ins().fmax(a, b);
 
-        builder.ins().store(MemFlags::trusted(), fmin_result, params[2], 0);
-        builder.ins().store(MemFlags::trusted(), fmax_result, params[3], 0);
+        builder
+            .ins()
+            .store(MemFlags::trusted(), fmin_result, params[2], 0);
+        builder
+            .ins()
+            .store(MemFlags::trusted(), fmax_result, params[3], 0);
         builder.ins().return_(&[]);
         builder.seal_all_blocks();
         builder.finalize();
@@ -2557,13 +2829,24 @@ fn test_f64x8_minmax() {
     let mut fmin_result = [0.0f64; 8];
     let mut fmax_result = [0.0f64; 8];
 
-    func(a.as_ptr(), b.as_ptr(), fmin_result.as_mut_ptr(), fmax_result.as_mut_ptr());
+    func(
+        a.as_ptr(),
+        b.as_ptr(),
+        fmin_result.as_mut_ptr(),
+        fmax_result.as_mut_ptr(),
+    );
 
     for i in 0..8 {
         let expected_min = a[i].min(b[i]);
         let expected_max = a[i].max(b[i]);
-        assert!((fmin_result[i] - expected_min).abs() < 0.001, "fmin failed at index {i}");
-        assert!((fmax_result[i] - expected_max).abs() < 0.001, "fmax failed at index {i}");
+        assert!(
+            (fmin_result[i] - expected_min).abs() < 0.001,
+            "fmin failed at index {i}"
+        );
+        assert!(
+            (fmax_result[i] - expected_max).abs() < 0.001,
+            "fmax failed at index {i}"
+        );
     }
     println!("F64X8 fmin/fmax: PASS");
 }
@@ -2573,7 +2856,10 @@ fn test_f64x8_minmax() {
 fn test_bitwise_complex() {
     let mut c = match SqlCompiler::new() {
         Some(c) => c,
-        None => { println!("AVX-512 not available"); return; }
+        None => {
+            println!("AVX-512 not available");
+            return;
+        }
     };
 
     let ptr = c.ptr();
@@ -2584,7 +2870,10 @@ fn test_bitwise_complex() {
     sig.params.push(AbiParam::new(ptr)); // result
     sig.call_conv = CallConv::SystemV;
 
-    let func_id = c.module.declare_function("bitwise_complex", Linkage::Local, &sig).unwrap();
+    let func_id = c
+        .module
+        .declare_function("bitwise_complex", Linkage::Local, &sig)
+        .unwrap();
     c.ctx.func = Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), sig);
 
     {
@@ -2594,9 +2883,15 @@ fn test_bitwise_complex() {
         builder.switch_to_block(block);
 
         let params = builder.block_params(block).to_vec();
-        let a = builder.ins().load(I32X16, MemFlags::trusted(), params[0], 0);
-        let b = builder.ins().load(I32X16, MemFlags::trusted(), params[1], 0);
-        let c_vec = builder.ins().load(I32X16, MemFlags::trusted(), params[2], 0);
+        let a = builder
+            .ins()
+            .load(I32X16, MemFlags::trusted(), params[0], 0);
+        let b = builder
+            .ins()
+            .load(I32X16, MemFlags::trusted(), params[1], 0);
+        let c_vec = builder
+            .ins()
+            .load(I32X16, MemFlags::trusted(), params[2], 0);
 
         // Compute: (a & b) | (c ^ ~a) - complex bitwise expression
         let a_and_b = builder.ins().band(a, b);
@@ -2604,7 +2899,9 @@ fn test_bitwise_complex() {
         let c_xor_not_a = builder.ins().bxor(c_vec, not_a);
         let result = builder.ins().bor(a_and_b, c_xor_not_a);
 
-        builder.ins().store(MemFlags::trusted(), result, params[3], 0);
+        builder
+            .ins()
+            .store(MemFlags::trusted(), result, params[3], 0);
         builder.ins().return_(&[]);
         builder.seal_all_blocks();
         builder.finalize();
@@ -2641,19 +2938,25 @@ fn test_bitwise_complex() {
 fn test_aggregation_multiple() {
     let mut c = match SqlCompiler::new() {
         Some(c) => c,
-        None => { println!("AVX-512 not available"); return; }
+        None => {
+            println!("AVX-512 not available");
+            return;
+        }
     };
 
     let ptr = c.ptr();
     let mut sig = c.module.make_signature();
-    sig.params.push(AbiParam::new(ptr));  // a column (I64X8)
-    sig.params.push(AbiParam::new(ptr));  // b column (I64X8)
-    sig.params.push(AbiParam::new(ptr));  // c column (I64X8)
-    sig.params.push(AbiParam::new(ptr));  // d column (I64X8)
-    sig.params.push(AbiParam::new(ptr));  // results: [sum_a, sum_b, min_c, max_d]
+    sig.params.push(AbiParam::new(ptr)); // a column (I64X8)
+    sig.params.push(AbiParam::new(ptr)); // b column (I64X8)
+    sig.params.push(AbiParam::new(ptr)); // c column (I64X8)
+    sig.params.push(AbiParam::new(ptr)); // d column (I64X8)
+    sig.params.push(AbiParam::new(ptr)); // results: [sum_a, sum_b, min_c, max_d]
     sig.call_conv = CallConv::SystemV;
 
-    let func_id = c.module.declare_function("multi_agg", Linkage::Local, &sig).unwrap();
+    let func_id = c
+        .module
+        .declare_function("multi_agg", Linkage::Local, &sig)
+        .unwrap();
     c.ctx.func = Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), sig);
 
     {
@@ -2699,10 +3002,18 @@ fn test_aggregation_multiple() {
         }
 
         // Store results
-        builder.ins().store(MemFlags::trusted(), sum_a, params[4], 0);
-        builder.ins().store(MemFlags::trusted(), sum_b, params[4], 8);
-        builder.ins().store(MemFlags::trusted(), min_c, params[4], 16);
-        builder.ins().store(MemFlags::trusted(), max_d, params[4], 24);
+        builder
+            .ins()
+            .store(MemFlags::trusted(), sum_a, params[4], 0);
+        builder
+            .ins()
+            .store(MemFlags::trusted(), sum_b, params[4], 8);
+        builder
+            .ins()
+            .store(MemFlags::trusted(), min_c, params[4], 16);
+        builder
+            .ins()
+            .store(MemFlags::trusted(), max_d, params[4], 24);
 
         builder.ins().return_(&[]);
         builder.seal_all_blocks();
@@ -2724,13 +3035,19 @@ fn test_aggregation_multiple() {
     let d: [i64; 8] = [5, 10, 3, 8, 15, 2, 12, 7];
     let mut results = [0i64; 4];
 
-    func(a.as_ptr(), b.as_ptr(), c_arr.as_ptr(), d.as_ptr(), results.as_mut_ptr());
+    func(
+        a.as_ptr(),
+        b.as_ptr(),
+        c_arr.as_ptr(),
+        d.as_ptr(),
+        results.as_mut_ptr(),
+    );
 
     // Verify
-    let expected_sum_a: i64 = a.iter().sum();  // 36
-    let expected_sum_b: i64 = b.iter().sum();  // 360
-    let expected_min_c: i64 = *c_arr.iter().min().unwrap();  // 10
-    let expected_max_d: i64 = *d.iter().max().unwrap();  // 15
+    let expected_sum_a: i64 = a.iter().sum(); // 36
+    let expected_sum_b: i64 = b.iter().sum(); // 360
+    let expected_min_c: i64 = *c_arr.iter().min().unwrap(); // 10
+    let expected_max_d: i64 = *d.iter().max().unwrap(); // 15
 
     assert_eq!(results[0], expected_sum_a, "SUM(a) failed");
     assert_eq!(results[1], expected_sum_b, "SUM(b) failed");
@@ -2738,8 +3055,10 @@ fn test_aggregation_multiple() {
     assert_eq!(results[3], expected_max_d, "MAX(d) failed");
 
     println!("Multi-accumulator aggregation (SUM, MIN, MAX): PASS");
-    println!("  SUM(a) = {}, SUM(b) = {}, MIN(c) = {}, MAX(d) = {}",
-             results[0], results[1], results[2], results[3]);
+    println!(
+        "  SUM(a) = {}, SUM(b) = {}, MIN(c) = {}, MAX(d) = {}",
+        results[0], results[1], results[2], results[3]
+    );
 }
 
 /// Test WHERE clause with BETWEEN: col >= low AND col <= high
@@ -2747,7 +3066,10 @@ fn test_aggregation_multiple() {
 fn test_between_filter() {
     let mut c = match SqlCompiler::new() {
         Some(c) => c,
-        None => { println!("AVX-512 not available"); return; }
+        None => {
+            println!("AVX-512 not available");
+            return;
+        }
     };
 
     let ptr = c.ptr();
@@ -2758,7 +3080,10 @@ fn test_between_filter() {
     sig.returns.push(AbiParam::new(I64)); // count
     sig.call_conv = CallConv::SystemV;
 
-    let func_id = c.module.declare_function("between_filter", Linkage::Local, &sig).unwrap();
+    let func_id = c
+        .module
+        .declare_function("between_filter", Linkage::Local, &sig)
+        .unwrap();
     c.ctx.func = Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), sig);
 
     {
@@ -2768,14 +3093,20 @@ fn test_between_filter() {
         builder.switch_to_block(block);
 
         let params = builder.block_params(block).to_vec();
-        let data = builder.ins().load(I32X16, MemFlags::trusted(), params[0], 0);
+        let data = builder
+            .ins()
+            .load(I32X16, MemFlags::trusted(), params[0], 0);
         let low_vec = builder.ins().splat(I32X16, params[1]);
         let high_vec = builder.ins().splat(I32X16, params[2]);
 
         // col >= low
-        let ge_low = builder.ins().icmp(IntCC::SignedGreaterThanOrEqual, data, low_vec);
+        let ge_low = builder
+            .ins()
+            .icmp(IntCC::SignedGreaterThanOrEqual, data, low_vec);
         // col <= high
-        let le_high = builder.ins().icmp(IntCC::SignedLessThanOrEqual, data, high_vec);
+        let le_high = builder
+            .ins()
+            .icmp(IntCC::SignedLessThanOrEqual, data, high_vec);
         // BETWEEN = ge_low AND le_high
         let between_mask = builder.ins().band(ge_low, le_high);
 
@@ -2811,7 +3142,10 @@ fn test_between_filter() {
 fn test_coalesce() {
     let mut c = match SqlCompiler::new() {
         Some(c) => c,
-        None => { println!("AVX-512 not available"); return; }
+        None => {
+            println!("AVX-512 not available");
+            return;
+        }
     };
 
     let ptr = c.ptr();
@@ -2822,7 +3156,10 @@ fn test_coalesce() {
     sig.params.push(AbiParam::new(ptr)); // result
     sig.call_conv = CallConv::SystemV;
 
-    let func_id = c.module.declare_function("coalesce", Linkage::Local, &sig).unwrap();
+    let func_id = c
+        .module
+        .declare_function("coalesce", Linkage::Local, &sig)
+        .unwrap();
     c.ctx.func = Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), sig);
 
     {
@@ -2832,9 +3169,15 @@ fn test_coalesce() {
         builder.switch_to_block(block);
 
         let params = builder.block_params(block).to_vec();
-        let a = builder.ins().load(I32X16, MemFlags::trusted(), params[0], 0);
-        let a_null = builder.ins().load(I32X16, MemFlags::trusted(), params[1], 0);
-        let b = builder.ins().load(I32X16, MemFlags::trusted(), params[2], 0);
+        let a = builder
+            .ins()
+            .load(I32X16, MemFlags::trusted(), params[0], 0);
+        let a_null = builder
+            .ins()
+            .load(I32X16, MemFlags::trusted(), params[1], 0);
+        let b = builder
+            .ins()
+            .load(I32X16, MemFlags::trusted(), params[2], 0);
 
         // COALESCE: if a is not null, use a; else use b
         // a_null is 0 for not-null, -1 for null
@@ -2845,7 +3188,9 @@ fn test_coalesce() {
         // bitselect(cond, if_true, if_false): selects if_true where cond is all-ones
         let result = builder.ins().bitselect(not_null_mask, a, b);
 
-        builder.ins().store(MemFlags::trusted(), result, params[3], 0);
+        builder
+            .ins()
+            .store(MemFlags::trusted(), result, params[3], 0);
         builder.ins().return_(&[]);
         builder.seal_all_blocks();
         builder.finalize();
@@ -2858,7 +3203,9 @@ fn test_coalesce() {
 
     let func: fn(*const i32, *const i32, *const i32, *mut i32) = unsafe { mem::transmute(code) };
 
-    let a: [i32; 16] = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160];
+    let a: [i32; 16] = [
+        10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160,
+    ];
     let a_null: [i32; 16] = [0, -1, 0, -1, 0, -1, 0, -1, 0, -1, 0, -1, 0, -1, 0, -1]; // alternating
     let b: [i32; 16] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
     let mut result = [0i32; 16];
@@ -2879,7 +3226,10 @@ fn test_coalesce() {
 fn test_conversion_roundtrip() {
     let mut c = match SqlCompiler::new() {
         Some(c) => c,
-        None => { println!("AVX-512 not available"); return; }
+        None => {
+            println!("AVX-512 not available");
+            return;
+        }
     };
 
     let ptr = c.ptr();
@@ -2889,7 +3239,10 @@ fn test_conversion_roundtrip() {
     sig.params.push(AbiParam::new(ptr)); // i64 output
     sig.call_conv = CallConv::SystemV;
 
-    let func_id = c.module.declare_function("convert_roundtrip", Linkage::Local, &sig).unwrap();
+    let func_id = c
+        .module
+        .declare_function("convert_roundtrip", Linkage::Local, &sig)
+        .unwrap();
     c.ctx.func = Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), sig);
 
     {
@@ -2907,8 +3260,12 @@ fn test_conversion_roundtrip() {
         // f64 -> i64 (truncate)
         let i64_out = builder.ins().fcvt_to_sint_sat(I64X8, f64_vec);
 
-        builder.ins().store(MemFlags::trusted(), f64_vec, params[1], 0);
-        builder.ins().store(MemFlags::trusted(), i64_out, params[2], 0);
+        builder
+            .ins()
+            .store(MemFlags::trusted(), f64_vec, params[1], 0);
+        builder
+            .ins()
+            .store(MemFlags::trusted(), i64_out, params[2], 0);
         builder.ins().return_(&[]);
         builder.seal_all_blocks();
         builder.finalize();
@@ -2928,7 +3285,10 @@ fn test_conversion_roundtrip() {
     func(input.as_ptr(), f64_out.as_mut_ptr(), i64_out.as_mut_ptr());
 
     for i in 0..8 {
-        assert_eq!(i64_out[i], input[i], "Conversion round-trip failed at index {i}");
+        assert_eq!(
+            i64_out[i], input[i],
+            "Conversion round-trip failed at index {i}"
+        );
     }
 
     println!("i64 <-> f64 conversion round-trip: PASS");
@@ -2940,7 +3300,10 @@ fn test_conversion_roundtrip() {
 fn test_fma_f64x8_basic() {
     let mut c = match SqlCompiler::new() {
         Some(c) => c,
-        None => { println!("AVX-512 not available"); return; }
+        None => {
+            println!("AVX-512 not available");
+            return;
+        }
     };
 
     let ptr = c.ptr();
@@ -2951,7 +3314,10 @@ fn test_fma_f64x8_basic() {
     sig.params.push(AbiParam::new(ptr)); // fma result
     sig.call_conv = CallConv::SystemV;
 
-    let func_id = c.module.declare_function("fma_basic", Linkage::Local, &sig).unwrap();
+    let func_id = c
+        .module
+        .declare_function("fma_basic", Linkage::Local, &sig)
+        .unwrap();
     c.ctx.func = Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), sig);
 
     {
@@ -2968,7 +3334,9 @@ fn test_fma_f64x8_basic() {
         // fma: a * b + c
         let fma_result = builder.ins().fma(a, b, c_vec);
 
-        builder.ins().store(MemFlags::trusted(), fma_result, params[3], 0);
+        builder
+            .ins()
+            .store(MemFlags::trusted(), fma_result, params[3], 0);
         builder.ins().return_(&[]);
         builder.seal_all_blocks();
         builder.finalize();
@@ -2979,8 +3347,7 @@ fn test_fma_f64x8_basic() {
     c.module.finalize_definitions().unwrap();
     let code = c.module.get_finalized_function(func_id);
 
-    let func: fn(*const f64, *const f64, *const f64, *mut f64) =
-        unsafe { mem::transmute(code) };
+    let func: fn(*const f64, *const f64, *const f64, *mut f64) = unsafe { mem::transmute(code) };
 
     let a: [f64; 8] = [2.0; 8];
     let b: [f64; 8] = [3.0; 8];
@@ -3002,7 +3369,10 @@ fn test_fma_f64x8_basic() {
 fn test_icmp_all_conditions() {
     let mut c = match SqlCompiler::new() {
         Some(c) => c,
-        None => { println!("AVX-512 not available"); return; }
+        None => {
+            println!("AVX-512 not available");
+            return;
+        }
     };
 
     let ptr = c.ptr();
@@ -3015,7 +3385,10 @@ fn test_icmp_all_conditions() {
     sig.params.push(AbiParam::new(ptr)); // sgt result
     sig.call_conv = CallConv::SystemV;
 
-    let func_id = c.module.declare_function("icmp_all", Linkage::Local, &sig).unwrap();
+    let func_id = c
+        .module
+        .declare_function("icmp_all", Linkage::Local, &sig)
+        .unwrap();
     c.ctx.func = Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), sig);
 
     {
@@ -3025,8 +3398,12 @@ fn test_icmp_all_conditions() {
         builder.switch_to_block(block);
 
         let params = builder.block_params(block).to_vec();
-        let a = builder.ins().load(I32X16, MemFlags::trusted(), params[0], 0);
-        let b = builder.ins().load(I32X16, MemFlags::trusted(), params[1], 0);
+        let a = builder
+            .ins()
+            .load(I32X16, MemFlags::trusted(), params[0], 0);
+        let b = builder
+            .ins()
+            .load(I32X16, MemFlags::trusted(), params[1], 0);
 
         let eq = builder.ins().icmp(IntCC::Equal, a, b);
         let ne = builder.ins().icmp(IntCC::NotEqual, a, b);
@@ -3057,8 +3434,14 @@ fn test_icmp_all_conditions() {
     let mut slt_out = [0i32; 16];
     let mut sgt_out = [0i32; 16];
 
-    func(a.as_ptr(), b.as_ptr(), eq_out.as_mut_ptr(), ne_out.as_mut_ptr(),
-         slt_out.as_mut_ptr(), sgt_out.as_mut_ptr());
+    func(
+        a.as_ptr(),
+        b.as_ptr(),
+        eq_out.as_mut_ptr(),
+        ne_out.as_mut_ptr(),
+        slt_out.as_mut_ptr(),
+        sgt_out.as_mut_ptr(),
+    );
 
     for i in 0..16 {
         let exp_eq = if a[i] == b[i] { -1i32 } else { 0 };
@@ -3080,7 +3463,10 @@ fn test_icmp_all_conditions() {
 fn test_fcmp_all_conditions() {
     let mut c = match SqlCompiler::new() {
         Some(c) => c,
-        None => { println!("AVX-512 not available"); return; }
+        None => {
+            println!("AVX-512 not available");
+            return;
+        }
     };
 
     let ptr = c.ptr();
@@ -3092,7 +3478,10 @@ fn test_fcmp_all_conditions() {
     sig.params.push(AbiParam::new(ptr)); // le result
     sig.call_conv = CallConv::SystemV;
 
-    let func_id = c.module.declare_function("fcmp_all", Linkage::Local, &sig).unwrap();
+    let func_id = c
+        .module
+        .declare_function("fcmp_all", Linkage::Local, &sig)
+        .unwrap();
     c.ctx.func = Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), sig);
 
     {
@@ -3131,7 +3520,13 @@ fn test_fcmp_all_conditions() {
     let mut lt_out = [0i64; 8];
     let mut le_out = [0i64; 8];
 
-    func(a.as_ptr(), b.as_ptr(), eq_out.as_mut_ptr(), lt_out.as_mut_ptr(), le_out.as_mut_ptr());
+    func(
+        a.as_ptr(),
+        b.as_ptr(),
+        eq_out.as_mut_ptr(),
+        lt_out.as_mut_ptr(),
+        le_out.as_mut_ptr(),
+    );
 
     for i in 0..8 {
         let exp_eq = if a[i] == b[i] { -1i64 } else { 0 };
@@ -3146,7 +3541,6 @@ fn test_fcmp_all_conditions() {
     println!("fcmp all conditions (EQ, LT, LE) F64X8: PASS");
 }
 
-
 // =============================================================================
 // THROUGHPUT BENCHMARKS - Complex & Weird Query Patterns
 // =============================================================================
@@ -3159,7 +3553,10 @@ fn test_fcmp_all_conditions() {
 fn bench_complex_filter_i32x16() {
     let mut c = match SqlCompiler::new() {
         Some(c) => c,
-        None => { println!("AVX-512 not available, skipping benchmark"); return; }
+        None => {
+            println!("AVX-512 not available, skipping benchmark");
+            return;
+        }
     };
 
     let ptr = c.ptr();
@@ -3168,11 +3565,14 @@ fn bench_complex_filter_i32x16() {
     sig.params.push(AbiParam::new(ptr)); // col_b
     sig.params.push(AbiParam::new(ptr)); // col_c
     sig.params.push(AbiParam::new(ptr)); // col_d
-    sig.params.push(AbiParam::new(I64));  // num_vectors
+    sig.params.push(AbiParam::new(I64)); // num_vectors
     sig.returns.push(AbiParam::new(I64)); // count of matching rows
     sig.call_conv = CallConv::SystemV;
 
-    let func_id = c.module.declare_function("complex_filter_bench", Linkage::Local, &sig).unwrap();
+    let func_id = c
+        .module
+        .declare_function("complex_filter_bench", Linkage::Local, &sig)
+        .unwrap();
     c.ctx.func = Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), sig);
 
     {
@@ -3204,7 +3604,9 @@ fn bench_complex_filter_i32x16() {
         let init_count = builder.ins().iconst(I64, 0);
         let init_idx = builder.ins().iconst(I64, 0);
 
-        builder.ins().jump(loop_block, &[init_idx.into(), init_count.into()]);
+        builder
+            .ins()
+            .jump(loop_block, &[init_idx.into(), init_count.into()]);
 
         // Loop block
         builder.switch_to_block(loop_block);
@@ -3250,7 +3652,13 @@ fn bench_complex_filter_i32x16() {
         // Increment and check loop
         let next_idx = builder.ins().iadd_imm(idx, 1);
         let done = builder.ins().icmp(IntCC::Equal, next_idx, num_vectors);
-        builder.ins().brif(done, exit, &[new_count.into()], loop_block, &[next_idx.into(), new_count.into()]);
+        builder.ins().brif(
+            done,
+            exit,
+            &[new_count.into()],
+            loop_block,
+            &[next_idx.into(), new_count.into()],
+        );
 
         // Exit
         builder.switch_to_block(exit);
@@ -3281,22 +3689,34 @@ fn bench_complex_filter_i32x16() {
     let mut col_d = vec![0i32; NUM_ROWS];
 
     for i in 0..NUM_ROWS {
-        col_a[i] = (i % 50) as i32;      // 0-49, ~80% > 10
-        col_b[i] = (i % 200) as i32;     // 0-199, ~50% < 100
-        col_c[i] = if i % 100 == 0 { 42 } else { 0 };  // 1% = 42
-        col_d[i] = (i % 3) as i32;       // 0, 1, 2 cyclically
+        col_a[i] = (i % 50) as i32; // 0-49, ~80% > 10
+        col_b[i] = (i % 200) as i32; // 0-199, ~50% < 100
+        col_c[i] = if i % 100 == 0 { 42 } else { 0 }; // 1% = 42
+        col_d[i] = (i % 3) as i32; // 0, 1, 2 cyclically
     }
 
     // Warmup
     for _ in 0..3 {
-        func(col_a.as_ptr(), col_b.as_ptr(), col_c.as_ptr(), col_d.as_ptr(), VECTORS_PER_COL as i64);
+        func(
+            col_a.as_ptr(),
+            col_b.as_ptr(),
+            col_c.as_ptr(),
+            col_d.as_ptr(),
+            VECTORS_PER_COL as i64,
+        );
     }
 
     // Benchmark
     let mut times = Vec::with_capacity(10);
     for _ in 0..10 {
         let start = Instant::now();
-        let _result = func(col_a.as_ptr(), col_b.as_ptr(), col_c.as_ptr(), col_d.as_ptr(), VECTORS_PER_COL as i64);
+        let _result = func(
+            col_a.as_ptr(),
+            col_b.as_ptr(),
+            col_c.as_ptr(),
+            col_d.as_ptr(),
+            VECTORS_PER_COL as i64,
+        );
         times.push(start.elapsed().as_nanos() as u64);
     }
 
@@ -3306,7 +3726,11 @@ fn bench_complex_filter_i32x16() {
     let gb_per_sec = bytes as f64 / 1e9 / (min as f64 / 1e9);
     let rows_per_sec = NUM_ROWS as f64 / (min as f64 / 1e9);
 
-    println!("Complex 4-Column Filter: {:.0} M rows/sec, {:.1} GB/s", rows_per_sec / 1e6, gb_per_sec);
+    println!(
+        "Complex 4-Column Filter: {:.0} M rows/sec, {:.1} GB/s",
+        rows_per_sec / 1e6,
+        gb_per_sec
+    );
 }
 
 /// Benchmark: TPC-H style aggregation with multiple accumulators
@@ -3316,7 +3740,10 @@ fn bench_complex_filter_i32x16() {
 fn bench_tpch_aggregation_i64x8() {
     let mut c = match SqlCompiler::new() {
         Some(c) => c,
-        None => { println!("AVX-512 not available, skipping benchmark"); return; }
+        None => {
+            println!("AVX-512 not available, skipping benchmark");
+            return;
+        }
     };
 
     let ptr = c.ptr();
@@ -3326,11 +3753,14 @@ fn bench_tpch_aggregation_i64x8() {
     sig.params.push(AbiParam::new(ptr)); // col_c (for MIN)
     sig.params.push(AbiParam::new(ptr)); // col_d (for MAX)
     sig.params.push(AbiParam::new(ptr)); // col_filter
-    sig.params.push(AbiParam::new(I64));  // num_vectors
+    sig.params.push(AbiParam::new(I64)); // num_vectors
     sig.params.push(AbiParam::new(ptr)); // results[4]
     sig.call_conv = CallConv::SystemV;
 
-    let func_id = c.module.declare_function("tpch_agg_bench", Linkage::Local, &sig).unwrap();
+    let func_id = c
+        .module
+        .declare_function("tpch_agg_bench", Linkage::Local, &sig)
+        .unwrap();
     c.ctx.func = Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), sig);
 
     {
@@ -3364,11 +3794,20 @@ fn bench_tpch_aggregation_i64x8() {
         let threshold = builder.ins().splat(I64X8, t50);
         let init_idx = builder.ins().iconst(I64, 0);
 
-        builder.ins().jump(loop_block, &[init_idx.into(), sum_a_init.into(), sum_b_init.into(), min_c_init.into(), max_d_init.into()]);
+        builder.ins().jump(
+            loop_block,
+            &[
+                init_idx.into(),
+                sum_a_init.into(),
+                sum_b_init.into(),
+                min_c_init.into(),
+                max_d_init.into(),
+            ],
+        );
 
         // Loop block with 5 accumulators
         builder.switch_to_block(loop_block);
-        builder.append_block_param(loop_block, I64);   // idx
+        builder.append_block_param(loop_block, I64); // idx
         builder.append_block_param(loop_block, I64X8); // sum_a
         builder.append_block_param(loop_block, I64X8); // sum_b
         builder.append_block_param(loop_block, I64X8); // min_c
@@ -3397,7 +3836,9 @@ fn bench_tpch_aggregation_i64x8() {
         let filter = builder.ins().load(I64X8, MemFlags::trusted(), f_addr, 0);
 
         // WHERE filter > 50
-        let mask = builder.ins().icmp(IntCC::SignedGreaterThan, filter, threshold);
+        let mask = builder
+            .ins()
+            .icmp(IntCC::SignedGreaterThan, filter, threshold);
 
         // Masked accumulation using FUSED bitselect+op pattern
         // Pattern: bitselect(mask, op(x, y), passthru) -> single masked AVX-512 instruction
@@ -3422,8 +3863,24 @@ fn bench_tpch_aggregation_i64x8() {
         // Increment and check
         let next_idx = builder.ins().iadd_imm(idx, 1);
         let done = builder.ins().icmp(IntCC::Equal, next_idx, num_vectors);
-        builder.ins().brif(done, exit, &[new_sum_a.into(), new_sum_b.into(), new_min_c.into(), new_max_d.into()],
-                          loop_block, &[next_idx.into(), new_sum_a.into(), new_sum_b.into(), new_min_c.into(), new_max_d.into()]);
+        builder.ins().brif(
+            done,
+            exit,
+            &[
+                new_sum_a.into(),
+                new_sum_b.into(),
+                new_min_c.into(),
+                new_max_d.into(),
+            ],
+            loop_block,
+            &[
+                next_idx.into(),
+                new_sum_a.into(),
+                new_sum_b.into(),
+                new_min_c.into(),
+                new_max_d.into(),
+            ],
+        );
 
         // Exit - horizontal reduce and store results
         builder.switch_to_block(exit);
@@ -3461,7 +3918,9 @@ fn bench_tpch_aggregation_i64x8() {
             let is_less = builder.ins().icmp(IntCC::SignedLessThan, lane, hc);
             hc = builder.ins().select(is_less, lane, hc);
         }
-        builder.ins().store(MemFlags::trusted(), hc, results_ptr, 16);
+        builder
+            .ins()
+            .store(MemFlags::trusted(), hc, results_ptr, 16);
 
         // Horizontal reduction for MAX(d)
         let mut hd = builder.ins().iconst(I64, i64::MIN);
@@ -3470,7 +3929,9 @@ fn bench_tpch_aggregation_i64x8() {
             let is_greater = builder.ins().icmp(IntCC::SignedGreaterThan, lane, hd);
             hd = builder.ins().select(is_greater, lane, hd);
         }
-        builder.ins().store(MemFlags::trusted(), hd, results_ptr, 24);
+        builder
+            .ins()
+            .store(MemFlags::trusted(), hd, results_ptr, 24);
 
         builder.ins().return_(&[]);
         builder.seal_all_blocks();
@@ -3497,16 +3958,30 @@ fn bench_tpch_aggregation_i64x8() {
 
     // Warmup
     for _ in 0..3 {
-        func(col_a.as_ptr(), col_b.as_ptr(), col_c.as_ptr(), col_d.as_ptr(),
-             col_filter.as_ptr(), VECTORS as i64, results.as_mut_ptr());
+        func(
+            col_a.as_ptr(),
+            col_b.as_ptr(),
+            col_c.as_ptr(),
+            col_d.as_ptr(),
+            col_filter.as_ptr(),
+            VECTORS as i64,
+            results.as_mut_ptr(),
+        );
     }
 
     // Benchmark
     let mut times = Vec::with_capacity(10);
     for _ in 0..10 {
         let start = Instant::now();
-        func(col_a.as_ptr(), col_b.as_ptr(), col_c.as_ptr(), col_d.as_ptr(),
-             col_filter.as_ptr(), VECTORS as i64, results.as_mut_ptr());
+        func(
+            col_a.as_ptr(),
+            col_b.as_ptr(),
+            col_c.as_ptr(),
+            col_d.as_ptr(),
+            col_filter.as_ptr(),
+            VECTORS as i64,
+            results.as_mut_ptr(),
+        );
         times.push(start.elapsed().as_nanos() as u64);
     }
 
@@ -3516,7 +3991,11 @@ fn bench_tpch_aggregation_i64x8() {
     let gb_per_sec = bytes as f64 / 1e9 / (min as f64 / 1e9);
     let rows_per_sec = NUM_ROWS as f64 / (min as f64 / 1e9);
 
-    println!("TPC-H 4-Way Aggregation: {:.0} M rows/sec, {:.1} GB/s", rows_per_sec / 1e6, gb_per_sec);
+    println!(
+        "TPC-H 4-Way Aggregation: {:.0} M rows/sec, {:.1} GB/s",
+        rows_per_sec / 1e6,
+        gb_per_sec
+    );
 }
 
 /// Benchmark: FP-heavy workload with FMA chains
@@ -3526,7 +4005,10 @@ fn bench_tpch_aggregation_i64x8() {
 fn bench_fma_chain_f64x8() {
     let mut c = match SqlCompiler::new() {
         Some(c) => c,
-        None => { println!("AVX-512 not available, skipping benchmark"); return; }
+        None => {
+            println!("AVX-512 not available, skipping benchmark");
+            return;
+        }
     };
 
     let ptr = c.ptr();
@@ -3537,11 +4019,14 @@ fn bench_fma_chain_f64x8() {
     sig.params.push(AbiParam::new(ptr)); // d
     sig.params.push(AbiParam::new(ptr)); // e
     sig.params.push(AbiParam::new(ptr)); // f
-    sig.params.push(AbiParam::new(I64));  // num_vectors
+    sig.params.push(AbiParam::new(I64)); // num_vectors
     sig.params.push(AbiParam::new(ptr)); // result
     sig.call_conv = CallConv::SystemV;
 
-    let func_id = c.module.declare_function("fma_chain_bench", Linkage::Local, &sig).unwrap();
+    let func_id = c
+        .module
+        .declare_function("fma_chain_bench", Linkage::Local, &sig)
+        .unwrap();
     c.ctx.func = Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), sig);
 
     {
@@ -3606,7 +4091,9 @@ fn bench_fma_chain_f64x8() {
 
         let next_idx = builder.ins().iadd_imm(idx, 1);
         let done = builder.ins().icmp(IntCC::Equal, next_idx, num_vectors);
-        builder.ins().brif(done, exit, &[], loop_block, &[next_idx.into()]);
+        builder
+            .ins()
+            .brif(done, exit, &[], loop_block, &[next_idx.into()]);
 
         builder.switch_to_block(exit);
         builder.ins().return_(&[]);
@@ -3619,8 +4106,16 @@ fn bench_fma_chain_f64x8() {
     c.module.finalize_definitions().unwrap();
     let code = c.module.get_finalized_function(func_id);
 
-    let func: fn(*const f64, *const f64, *const f64, *const f64, *const f64, *const f64, i64, *mut f64) =
-        unsafe { mem::transmute(code) };
+    let func: fn(
+        *const f64,
+        *const f64,
+        *const f64,
+        *const f64,
+        *const f64,
+        *const f64,
+        i64,
+        *mut f64,
+    ) = unsafe { mem::transmute(code) };
 
     const NUM_ROWS: usize = 1_000_000;
     const VECTORS: usize = NUM_ROWS / 8;
@@ -3635,16 +4130,32 @@ fn bench_fma_chain_f64x8() {
 
     // Warmup
     for _ in 0..3 {
-        func(col_a.as_ptr(), col_b.as_ptr(), col_c.as_ptr(), col_d.as_ptr(),
-             col_e.as_ptr(), col_f.as_ptr(), VECTORS as i64, result.as_mut_ptr());
+        func(
+            col_a.as_ptr(),
+            col_b.as_ptr(),
+            col_c.as_ptr(),
+            col_d.as_ptr(),
+            col_e.as_ptr(),
+            col_f.as_ptr(),
+            VECTORS as i64,
+            result.as_mut_ptr(),
+        );
     }
 
     // Benchmark
     let mut times = Vec::with_capacity(10);
     for _ in 0..10 {
         let start = Instant::now();
-        func(col_a.as_ptr(), col_b.as_ptr(), col_c.as_ptr(), col_d.as_ptr(),
-             col_e.as_ptr(), col_f.as_ptr(), VECTORS as i64, result.as_mut_ptr());
+        func(
+            col_a.as_ptr(),
+            col_b.as_ptr(),
+            col_c.as_ptr(),
+            col_d.as_ptr(),
+            col_e.as_ptr(),
+            col_f.as_ptr(),
+            VECTORS as i64,
+            result.as_mut_ptr(),
+        );
         times.push(start.elapsed().as_nanos() as u64);
     }
 
@@ -3654,7 +4165,11 @@ fn bench_fma_chain_f64x8() {
     let gb_per_sec = bytes as f64 / 1e9 / (min as f64 / 1e9);
     let rows_per_sec = NUM_ROWS as f64 / (min as f64 / 1e9);
 
-    println!("FMA Chain F64X8: {:.0} M rows/sec, {:.1} GB/s", rows_per_sec / 1e6, gb_per_sec);
+    println!(
+        "FMA Chain F64X8: {:.0} M rows/sec, {:.1} GB/s",
+        rows_per_sec / 1e6,
+        gb_per_sec
+    );
 }
 
 /// Benchmark: Weird edge case - high selectivity filter (1% pass rate)
@@ -3663,17 +4178,23 @@ fn bench_fma_chain_f64x8() {
 fn bench_high_selectivity_filter() {
     let mut c = match SqlCompiler::new() {
         Some(c) => c,
-        None => { println!("AVX-512 not available, skipping benchmark"); return; }
+        None => {
+            println!("AVX-512 not available, skipping benchmark");
+            return;
+        }
     };
 
     let ptr = c.ptr();
     let mut sig = c.module.make_signature();
     sig.params.push(AbiParam::new(ptr)); // data
-    sig.params.push(AbiParam::new(I64));  // num_vectors
+    sig.params.push(AbiParam::new(I64)); // num_vectors
     sig.returns.push(AbiParam::new(I64)); // count
     sig.call_conv = CallConv::SystemV;
 
-    let func_id = c.module.declare_function("high_sel_bench", Linkage::Local, &sig).unwrap();
+    let func_id = c
+        .module
+        .declare_function("high_sel_bench", Linkage::Local, &sig)
+        .unwrap();
     c.ctx.func = Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), sig);
 
     {
@@ -3695,7 +4216,9 @@ fn bench_high_selectivity_filter() {
         let init_count = builder.ins().iconst(I64, 0);
         let init_idx = builder.ins().iconst(I64, 0);
 
-        builder.ins().jump(loop_block, &[init_idx.into(), init_count.into()]);
+        builder
+            .ins()
+            .jump(loop_block, &[init_idx.into(), init_count.into()]);
 
         builder.switch_to_block(loop_block);
         builder.append_block_param(loop_block, I64);
@@ -3717,7 +4240,13 @@ fn bench_high_selectivity_filter() {
 
         let next_idx = builder.ins().iadd_imm(idx, 1);
         let done = builder.ins().icmp(IntCC::Equal, next_idx, num_vectors);
-        builder.ins().brif(done, exit, &[new_count.into()], loop_block, &[next_idx.into(), new_count.into()]);
+        builder.ins().brif(
+            done,
+            exit,
+            &[new_count.into()],
+            loop_block,
+            &[next_idx.into(), new_count.into()],
+        );
 
         builder.switch_to_block(exit);
         builder.append_block_param(exit, I64);
@@ -3762,7 +4291,12 @@ fn bench_high_selectivity_filter() {
     let rows_per_sec = NUM_ROWS as f64 / (min as f64 / 1e9);
     let selectivity = result as f64 / NUM_ROWS as f64 * 100.0;
 
-    println!("High Selectivity Filter: {:.0} M rows/sec, {:.1} GB/s ({:.1}% selectivity)", rows_per_sec / 1e6, gb_per_sec, selectivity);
+    println!(
+        "High Selectivity Filter: {:.0} M rows/sec, {:.1} GB/s ({:.1}% selectivity)",
+        rows_per_sec / 1e6,
+        gb_per_sec,
+        selectivity
+    );
 }
 
 /// Benchmark: Weird pattern - multiple dependent comparisons with weird thresholds
@@ -3771,7 +4305,10 @@ fn bench_high_selectivity_filter() {
 fn bench_weird_predicate_chain() {
     let mut c = match SqlCompiler::new() {
         Some(c) => c,
-        None => { println!("AVX-512 not available, skipping benchmark"); return; }
+        None => {
+            println!("AVX-512 not available, skipping benchmark");
+            return;
+        }
     };
 
     let ptr = c.ptr();
@@ -3779,11 +4316,14 @@ fn bench_weird_predicate_chain() {
     sig.params.push(AbiParam::new(ptr)); // col_a
     sig.params.push(AbiParam::new(ptr)); // col_b
     sig.params.push(AbiParam::new(ptr)); // col_c
-    sig.params.push(AbiParam::new(I64));  // num_vectors
+    sig.params.push(AbiParam::new(I64)); // num_vectors
     sig.returns.push(AbiParam::new(I64)); // count
     sig.call_conv = CallConv::SystemV;
 
-    let func_id = c.module.declare_function("weird_pred_bench", Linkage::Local, &sig).unwrap();
+    let func_id = c
+        .module
+        .declare_function("weird_pred_bench", Linkage::Local, &sig)
+        .unwrap();
     c.ctx.func = Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), sig);
 
     {
@@ -3816,7 +4356,9 @@ fn bench_weird_predicate_chain() {
         let init_count = builder.ins().iconst(I64, 0);
         let init_idx = builder.ins().iconst(I64, 0);
 
-        builder.ins().jump(loop_block, &[init_idx.into(), init_count.into()]);
+        builder
+            .ins()
+            .jump(loop_block, &[init_idx.into(), init_count.into()]);
 
         builder.switch_to_block(loop_block);
         builder.append_block_param(loop_block, I64);
@@ -3835,8 +4377,12 @@ fn bench_weird_predicate_chain() {
         let c_col = builder.ins().load(I32X16, MemFlags::trusted(), c_addr, 0);
 
         // a BETWEEN 17 AND 89
-        let a_ge_17 = builder.ins().icmp(IntCC::SignedGreaterThanOrEqual, a, const_17);
-        let a_le_89 = builder.ins().icmp(IntCC::SignedLessThanOrEqual, a, const_89);
+        let a_ge_17 = builder
+            .ins()
+            .icmp(IntCC::SignedGreaterThanOrEqual, a, const_17);
+        let a_le_89 = builder
+            .ins()
+            .icmp(IntCC::SignedLessThanOrEqual, a, const_89);
         let a_between = builder.ins().band(a_ge_17, a_le_89);
 
         // b NOT BETWEEN 23 AND 67
@@ -3859,7 +4405,13 @@ fn bench_weird_predicate_chain() {
 
         let next_idx = builder.ins().iadd_imm(idx, 1);
         let done = builder.ins().icmp(IntCC::Equal, next_idx, num_vectors);
-        builder.ins().brif(done, exit, &[new_count.into()], loop_block, &[next_idx.into(), new_count.into()]);
+        builder.ins().brif(
+            done,
+            exit,
+            &[new_count.into()],
+            loop_block,
+            &[next_idx.into(), new_count.into()],
+        );
 
         builder.switch_to_block(exit);
         builder.append_block_param(exit, I64);
@@ -3886,7 +4438,12 @@ fn bench_weird_predicate_chain() {
 
     // Warmup
     for _ in 0..3 {
-        func(col_a.as_ptr(), col_b.as_ptr(), col_c.as_ptr(), VECTORS as i64);
+        func(
+            col_a.as_ptr(),
+            col_b.as_ptr(),
+            col_c.as_ptr(),
+            VECTORS as i64,
+        );
     }
 
     // Benchmark
@@ -3894,7 +4451,12 @@ fn bench_weird_predicate_chain() {
     let mut result = 0i64;
     for _ in 0..10 {
         let start = Instant::now();
-        result = func(col_a.as_ptr(), col_b.as_ptr(), col_c.as_ptr(), VECTORS as i64);
+        result = func(
+            col_a.as_ptr(),
+            col_b.as_ptr(),
+            col_c.as_ptr(),
+            VECTORS as i64,
+        );
         times.push(start.elapsed().as_nanos() as u64);
     }
 
@@ -3905,7 +4467,12 @@ fn bench_weird_predicate_chain() {
     let rows_per_sec = NUM_ROWS as f64 / (min as f64 / 1e9);
     let selectivity = result as f64 / NUM_ROWS as f64 * 100.0;
 
-    println!("Weird 3-Way Predicate: {:.0} M rows/sec, {:.1} GB/s ({:.1}% selectivity)", rows_per_sec / 1e6, gb_per_sec, selectivity);
+    println!(
+        "Weird 3-Way Predicate: {:.0} M rows/sec, {:.1} GB/s ({:.1}% selectivity)",
+        rows_per_sec / 1e6,
+        gb_per_sec,
+        selectivity
+    );
 }
 
 /// Benchmark: Register pressure stress test - 8 columns with complex expression
@@ -3915,7 +4482,10 @@ fn bench_weird_predicate_chain() {
 fn bench_register_pressure_8col() {
     let mut c = match SqlCompiler::new() {
         Some(c) => c,
-        None => { println!("AVX-512 not available, skipping benchmark"); return; }
+        None => {
+            println!("AVX-512 not available, skipping benchmark");
+            return;
+        }
     };
 
     let ptr = c.ptr();
@@ -3923,11 +4493,14 @@ fn bench_register_pressure_8col() {
     for _ in 0..8 {
         sig.params.push(AbiParam::new(ptr)); // 8 input columns
     }
-    sig.params.push(AbiParam::new(I64));  // num_vectors
+    sig.params.push(AbiParam::new(I64)); // num_vectors
     sig.params.push(AbiParam::new(ptr)); // result
     sig.call_conv = CallConv::SystemV;
 
-    let func_id = c.module.declare_function("reg_pressure_bench", Linkage::Local, &sig).unwrap();
+    let func_id = c
+        .module
+        .declare_function("reg_pressure_bench", Linkage::Local, &sig)
+        .unwrap();
     c.ctx.func = Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), sig);
 
     {
@@ -3987,7 +4560,9 @@ fn bench_register_pressure_8col() {
 
         let next_idx = builder.ins().iadd_imm(idx, 1);
         let done = builder.ins().icmp(IntCC::Equal, next_idx, num_vectors);
-        builder.ins().brif(done, exit, &[], loop_block, &[next_idx.into()]);
+        builder
+            .ins()
+            .brif(done, exit, &[], loop_block, &[next_idx.into()]);
 
         builder.switch_to_block(exit);
         builder.ins().return_(&[]);
@@ -4000,32 +4575,63 @@ fn bench_register_pressure_8col() {
     c.module.finalize_definitions().unwrap();
     let code = c.module.get_finalized_function(func_id);
 
-    let func: fn(*const f64, *const f64, *const f64, *const f64,
-                 *const f64, *const f64, *const f64, *const f64,
-                 i64, *mut f64) = unsafe { mem::transmute(code) };
+    let func: fn(
+        *const f64,
+        *const f64,
+        *const f64,
+        *const f64,
+        *const f64,
+        *const f64,
+        *const f64,
+        *const f64,
+        i64,
+        *mut f64,
+    ) = unsafe { mem::transmute(code) };
 
     const NUM_ROWS: usize = 1_000_000;
     const VECTORS: usize = NUM_ROWS / 8;
 
     let cols: Vec<Vec<f64>> = (0..8)
-        .map(|c| (0..NUM_ROWS).map(|i| ((i + c * 1000) as f64) * 0.001 + 1.0).collect())
+        .map(|c| {
+            (0..NUM_ROWS)
+                .map(|i| ((i + c * 1000) as f64) * 0.001 + 1.0)
+                .collect()
+        })
         .collect();
     let mut result = vec![0.0f64; NUM_ROWS];
 
     // Warmup
     for _ in 0..3 {
-        func(cols[0].as_ptr(), cols[1].as_ptr(), cols[2].as_ptr(), cols[3].as_ptr(),
-             cols[4].as_ptr(), cols[5].as_ptr(), cols[6].as_ptr(), cols[7].as_ptr(),
-             VECTORS as i64, result.as_mut_ptr());
+        func(
+            cols[0].as_ptr(),
+            cols[1].as_ptr(),
+            cols[2].as_ptr(),
+            cols[3].as_ptr(),
+            cols[4].as_ptr(),
+            cols[5].as_ptr(),
+            cols[6].as_ptr(),
+            cols[7].as_ptr(),
+            VECTORS as i64,
+            result.as_mut_ptr(),
+        );
     }
 
     // Benchmark
     let mut times = Vec::with_capacity(10);
     for _ in 0..10 {
         let start = Instant::now();
-        func(cols[0].as_ptr(), cols[1].as_ptr(), cols[2].as_ptr(), cols[3].as_ptr(),
-             cols[4].as_ptr(), cols[5].as_ptr(), cols[6].as_ptr(), cols[7].as_ptr(),
-             VECTORS as i64, result.as_mut_ptr());
+        func(
+            cols[0].as_ptr(),
+            cols[1].as_ptr(),
+            cols[2].as_ptr(),
+            cols[3].as_ptr(),
+            cols[4].as_ptr(),
+            cols[5].as_ptr(),
+            cols[6].as_ptr(),
+            cols[7].as_ptr(),
+            VECTORS as i64,
+            result.as_mut_ptr(),
+        );
         times.push(start.elapsed().as_nanos() as u64);
     }
 
@@ -4035,9 +4641,12 @@ fn bench_register_pressure_8col() {
     let gb_per_sec = bytes as f64 / 1e9 / (min as f64 / 1e9);
     let rows_per_sec = NUM_ROWS as f64 / (min as f64 / 1e9);
 
-    println!("Register Pressure 8-Column: {:.0} M rows/sec, {:.1} GB/s", rows_per_sec / 1e6, gb_per_sec);
+    println!(
+        "Register Pressure 8-Column: {:.0} M rows/sec, {:.1} GB/s",
+        rows_per_sec / 1e6,
+        gb_per_sec
+    );
 }
-
 
 // =============================================================================
 // OPTIMIZED BENCHMARKS: Using vhigh_bits + popcnt instead of 16x extractlane
@@ -4057,17 +4666,23 @@ fn bench_register_pressure_8col() {
 fn bench_optimized_filter_popcnt() {
     let mut c = match SqlCompiler::new() {
         Some(c) => c,
-        None => { println!("AVX-512 not available, skipping benchmark"); return; }
+        None => {
+            println!("AVX-512 not available, skipping benchmark");
+            return;
+        }
     };
 
     let ptr = c.ptr();
     let mut sig = c.module.make_signature();
     sig.params.push(AbiParam::new(ptr)); // data
-    sig.params.push(AbiParam::new(I64));  // num_vectors
+    sig.params.push(AbiParam::new(I64)); // num_vectors
     sig.returns.push(AbiParam::new(I64)); // count
     sig.call_conv = CallConv::SystemV;
 
-    let func_id = c.module.declare_function("optimized_filter_popcnt", Linkage::Local, &sig).unwrap();
+    let func_id = c
+        .module
+        .declare_function("optimized_filter_popcnt", Linkage::Local, &sig)
+        .unwrap();
     c.ctx.func = Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), sig);
 
     {
@@ -4089,7 +4704,9 @@ fn bench_optimized_filter_popcnt() {
         let init_count = builder.ins().iconst(I64, 0);
         let init_idx = builder.ins().iconst(I64, 0);
 
-        builder.ins().jump(loop_block, &[init_idx.into(), init_count.into()]);
+        builder
+            .ins()
+            .jump(loop_block, &[init_idx.into(), init_count.into()]);
 
         builder.switch_to_block(loop_block);
         builder.append_block_param(loop_block, I64);
@@ -4101,7 +4718,9 @@ fn bench_optimized_filter_popcnt() {
         let offset = builder.ins().imul_imm(idx, 64);
         let addr = builder.ins().iadd(data_ptr, offset);
         let data = builder.ins().load(I32X16, MemFlags::trusted(), addr, 0);
-        let mask = builder.ins().icmp(IntCC::SignedGreaterThan, data, threshold);
+        let mask = builder
+            .ins()
+            .icmp(IntCC::SignedGreaterThan, data, threshold);
 
         // OPTIMIZED: Use vhigh_bits + popcnt instead of 16x extractlane loop!
         // vhigh_bits extracts the sign bit of each lane into a scalar (16 bits for I32X16)
@@ -4113,7 +4732,13 @@ fn bench_optimized_filter_popcnt() {
 
         let next_idx = builder.ins().iadd_imm(idx, 1);
         let done = builder.ins().icmp(IntCC::Equal, next_idx, num_vectors);
-        builder.ins().brif(done, exit, &[new_count.into()], loop_block, &[next_idx.into(), new_count.into()]);
+        builder.ins().brif(
+            done,
+            exit,
+            &[new_count.into()],
+            loop_block,
+            &[next_idx.into(), new_count.into()],
+        );
 
         builder.switch_to_block(exit);
         builder.append_block_param(exit, I64);
@@ -4161,7 +4786,11 @@ fn bench_optimized_filter_popcnt() {
     let expected = (NUM_ROWS / 100) * 49; // 49 values > 50 per 100
     assert_eq!(result as usize, expected, "Count mismatch");
 
-    println!("OPTIMIZED Filter (vhigh_bits+popcnt): {:.0} M rows/sec, {:.1} GB/s", rows_per_sec / 1e6, gb_per_sec);
+    println!(
+        "OPTIMIZED Filter (vhigh_bits+popcnt): {:.0} M rows/sec, {:.1} GB/s",
+        rows_per_sec / 1e6,
+        gb_per_sec
+    );
 }
 
 /// Benchmark: Unoptimized filter counting for comparison (16x extractlane)
@@ -4170,17 +4799,23 @@ fn bench_optimized_filter_popcnt() {
 fn bench_unoptimized_filter_extractlane() {
     let mut c = match SqlCompiler::new() {
         Some(c) => c,
-        None => { println!("AVX-512 not available, skipping benchmark"); return; }
+        None => {
+            println!("AVX-512 not available, skipping benchmark");
+            return;
+        }
     };
 
     let ptr = c.ptr();
     let mut sig = c.module.make_signature();
     sig.params.push(AbiParam::new(ptr)); // data
-    sig.params.push(AbiParam::new(I64));  // num_vectors
+    sig.params.push(AbiParam::new(I64)); // num_vectors
     sig.returns.push(AbiParam::new(I64)); // count
     sig.call_conv = CallConv::SystemV;
 
-    let func_id = c.module.declare_function("unoptimized_filter_extractlane", Linkage::Local, &sig).unwrap();
+    let func_id = c
+        .module
+        .declare_function("unoptimized_filter_extractlane", Linkage::Local, &sig)
+        .unwrap();
     c.ctx.func = Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), sig);
 
     {
@@ -4202,7 +4837,9 @@ fn bench_unoptimized_filter_extractlane() {
         let init_count = builder.ins().iconst(I64, 0);
         let init_idx = builder.ins().iconst(I64, 0);
 
-        builder.ins().jump(loop_block, &[init_idx.into(), init_count.into()]);
+        builder
+            .ins()
+            .jump(loop_block, &[init_idx.into(), init_count.into()]);
 
         builder.switch_to_block(loop_block);
         builder.append_block_param(loop_block, I64);
@@ -4214,7 +4851,9 @@ fn bench_unoptimized_filter_extractlane() {
         let offset = builder.ins().imul_imm(idx, 64);
         let addr = builder.ins().iadd(data_ptr, offset);
         let data = builder.ins().load(I32X16, MemFlags::trusted(), addr, 0);
-        let mask = builder.ins().icmp(IntCC::SignedGreaterThan, data, threshold);
+        let mask = builder
+            .ins()
+            .icmp(IntCC::SignedGreaterThan, data, threshold);
 
         // UNOPTIMIZED: 16x extractlane loop (64 ops total!)
         let mut lane_sum = builder.ins().iconst(I64, 0);
@@ -4228,7 +4867,13 @@ fn bench_unoptimized_filter_extractlane() {
 
         let next_idx = builder.ins().iadd_imm(idx, 1);
         let done = builder.ins().icmp(IntCC::Equal, next_idx, num_vectors);
-        builder.ins().brif(done, exit, &[new_count.into()], loop_block, &[next_idx.into(), new_count.into()]);
+        builder.ins().brif(
+            done,
+            exit,
+            &[new_count.into()],
+            loop_block,
+            &[next_idx.into(), new_count.into()],
+        );
 
         builder.switch_to_block(exit);
         builder.append_block_param(exit, I64);
@@ -4276,5 +4921,9 @@ fn bench_unoptimized_filter_extractlane() {
     let expected = (NUM_ROWS / 100) * 49;
     assert_eq!(result as usize, expected, "Count mismatch");
 
-    println!("UNOPTIMIZED Filter (extractlane): {:.0} M rows/sec, {:.1} GB/s", rows_per_sec / 1e6, gb_per_sec);
+    println!(
+        "UNOPTIMIZED Filter (extractlane): {:.0} M rows/sec, {:.1} GB/s",
+        rows_per_sec / 1e6,
+        gb_per_sec
+    );
 }

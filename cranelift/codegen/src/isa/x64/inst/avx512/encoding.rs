@@ -138,7 +138,13 @@ impl EvexPrefix {
         let r_prime = if reg_enc & 0x10 != 0 { 0 } else { 1 };
         let b = if base_enc & 0x08 != 0 { 0 } else { 1 };
         let x = match index_enc {
-            Some(idx) => if idx & 0x08 != 0 { 0 } else { 1 },
+            Some(idx) => {
+                if idx & 0x08 != 0 {
+                    0
+                } else {
+                    1
+                }
+            }
             None => 1, // No index register, X bit is 1 (inverted 0)
         };
 
@@ -198,7 +204,13 @@ impl EvexPrefix {
         let r_prime = if dst_enc & 0x10 != 0 { 0 } else { 1 };
         let b = if base_enc & 0x08 != 0 { 0 } else { 1 };
         let x = match index_enc {
-            Some(idx) => if idx & 0x08 != 0 { 0 } else { 1 },
+            Some(idx) => {
+                if idx & 0x08 != 0 {
+                    0
+                } else {
+                    1
+                }
+            }
             None => 1, // No index register, X bit is 1 (inverted 0)
         };
 
@@ -243,13 +255,7 @@ impl EvexPrefix {
     /// * `index_enc` - Index vector register encoding (0-31)
     /// * `base_enc` - Base GPR register encoding (0-15)
     /// * `sink` - The code buffer to emit into
-    pub fn emit_vsib(
-        &self,
-        reg_enc: u8,
-        index_enc: u8,
-        base_enc: u8,
-        sink: &mut MachBuffer<Inst>,
-    ) {
+    pub fn emit_vsib(&self, reg_enc: u8, index_enc: u8, base_enc: u8, sink: &mut MachBuffer<Inst>) {
         // Byte 0: EVEX escape byte
         sink.put1(0x62);
 
@@ -299,10 +305,10 @@ impl EvexPrefix {
             map,
             w,
             pp,
-            aaa: 0,      // no mask
-            z: false,    // merging (not zeroing)
-            b: false,    // no broadcast
-            ll: 0b10,    // 512-bit
+            aaa: 0,   // no mask
+            z: false, // merging (not zeroing)
+            b: false, // no broadcast
+            ll: 0b10, // 512-bit
         }
     }
 
@@ -365,13 +371,13 @@ mod tests {
         //   48 = P2: z=0 L'L=10 (512-bit) b=0 V'=1 aaa=000
 
         let evex = EvexPrefix {
-            map: 0x01,   // 0F
-            w: false,    // 32-bit elements
-            pp: 0x01,    // 66 prefix
-            aaa: 0,      // no mask
-            z: false,    // no zeroing
-            b: false,    // no broadcast
-            ll: 0b10,    // 512-bit
+            map: 0x01, // 0F
+            w: false,  // 32-bit elements
+            pp: 0x01,  // 66 prefix
+            aaa: 0,    // no mask
+            z: false,  // no zeroing
+            b: false,  // no broadcast
+            ll: 0b10,  // 512-bit
         };
 
         assert_eq!(evex.map, 0x01);
@@ -433,7 +439,7 @@ mod tests {
     #[test]
     fn test_evex_prefix_validate_invalid_map() {
         let evex = EvexPrefix {
-            map: 4,  // Invalid: must be 0-3
+            map: 4, // Invalid: must be 0-3
             w: false,
             pp: 0x01,
             aaa: 0,
@@ -449,7 +455,7 @@ mod tests {
         let evex = EvexPrefix {
             map: 0x01,
             w: false,
-            pp: 4,  // Invalid: must be 0-3
+            pp: 4, // Invalid: must be 0-3
             aaa: 0,
             z: false,
             b: false,
@@ -464,7 +470,7 @@ mod tests {
             map: 0x01,
             w: false,
             pp: 0x01,
-            aaa: 8,  // Invalid: must be 0-7
+            aaa: 8, // Invalid: must be 0-7
             z: false,
             b: false,
             ll: 0b10,
@@ -481,7 +487,7 @@ mod tests {
             aaa: 0,
             z: false,
             b: false,
-            ll: 3,  // Invalid: must be 0-2
+            ll: 3, // Invalid: must be 0-2
         };
         assert!(evex.validate().is_err());
     }

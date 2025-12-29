@@ -1,3 +1,5 @@
+#![cfg(target_arch = "x86_64")]
+
 //! Performance benchmarks for AVX-512 columnar HTAP workloads.
 //!
 //! These benchmarks measure the performance of vectorized database operations:
@@ -6,12 +8,12 @@
 //!
 //! Run with: cargo test -p cranelift-jit --test avx512_perf --release -- --nocapture
 
+use cranelift_codegen::Context;
 use cranelift_codegen::ir::condcodes::IntCC;
 use cranelift_codegen::ir::types::*;
 use cranelift_codegen::ir::*;
 use cranelift_codegen::isa::{CallConv, OwnedTargetIsa};
 use cranelift_codegen::settings::{self, Configurable};
-use cranelift_codegen::Context;
 use cranelift_frontend::*;
 use cranelift_jit::*;
 use cranelift_module::*;
@@ -76,7 +78,11 @@ impl PerfCompiler {
         let module = jit_module_with_avx512()?;
         let ctx = module.make_context();
         let func_ctx = FunctionBuilderContext::new();
-        Some(Self { module, ctx, func_ctx })
+        Some(Self {
+            module,
+            ctx,
+            func_ctx,
+        })
     }
 
     fn ptr_type(&self) -> Type {
@@ -119,14 +125,18 @@ where
 
     let rows_per_sec = rows as f64 / (avg_ns as f64 / 1_000_000_000.0);
     let bytes_total = rows * bytes_per_row;
-    let gb_per_sec = (bytes_total as f64 / (1024.0 * 1024.0 * 1024.0)) / (avg_ns as f64 / 1_000_000_000.0);
+    let gb_per_sec =
+        (bytes_total as f64 / (1024.0 * 1024.0 * 1024.0)) / (avg_ns as f64 / 1_000_000_000.0);
 
     println!("\n=== {} ===", name);
     println!("  Rows:         {:>12}", format_num(rows));
     println!("  Min time:     {:>12.2} ms", min_ns as f64 / 1_000_000.0);
     println!("  Max time:     {:>12.2} ms", max_ns as f64 / 1_000_000.0);
     println!("  Avg time:     {:>12.2} ms", avg_ns as f64 / 1_000_000.0);
-    println!("  Throughput:   {:>12.2} M rows/sec", rows_per_sec / 1_000_000.0);
+    println!(
+        "  Throughput:   {:>12.2} M rows/sec",
+        rows_per_sec / 1_000_000.0
+    );
     println!("  Bandwidth:    {:>12.2} GB/sec", gb_per_sec);
 }
 
@@ -140,15 +150,12 @@ impl PerfCompiler {
     fn compile_vector_add_i64x8(&mut self, name: &str) -> Result<*const u8, ModuleError> {
         let ptr = self.ptr_type();
         let mut sig = self.module.make_signature();
-        sig.params.push(AbiParam::new(ptr));    // src ptr
-        sig.params.push(AbiParam::new(ptr));    // dst ptr
+        sig.params.push(AbiParam::new(ptr)); // src ptr
+        sig.params.push(AbiParam::new(ptr)); // dst ptr
         sig.call_conv = CallConv::SystemV;
 
         let func_id = self.module.declare_function(name, Linkage::Local, &sig)?;
-        self.ctx.func = Function::with_name_signature(
-            UserFuncName::user(0, func_id.as_u32()),
-            sig,
-        );
+        self.ctx.func = Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), sig);
 
         {
             let mut builder = FunctionBuilder::new(&mut self.ctx.func, &mut self.func_ctx);
@@ -201,15 +208,12 @@ impl PerfCompiler {
     fn compile_horizontal_sum_i64x8(&mut self, name: &str) -> Result<*const u8, ModuleError> {
         let ptr = self.ptr_type();
         let mut sig = self.module.make_signature();
-        sig.params.push(AbiParam::new(ptr));    // src ptr
-        sig.returns.push(AbiParam::new(I64));   // sum
+        sig.params.push(AbiParam::new(ptr)); // src ptr
+        sig.returns.push(AbiParam::new(I64)); // sum
         sig.call_conv = CallConv::SystemV;
 
         let func_id = self.module.declare_function(name, Linkage::Local, &sig)?;
-        self.ctx.func = Function::with_name_signature(
-            UserFuncName::user(0, func_id.as_u32()),
-            sig,
-        );
+        self.ctx.func = Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), sig);
 
         {
             let mut builder = FunctionBuilder::new(&mut self.ctx.func, &mut self.func_ctx);
@@ -258,15 +262,12 @@ impl PerfCompiler {
     fn compile_minmax_i64x8(&mut self, name: &str, is_min: bool) -> Result<*const u8, ModuleError> {
         let ptr = self.ptr_type();
         let mut sig = self.module.make_signature();
-        sig.params.push(AbiParam::new(ptr));    // src ptr (two vectors)
-        sig.params.push(AbiParam::new(ptr));    // dst ptr
+        sig.params.push(AbiParam::new(ptr)); // src ptr (two vectors)
+        sig.params.push(AbiParam::new(ptr)); // dst ptr
         sig.call_conv = CallConv::SystemV;
 
         let func_id = self.module.declare_function(name, Linkage::Local, &sig)?;
-        self.ctx.func = Function::with_name_signature(
-            UserFuncName::user(0, func_id.as_u32()),
-            sig,
-        );
+        self.ctx.func = Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), sig);
 
         {
             let mut builder = FunctionBuilder::new(&mut self.ctx.func, &mut self.func_ctx);
@@ -306,17 +307,14 @@ impl PerfCompiler {
     fn compile_fma_f64x8(&mut self, name: &str) -> Result<*const u8, ModuleError> {
         let ptr = self.ptr_type();
         let mut sig = self.module.make_signature();
-        sig.params.push(AbiParam::new(ptr));    // a ptr
-        sig.params.push(AbiParam::new(ptr));    // b ptr
-        sig.params.push(AbiParam::new(ptr));    // c ptr
-        sig.params.push(AbiParam::new(ptr));    // dst ptr (a*b + c)
+        sig.params.push(AbiParam::new(ptr)); // a ptr
+        sig.params.push(AbiParam::new(ptr)); // b ptr
+        sig.params.push(AbiParam::new(ptr)); // c ptr
+        sig.params.push(AbiParam::new(ptr)); // dst ptr (a*b + c)
         sig.call_conv = CallConv::SystemV;
 
         let func_id = self.module.declare_function(name, Linkage::Local, &sig)?;
-        self.ctx.func = Function::with_name_signature(
-            UserFuncName::user(0, func_id.as_u32()),
-            sig,
-        );
+        self.ctx.func = Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), sig);
 
         {
             let mut builder = FunctionBuilder::new(&mut self.ctx.func, &mut self.func_ctx);
@@ -354,16 +352,13 @@ impl PerfCompiler {
     fn compile_compare_i32x16(&mut self, name: &str) -> Result<*const u8, ModuleError> {
         let ptr = self.ptr_type();
         let mut sig = self.module.make_signature();
-        sig.params.push(AbiParam::new(ptr));    // values ptr
-        sig.params.push(AbiParam::new(I32));    // threshold
-        sig.params.push(AbiParam::new(ptr));    // mask output ptr
+        sig.params.push(AbiParam::new(ptr)); // values ptr
+        sig.params.push(AbiParam::new(I32)); // threshold
+        sig.params.push(AbiParam::new(ptr)); // mask output ptr
         sig.call_conv = CallConv::SystemV;
 
         let func_id = self.module.declare_function(name, Linkage::Local, &sig)?;
-        self.ctx.func = Function::with_name_signature(
-            UserFuncName::user(0, func_id.as_u32()),
-            sig,
-        );
+        self.ctx.func = Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), sig);
 
         {
             let mut builder = FunctionBuilder::new(&mut self.ctx.func, &mut self.func_ctx);
@@ -377,13 +372,17 @@ impl PerfCompiler {
             let mask_ptr = params[2];
 
             // Load values
-            let values = builder.ins().load(I32X16, MemFlags::trusted(), values_ptr, 0);
+            let values = builder
+                .ins()
+                .load(I32X16, MemFlags::trusted(), values_ptr, 0);
 
             // Splat threshold
             let threshold_vec = builder.ins().splat(I32X16, threshold);
 
             // Compare: values > threshold
-            let mask = builder.ins().icmp(IntCC::SignedGreaterThan, values, threshold_vec);
+            let mask = builder
+                .ins()
+                .icmp(IntCC::SignedGreaterThan, values, threshold_vec);
 
             // Store mask
             builder.ins().store(MemFlags::trusted(), mask, mask_ptr, 0);
@@ -520,7 +519,8 @@ fn bench_fma_throughput() {
     };
 
     let func_ptr = compiler.compile_fma_f64x8("fma").unwrap();
-    let func: fn(*const f64, *const f64, *const f64, *mut f64) = unsafe { mem::transmute(func_ptr) };
+    let func: fn(*const f64, *const f64, *const f64, *mut f64) =
+        unsafe { mem::transmute(func_ptr) };
 
     let a: Vec<f64> = (0..8).map(|i| i as f64).collect();
     let b: Vec<f64> = (0..8).map(|i| (i + 1) as f64).collect();
@@ -531,7 +531,11 @@ fn bench_fma_throughput() {
     func(a.as_ptr(), b.as_ptr(), c.as_ptr(), dst.as_mut_ptr());
     for i in 0..8 {
         let expected = a[i] * b[i] + c[i];
-        assert!((dst[i] - expected).abs() < 1e-10, "FMA lane {} incorrect", i);
+        assert!(
+            (dst[i] - expected).abs() < 1e-10,
+            "FMA lane {} incorrect",
+            i
+        );
     }
 
     let iterations = BENCH_ROWS / 8;
@@ -597,7 +601,10 @@ fn bench_memory_bandwidth_scan() {
         let bytes_read = size * 8 * 5;
         let gb_per_sec = (bytes_read as f64 / (1024.0 * 1024.0 * 1024.0)) / elapsed.as_secs_f64();
 
-        println!("  {} MB:  {:>8.2} GB/sec (scalar baseline)", size_mb, gb_per_sec);
+        println!(
+            "  {} MB:  {:>8.2} GB/sec (scalar baseline)",
+            size_mb, gb_per_sec
+        );
     }
 }
 
@@ -640,11 +647,21 @@ fn print_benchmark_summary() {
     println!("AVX-512 HTAP Performance Benchmark Suite");
     println!("========================================");
     println!("\nRun individual benchmarks:");
-    println!("  cargo test -p cranelift-jit --test avx512_perf bench_vector_add_throughput --release -- --nocapture");
-    println!("  cargo test -p cranelift-jit --test avx512_perf bench_horizontal_reduction --release -- --nocapture");
-    println!("  cargo test -p cranelift-jit --test avx512_perf bench_minmax_throughput --release -- --nocapture");
-    println!("  cargo test -p cranelift-jit --test avx512_perf bench_fma_throughput --release -- --nocapture");
-    println!("  cargo test -p cranelift-jit --test avx512_perf bench_compare_throughput --release -- --nocapture");
+    println!(
+        "  cargo test -p cranelift-jit --test avx512_perf bench_vector_add_throughput --release -- --nocapture"
+    );
+    println!(
+        "  cargo test -p cranelift-jit --test avx512_perf bench_horizontal_reduction --release -- --nocapture"
+    );
+    println!(
+        "  cargo test -p cranelift-jit --test avx512_perf bench_minmax_throughput --release -- --nocapture"
+    );
+    println!(
+        "  cargo test -p cranelift-jit --test avx512_perf bench_fma_throughput --release -- --nocapture"
+    );
+    println!(
+        "  cargo test -p cranelift-jit --test avx512_perf bench_compare_throughput --release -- --nocapture"
+    );
     println!("\nRun all benchmarks:");
     println!("  cargo test -p cranelift-jit --test avx512_perf --release -- --nocapture");
 }

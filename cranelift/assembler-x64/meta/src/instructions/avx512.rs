@@ -986,24 +986,24 @@ pub fn list() -> Vec<Inst> {
         inst("vcvttpd2qq", fmt("Zu", [w(zmm1), r(zmm_m512)]), evex(L512, Full)._66()._0f().w1().op(0x7A).r(), (_64b | compat) & avx512dq),
 
         // VCVTPS2PD - Convert packed f32 to packed f64 (8 floats -> 8 doubles = 256-bit source)
-        // EVEX.512.0F.W0 5A /r
-        inst("vcvtps2pd", fmt("Zy", [w(zmm1), r(ymm_m256)]), evex(L512, Full)._0f().w0().op(0x5A).r(), (_64b | compat) & avx512f),
+        // EVEX.512.0F.W0 5A /r (tuple type: Half since source is half-size)
+        inst("vcvtps2pd", fmt("Zy", [w(zmm1), r(ymm_m256)]), evex(L512, Half)._0f().w0().op(0x5A).r(), (_64b | compat) & avx512f),
 
         // VCVTPD2PS - Convert packed f64 to packed f32 (8 doubles -> 8 floats = zmm -> ymm)
         // EVEX.512.66.0F.W1 5A /r
-        inst("vcvtpd2ps", fmt("yZ", [w(ymm1), r(zmm1)]), evex(L512, Full)._66()._0f().w1().op(0x5A).r(), (_64b | compat) & avx512f),
+        inst("vcvtpd2ps", fmt("yZ", [w(ymm1), r(zmm_m512)]), evex(L512, Full)._66()._0f().w1().op(0x5A).r(), (_64b | compat) & avx512f),
 
         // VCVTDQ2PD - Convert packed i32 to packed f64 (8 ints -> 8 doubles = 256-bit source)
-        // EVEX.512.F3.0F.W0 E6 /r
-        inst("vcvtdq2pd", fmt("Zy", [w(zmm1), r(ymm_m256)]), evex(L512, Full)._f3()._0f().w0().op(0xE6).r(), (_64b | compat) & avx512f),
+        // EVEX.512.F3.0F.W0 E6 /r (tuple type: Half since source is half-size)
+        inst("vcvtdq2pd", fmt("Zy", [w(zmm1), r(ymm_m256)]), evex(L512, Half)._f3()._0f().w0().op(0xE6).r(), (_64b | compat) & avx512f),
 
         // VCVTPD2DQ - Convert packed f64 to packed i32 (8 doubles -> 8 ints = zmm -> ymm)
         // EVEX.512.F2.0F.W1 E6 /r
-        inst("vcvtpd2dq", fmt("yZ", [w(ymm1), r(zmm1)]), evex(L512, Full)._f2()._0f().w1().op(0xE6).r(), (_64b | compat) & avx512f),
+        inst("vcvtpd2dq", fmt("yZ", [w(ymm1), r(zmm_m512)]), evex(L512, Full)._f2()._0f().w1().op(0xE6).r(), (_64b | compat) & avx512f),
 
         // VCVTTPD2DQ - Convert packed f64 to packed i32 with truncation (8 doubles -> 8 ints = zmm -> ymm)
         // EVEX.512.66.0F.W1 E6 /r
-        inst("vcvttpd2dq", fmt("yZ", [w(ymm1), r(zmm1)]), evex(L512, Full)._66()._0f().w1().op(0xE6).r(), (_64b | compat) & avx512f),
+        inst("vcvttpd2dq", fmt("yZ", [w(ymm1), r(zmm_m512)]), evex(L512, Full)._66()._0f().w1().op(0xE6).r(), (_64b | compat) & avx512f),
 
         // Zero-extend operations
         // VPMOVZXBD - Zero-extend bytes to dwords

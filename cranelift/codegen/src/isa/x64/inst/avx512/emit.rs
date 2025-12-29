@@ -8,10 +8,15 @@
 // Volume 2: Instruction Set Reference (EVEX Encoding)
 
 use super::super::args::{Amode, OperandSize, SyntheticAmode, Xmm};
-use super::defs::{Avx512AluOp, Avx512AlignOp, Avx512Cond, Avx512CvtOp, Avx512ExtractOp, Avx512FmaOp, Avx512FpAluOp, Avx512FpSpecialOp, Avx512ImmShuffleOp, Avx512InsertOp, Avx512LaneShuffleOp, Avx512VnniOp, Vp2IntersectOp, MaskAluOp, MaskAddOp, MaskShiftOp, MaskTestOp, MaskUnpackOp, MergeMode};
+use super::defs::{
+    Avx512AlignOp, Avx512AluOp, Avx512Cond, Avx512CvtOp, Avx512ExtractOp, Avx512FmaOp,
+    Avx512FpAluOp, Avx512FpSpecialOp, Avx512ImmShuffleOp, Avx512InsertOp, Avx512LaneShuffleOp,
+    Avx512VnniOp, MaskAddOp, MaskAluOp, MaskShiftOp, MaskTestOp, MaskUnpackOp, MergeMode,
+    Vp2IntersectOp,
+};
 use super::encoding::*;
-use crate::isa::x64::inst::args::{OptionMaskReg, RegMem};
 use crate::isa::x64::inst::Inst;
+use crate::isa::x64::inst::args::{OptionMaskReg, RegMem};
 use crate::machinst::{MachBuffer, Reg, Writable};
 
 // =============================================================================
@@ -25,7 +30,10 @@ use crate::machinst::{MachBuffer, Reg, Writable};
 fn kreg_enc(reg: Reg) -> u8 {
     let enc = reg.to_real_reg().unwrap().hw_enc();
     // K-registers have PReg indices 32-39, subtract 32 to get 0-7
-    debug_assert!(enc >= 32 && enc < 40, "expected k-register, got PReg index {enc}");
+    debug_assert!(
+        enc >= 32 && enc < 40,
+        "expected k-register, got PReg index {enc}"
+    );
     enc - 32
 }
 
@@ -49,9 +57,7 @@ pub fn emit_x64_512_inst(
         _ => op.evex_w(),
     };
 
-    let mask_enc = mask
-        .map(|m| kreg_enc(m.to_reg()))
-        .unwrap_or(0);
+    let mask_enc = mask.map(|m| kreg_enc(m.to_reg())).unwrap_or(0);
 
     let evex = EvexPrefix {
         map: op.evex_map(),
@@ -96,19 +102,15 @@ pub fn emit_x64_512_inst(
 /// Emit VPBROADCASTD - broadcast 32-bit element to all 16 lanes of ZMM.
 ///
 /// VPBROADCASTD zmm, xmm/m32: EVEX.512.66.0F38.W0 58 /r
-pub fn emit_vpbroadcastd(
-    dst: Writable<Xmm>,
-    src: &RegMem,
-    sink: &mut MachBuffer<Inst>,
-) {
+pub fn emit_vpbroadcastd(dst: Writable<Xmm>, src: &RegMem, sink: &mut MachBuffer<Inst>) {
     let evex = EvexPrefix {
-        map: 0x02,  // 0F38 map
-        w: false,   // W=0 for 32-bit
-        pp: 0x01,   // 66 prefix
-        aaa: 0,     // No mask
+        map: 0x02, // 0F38 map
+        w: false,  // W=0 for 32-bit
+        pp: 0x01,  // 66 prefix
+        aaa: 0,    // No mask
         z: false,
         b: false,
-        ll: 0b10,   // 512-bit
+        ll: 0b10, // 512-bit
     };
 
     let dst_enc = dst.to_reg().to_reg().to_real_reg().unwrap().hw_enc();
@@ -138,19 +140,15 @@ pub fn emit_vpbroadcastd(
 /// Emit VPBROADCASTQ - broadcast 64-bit element to all 8 lanes of ZMM.
 ///
 /// VPBROADCASTQ zmm, xmm/m64: EVEX.512.66.0F38.W1 59 /r
-pub fn emit_vpbroadcastq(
-    dst: Writable<Xmm>,
-    src: &RegMem,
-    sink: &mut MachBuffer<Inst>,
-) {
+pub fn emit_vpbroadcastq(dst: Writable<Xmm>, src: &RegMem, sink: &mut MachBuffer<Inst>) {
     let evex = EvexPrefix {
-        map: 0x02,  // 0F38 map
-        w: true,    // W=1 for 64-bit
-        pp: 0x01,   // 66 prefix
-        aaa: 0,     // No mask
+        map: 0x02, // 0F38 map
+        w: true,   // W=1 for 64-bit
+        pp: 0x01,  // 66 prefix
+        aaa: 0,    // No mask
         z: false,
         b: false,
-        ll: 0b10,   // 512-bit
+        ll: 0b10, // 512-bit
     };
 
     let dst_enc = dst.to_reg().to_reg().to_real_reg().unwrap().hw_enc();
@@ -196,9 +194,7 @@ pub fn emit_x64_512_cmp(
     // VPCMPQ: EVEX.512.66.0F3A.W1 1F /r ib
     let w = matches!(size, OperandSize::Size64);
 
-    let mask_enc = mask
-        .map(|m| kreg_enc(m.to_reg()))
-        .unwrap_or(0);
+    let mask_enc = mask.map(|m| kreg_enc(m.to_reg())).unwrap_or(0);
 
     let evex = EvexPrefix {
         map: 0x03, // 0F3A map
@@ -458,12 +454,7 @@ pub fn emit_256bit_load(
 
 /// Emit VMOVDQU8/16/32/64 unmasked store (512-bit).
 /// This is for simple 512-bit vector stores without masking.
-pub fn emit_512bit_store(
-    size: OperandSize,
-    src: Reg,
-    addr: &Amode,
-    sink: &mut MachBuffer<Inst>,
-) {
+pub fn emit_512bit_store(size: OperandSize, src: Reg, addr: &Amode, sink: &mut MachBuffer<Inst>) {
     // VMOVDQU8:  EVEX.512.F2.0F.W0 7F /r (store) - byte elements
     // VMOVDQU16: EVEX.512.F2.0F.W1 7F /r (store) - word elements
     // VMOVDQU32: EVEX.512.F3.0F.W0 7F /r (store) - dword elements
@@ -480,7 +471,7 @@ pub fn emit_512bit_store(
         map: 0x01, // 0F map
         w,
         pp,
-        aaa: 0,   // k0 = no masking
+        aaa: 0, // k0 = no masking
         z: false,
         b: false,
         ll: 0b10, // 512-bit
@@ -498,12 +489,7 @@ pub fn emit_512bit_store(
 
 /// Emit VMOVDQU32/64 unmasked store (256-bit).
 /// This is for simple 256-bit vector stores without masking.
-pub fn emit_256bit_store(
-    size: OperandSize,
-    src: Reg,
-    addr: &Amode,
-    sink: &mut MachBuffer<Inst>,
-) {
+pub fn emit_256bit_store(size: OperandSize, src: Reg, addr: &Amode, sink: &mut MachBuffer<Inst>) {
     // VMOVDQU32: EVEX.256.F3.0F.W0 7F /r (store) - dword elements
     // VMOVDQU64: EVEX.256.F3.0F.W1 7F /r (store) - qword elements
     // Use aaa=000 (k0) for unmasked operation
@@ -517,7 +503,7 @@ pub fn emit_256bit_store(
         map: 0x01, // 0F map
         w,
         pp,
-        aaa: 0,   // k0 = no masking
+        aaa: 0, // k0 = no masking
         z: false,
         b: false,
         ll: 0b01, // 256-bit
@@ -611,12 +597,7 @@ pub fn emit_mask_logic(
 /// - to_gpr=true: KMOVQ r64, k (move from k to GPR)
 /// - to_gpr=false: KMOVQ k, r64 (move from GPR to k)
 /// For k↔k moves, use emit_kmov_kk instead.
-pub fn emit_kmov(
-    dst: Writable<Reg>,
-    src: Reg,
-    to_gpr: bool,
-    sink: &mut MachBuffer<Inst>,
-) {
+pub fn emit_kmov(dst: Writable<Reg>, src: Reg, to_gpr: bool, sink: &mut MachBuffer<Inst>) {
     let dst_enc = dst.to_reg().to_real_reg().unwrap().hw_enc();
     let src_enc = src.to_real_reg().unwrap().hw_enc();
 
@@ -650,11 +631,7 @@ pub fn emit_kmov(
 }
 
 /// Emit KMOVQ k, k (k-register to k-register move).
-pub fn emit_kmov_kk(
-    dst: Writable<Reg>,
-    src: Reg,
-    sink: &mut MachBuffer<Inst>,
-) {
+pub fn emit_kmov_kk(dst: Writable<Reg>, src: Reg, sink: &mut MachBuffer<Inst>) {
     // KMOVQ k1, k2: VEX.L0.0F.W1 90 /r (mod=11 for reg-reg)
     let dst_enc = dst.to_reg().to_real_reg().unwrap().hw_enc();
     let src_enc = src.to_real_reg().unwrap().hw_enc();
@@ -673,11 +650,7 @@ pub fn emit_kmov_kk(
 // =============================================================================
 
 /// Emit KORTESTW/KORTESTQ - OR masks and set flags.
-pub fn emit_kortest(
-    src1: Reg,
-    src2: Reg,
-    sink: &mut MachBuffer<Inst>,
-) {
+pub fn emit_kortest(src1: Reg, src2: Reg, sink: &mut MachBuffer<Inst>) {
     // KORTESTW: VEX.L0.0F.W0 98 /r
     let src1_enc = src1.to_real_reg().unwrap().hw_enc();
     let src2_enc = src2.to_real_reg().unwrap().hw_enc();
@@ -699,11 +672,7 @@ pub fn emit_kortest(
 
 /// Emit KMOVQ to spill a k-register to memory.
 /// Uses the two-tier strategy: prefer GPR, fall back to stack.
-pub fn emit_kmov_store(
-    src: Reg,
-    addr: &Amode,
-    sink: &mut MachBuffer<Inst>,
-) {
+pub fn emit_kmov_store(src: Reg, addr: &Amode, sink: &mut MachBuffer<Inst>) {
     // KMOVQ m64, k: VEX.L0.0F.W1 91 /r
     let src_enc = src.to_real_reg().unwrap().hw_enc();
 
@@ -716,11 +685,7 @@ pub fn emit_kmov_store(
 }
 
 /// Emit KMOVQ to fill a k-register from memory.
-pub fn emit_kmov_load(
-    dst: Writable<Reg>,
-    addr: &Amode,
-    sink: &mut MachBuffer<Inst>,
-) {
+pub fn emit_kmov_load(dst: Writable<Reg>, addr: &Amode, sink: &mut MachBuffer<Inst>) {
     // KMOVQ k, m64: VEX.L0.0F.W1 90 /r
     let dst_enc = dst.to_reg().to_real_reg().unwrap().hw_enc();
 
@@ -748,20 +713,20 @@ pub fn emit_gather(
     dst: Writable<Reg>,
     base: Reg,
     index: Reg,
-    scale: u8,       // 1, 2, 4, or 8
+    scale: u8, // 1, 2, 4, or 8
     disp: i32,
-    mask: Reg,       // Must be k1-k7 (k0 not allowed for gather/scatter)
+    mask: Reg, // Must be k1-k7 (k0 not allowed for gather/scatter)
     sink: &mut MachBuffer<Inst>,
 ) {
     // VPGATHERDD/DQ/QD/QQ: EVEX.512.66.0F38.W0/W1 90/91 /r
     let evex = EvexPrefix {
-        map: 0x02,  // 0F38 map
+        map: 0x02, // 0F38 map
         w: op.evex_w(),
-        pp: 0x01,   // 66 prefix
+        pp: 0x01, // 66 prefix
         aaa: kreg_enc(mask),
-        z: false,   // Gather doesn't use zeroing (mask bits are cleared during operation)
+        z: false, // Gather doesn't use zeroing (mask bits are cleared during operation)
         b: false,
-        ll: 0b10,   // 512-bit
+        ll: 0b10, // 512-bit
     };
 
     let dst_enc = dst.to_reg().to_real_reg().unwrap().hw_enc();
@@ -826,20 +791,20 @@ pub fn emit_scatter(
     src: Reg,
     base: Reg,
     index: Reg,
-    scale: u8,       // 1, 2, 4, or 8
+    scale: u8, // 1, 2, 4, or 8
     disp: i32,
-    mask: Reg,       // Must be k1-k7 (k0 not allowed for gather/scatter)
+    mask: Reg, // Must be k1-k7 (k0 not allowed for gather/scatter)
     sink: &mut MachBuffer<Inst>,
 ) {
     // VPSCATTERDD/DQ/QD/QQ: EVEX.512.66.0F38.W0/W1 A0/A1 /r
     let evex = EvexPrefix {
-        map: 0x02,  // 0F38 map
+        map: 0x02, // 0F38 map
         w: op.evex_w(),
-        pp: 0x01,   // 66 prefix
+        pp: 0x01, // 66 prefix
         aaa: kreg_enc(mask),
-        z: false,   // Scatter doesn't use zeroing
+        z: false, // Scatter doesn't use zeroing
         b: false,
-        ll: 0b10,   // 512-bit
+        ll: 0b10, // 512-bit
     };
 
     let src_enc = src.to_real_reg().unwrap().hw_enc();
@@ -901,13 +866,13 @@ pub fn emit_compress_reg(
     // VPCOMPRESSD: EVEX.512.66.0F38.W0 8B /r
     // VPCOMPRESSQ: EVEX.512.66.0F38.W1 8B /r
     let evex = EvexPrefix {
-        map: 0x02,  // 0F38 map
+        map: 0x02, // 0F38 map
         w: matches!(size, OperandSize::Size64),
-        pp: 0x01,   // 66 prefix
+        pp: 0x01, // 66 prefix
         aaa: kreg_enc(mask),
-        z: false,   // Register form doesn't use zeroing
+        z: false, // Register form doesn't use zeroing
         b: false,
-        ll: 0b10,   // 512-bit
+        ll: 0b10, // 512-bit
     };
 
     let dst_enc = dst.to_reg().to_real_reg().unwrap().hw_enc();
@@ -937,13 +902,13 @@ pub fn emit_expand_reg(
     // VPEXPANDD: EVEX.512.66.0F38.W0 89 /r
     // VPEXPANDQ: EVEX.512.66.0F38.W1 89 /r
     let evex = EvexPrefix {
-        map: 0x02,  // 0F38 map
+        map: 0x02, // 0F38 map
         w: matches!(size, OperandSize::Size64),
-        pp: 0x01,   // 66 prefix
+        pp: 0x01, // 66 prefix
         aaa: kreg_enc(mask),
         z: matches!(merge, MergeMode::Zeroing),
         b: false,
-        ll: 0b10,   // 512-bit
+        ll: 0b10, // 512-bit
     };
 
     let dst_enc = dst.to_reg().to_real_reg().unwrap().hw_enc();
@@ -964,24 +929,23 @@ pub fn emit_expand_reg(
 /// K-registers use indices 32-39 to distinguish from XMM registers (0-31),
 /// so we subtract 32 to get the actual hardware encoding (0-7).
 fn k_enc(hw_enc: u8) -> u8 {
-    debug_assert!(hw_enc >= 32 && hw_enc < 40, "invalid k-register hw_enc: {hw_enc}");
+    debug_assert!(
+        hw_enc >= 32 && hw_enc < 40,
+        "invalid k-register hw_enc: {hw_enc}"
+    );
     hw_enc - 32
 }
 
-pub fn emit_vmovmsk32(
-    dst: Writable<Reg>,
-    src: Reg,
-    sink: &mut MachBuffer<Inst>,
-) {
+pub fn emit_vmovmsk32(dst: Writable<Reg>, src: Reg, sink: &mut MachBuffer<Inst>) {
     // VPMOVD2M: EVEX.512.F3.0F38.W0 39 /r
     let evex = EvexPrefix {
-        map: 0x02,  // 0F38 map
-        w: false,   // W=0 for 32-bit elements
-        pp: 0x02,   // F3 prefix
-        aaa: 0,     // No mask
+        map: 0x02, // 0F38 map
+        w: false,  // W=0 for 32-bit elements
+        pp: 0x02,  // F3 prefix
+        aaa: 0,    // No mask
         z: false,
         b: false,
-        ll: 0b10,   // 512-bit
+        ll: 0b10, // 512-bit
     };
 
     let dst_hw = dst.to_reg().to_real_reg().unwrap().hw_enc();
@@ -1000,20 +964,16 @@ pub fn emit_vmovmsk32(
 ///
 /// This instruction broadcasts each mask bit to a full 32-bit element (0 or -1).
 /// Used to convert k-register comparison results to vector masks.
-pub fn emit_movm2d(
-    dst: Writable<Xmm>,
-    src: Reg,
-    sink: &mut MachBuffer<Inst>,
-) {
+pub fn emit_movm2d(dst: Writable<Xmm>, src: Reg, sink: &mut MachBuffer<Inst>) {
     // VPMOVM2D: EVEX.512.F3.0F38.W0 38 /r
     let evex = EvexPrefix {
-        map: 0x02,  // 0F38 map
-        w: false,   // W=0 for 32-bit elements
-        pp: 0x02,   // F3 prefix
-        aaa: 0,     // No mask
+        map: 0x02, // 0F38 map
+        w: false,  // W=0 for 32-bit elements
+        pp: 0x02,  // F3 prefix
+        aaa: 0,    // No mask
         z: false,
         b: false,
-        ll: 0b10,   // 512-bit
+        ll: 0b10, // 512-bit
     };
 
     let dst_enc = dst.to_reg().to_reg().to_real_reg().unwrap().hw_enc();
@@ -1032,20 +992,16 @@ pub fn emit_movm2d(
 ///
 /// This instruction broadcasts each mask bit to a full 64-bit element (0 or -1).
 /// Used to convert k-register comparison results to vector masks.
-pub fn emit_movm2q(
-    dst: Writable<Xmm>,
-    src: Reg,
-    sink: &mut MachBuffer<Inst>,
-) {
+pub fn emit_movm2q(dst: Writable<Xmm>, src: Reg, sink: &mut MachBuffer<Inst>) {
     // VPMOVM2Q: EVEX.512.F3.0F38.W1 38 /r
     let evex = EvexPrefix {
-        map: 0x02,  // 0F38 map
-        w: true,    // W=1 for 64-bit elements
-        pp: 0x02,   // F3 prefix
-        aaa: 0,     // No mask
+        map: 0x02, // 0F38 map
+        w: true,   // W=1 for 64-bit elements
+        pp: 0x02,  // F3 prefix
+        aaa: 0,    // No mask
         z: false,
         b: false,
-        ll: 0b10,   // 512-bit
+        ll: 0b10, // 512-bit
     };
 
     let dst_enc = dst.to_reg().to_reg().to_real_reg().unwrap().hw_enc();
@@ -1064,20 +1020,16 @@ pub fn emit_movm2q(
 ///
 /// This instruction extracts the sign bit (bit 63) of each 64-bit element
 /// in the source vector and places them into the destination mask register.
-pub fn emit_vmovmsk64(
-    dst: Writable<Reg>,
-    src: Reg,
-    sink: &mut MachBuffer<Inst>,
-) {
+pub fn emit_vmovmsk64(dst: Writable<Reg>, src: Reg, sink: &mut MachBuffer<Inst>) {
     // VPMOVQ2M: EVEX.512.F3.0F38.W1 39 /r
     let evex = EvexPrefix {
-        map: 0x02,  // 0F38 map
-        w: true,    // W=1 for 64-bit elements
-        pp: 0x02,   // F3 prefix
-        aaa: 0,     // No mask
+        map: 0x02, // 0F38 map
+        w: true,   // W=1 for 64-bit elements
+        pp: 0x02,  // F3 prefix
+        aaa: 0,    // No mask
         z: false,
         b: false,
-        ll: 0b10,   // 512-bit
+        ll: 0b10, // 512-bit
     };
 
     let dst_hw = dst.to_reg().to_real_reg().unwrap().hw_enc();
@@ -1096,20 +1048,16 @@ pub fn emit_vmovmsk64(
 ///
 /// This instruction extracts the sign bit (bit 7) of each byte element
 /// in the source vector and places them into the destination mask register.
-pub fn emit_vmovmsk8(
-    dst: Writable<Reg>,
-    src: Reg,
-    sink: &mut MachBuffer<Inst>,
-) {
+pub fn emit_vmovmsk8(dst: Writable<Reg>, src: Reg, sink: &mut MachBuffer<Inst>) {
     // VPMOVB2M: EVEX.512.F3.0F38.W0 29 /r
     let evex = EvexPrefix {
-        map: 0x02,  // 0F38 map
-        w: false,   // W=0 for byte elements
-        pp: 0x02,   // F3 prefix
-        aaa: 0,     // No mask
+        map: 0x02, // 0F38 map
+        w: false,  // W=0 for byte elements
+        pp: 0x02,  // F3 prefix
+        aaa: 0,    // No mask
         z: false,
         b: false,
-        ll: 0b10,   // 512-bit
+        ll: 0b10, // 512-bit
     };
 
     let dst_hw = dst.to_reg().to_real_reg().unwrap().hw_enc();
@@ -1128,20 +1076,16 @@ pub fn emit_vmovmsk8(
 ///
 /// This instruction extracts the sign bit (bit 15) of each word element
 /// in the source vector and places them into the destination mask register.
-pub fn emit_vmovmsk16(
-    dst: Writable<Reg>,
-    src: Reg,
-    sink: &mut MachBuffer<Inst>,
-) {
+pub fn emit_vmovmsk16(dst: Writable<Reg>, src: Reg, sink: &mut MachBuffer<Inst>) {
     // VPMOVW2M: EVEX.512.F3.0F38.W1 29 /r
     let evex = EvexPrefix {
-        map: 0x02,  // 0F38 map
-        w: true,    // W=1 for word elements
-        pp: 0x02,   // F3 prefix
-        aaa: 0,     // No mask
+        map: 0x02, // 0F38 map
+        w: true,   // W=1 for word elements
+        pp: 0x02,  // F3 prefix
+        aaa: 0,    // No mask
         z: false,
         b: false,
-        ll: 0b10,   // 512-bit
+        ll: 0b10, // 512-bit
     };
 
     let dst_hw = dst.to_reg().to_real_reg().unwrap().hw_enc();
@@ -1160,20 +1104,16 @@ pub fn emit_vmovmsk16(
 ///
 /// This instruction broadcasts each mask bit to a full byte element (0 or -1).
 /// Used to convert k-register comparison results to byte vector masks.
-pub fn emit_movm2b(
-    dst: Writable<Xmm>,
-    src: Reg,
-    sink: &mut MachBuffer<Inst>,
-) {
+pub fn emit_movm2b(dst: Writable<Xmm>, src: Reg, sink: &mut MachBuffer<Inst>) {
     // VPMOVM2B: EVEX.512.F3.0F38.W0 28 /r
     let evex = EvexPrefix {
-        map: 0x02,  // 0F38 map
-        w: false,   // W=0 for byte elements
-        pp: 0x02,   // F3 prefix
-        aaa: 0,     // No mask
+        map: 0x02, // 0F38 map
+        w: false,  // W=0 for byte elements
+        pp: 0x02,  // F3 prefix
+        aaa: 0,    // No mask
         z: false,
         b: false,
-        ll: 0b10,   // 512-bit
+        ll: 0b10, // 512-bit
     };
 
     let dst_enc = dst.to_reg().to_reg().to_real_reg().unwrap().hw_enc();
@@ -1192,20 +1132,16 @@ pub fn emit_movm2b(
 ///
 /// This instruction broadcasts each mask bit to a full word element (0 or -1).
 /// Used to convert k-register comparison results to word vector masks.
-pub fn emit_movm2w(
-    dst: Writable<Xmm>,
-    src: Reg,
-    sink: &mut MachBuffer<Inst>,
-) {
+pub fn emit_movm2w(dst: Writable<Xmm>, src: Reg, sink: &mut MachBuffer<Inst>) {
     // VPMOVM2W: EVEX.512.F3.0F38.W1 28 /r
     let evex = EvexPrefix {
-        map: 0x02,  // 0F38 map
-        w: true,    // W=1 for word elements
-        pp: 0x02,   // F3 prefix
-        aaa: 0,     // No mask
+        map: 0x02, // 0F38 map
+        w: true,   // W=1 for word elements
+        pp: 0x02,  // F3 prefix
+        aaa: 0,    // No mask
         z: false,
         b: false,
-        ll: 0b10,   // 512-bit
+        ll: 0b10, // 512-bit
     };
 
     let dst_enc = dst.to_reg().to_reg().to_real_reg().unwrap().hw_enc();
@@ -1236,9 +1172,7 @@ pub fn emit_x64_512_fp_inst(
     merge: MergeMode,
     sink: &mut MachBuffer<Inst>,
 ) {
-    let mask_enc = mask
-        .map(|m| kreg_enc(m.to_reg()))
-        .unwrap_or(0);
+    let mask_enc = mask.map(|m| kreg_enc(m.to_reg())).unwrap_or(0);
 
     let evex = EvexPrefix {
         map: op.evex_map(),
@@ -1281,9 +1215,7 @@ pub fn emit_x64_512_fp_unary(
     merge: MergeMode,
     sink: &mut MachBuffer<Inst>,
 ) {
-    let mask_enc = mask
-        .map(|m| kreg_enc(m.to_reg()))
-        .unwrap_or(0);
+    let mask_enc = mask.map(|m| kreg_enc(m.to_reg())).unwrap_or(0);
 
     let evex = EvexPrefix {
         map: op.evex_map(),
@@ -1333,16 +1265,14 @@ pub fn emit_x64_512_fp_unary(
 pub fn emit_x64_512_fma_inst(
     op: Avx512FmaOp,
     dst: Writable<Reg>,
-    src1: Reg,      // First multiplicand (becomes dst)
-    src2: Reg,      // Second multiplicand
-    src3: &RegMem,  // Addend
+    src1: Reg,     // First multiplicand (becomes dst)
+    src2: Reg,     // Second multiplicand
+    src3: &RegMem, // Addend
     mask: OptionMaskReg,
     merge: MergeMode,
     sink: &mut MachBuffer<Inst>,
 ) {
-    let mask_enc = mask
-        .map(|m| kreg_enc(m.to_reg()))
-        .unwrap_or(0);
+    let mask_enc = mask.map(|m| kreg_enc(m.to_reg())).unwrap_or(0);
 
     let evex = EvexPrefix {
         map: op.evex_map(),
@@ -1411,16 +1341,14 @@ pub fn emit_x64_512_fma_inst(
 pub fn emit_x64_512_vnni_inst(
     op: Avx512VnniOp,
     dst: Writable<Reg>,
-    acc: Reg,       // Accumulator (tied to dst)
-    src1: Reg,      // First multiplicand
-    src2: &RegMem,  // Second multiplicand
+    acc: Reg,      // Accumulator (tied to dst)
+    src1: Reg,     // First multiplicand
+    src2: &RegMem, // Second multiplicand
     mask: OptionMaskReg,
     merge: MergeMode,
     sink: &mut MachBuffer<Inst>,
 ) {
-    let mask_enc = mask
-        .map(|m| kreg_enc(m.to_reg()))
-        .unwrap_or(0);
+    let mask_enc = mask.map(|m| kreg_enc(m.to_reg())).unwrap_or(0);
 
     let evex = EvexPrefix {
         map: op.evex_map(),
@@ -1498,13 +1426,13 @@ pub fn emit_x64_512_vp2intersect_inst(
     sink: &mut MachBuffer<Inst>,
 ) {
     let evex = EvexPrefix {
-        map: op.evex_map(),   // 0x02 = 0F38 map
-        w: op.evex_w(),       // W=0 for D, W=1 for Q
-        pp: op.evex_pp(),     // 0x03 = F2 prefix
-        aaa: 0,               // No write mask for output (we're writing to k-regs)
-        z: false,             // No zeroing
-        b: false,             // No broadcast
-        ll: 0b10,             // 512-bit
+        map: op.evex_map(), // 0x02 = 0F38 map
+        w: op.evex_w(),     // W=0 for D, W=1 for Q
+        pp: op.evex_pp(),   // 0x03 = F2 prefix
+        aaa: 0,             // No write mask for output (we're writing to k-regs)
+        z: false,           // No zeroing
+        b: false,           // No broadcast
+        ll: 0b10,           // 512-bit
     };
 
     // VP2INTERSECT uses k-register in the reg field
@@ -1560,9 +1488,7 @@ pub fn emit_x64_512_cvt_inst(
     merge: MergeMode,
     sink: &mut MachBuffer<Inst>,
 ) {
-    let mask_enc = mask
-        .map(|m| kreg_enc(m.to_reg()))
-        .unwrap_or(0);
+    let mask_enc = mask.map(|m| kreg_enc(m.to_reg())).unwrap_or(0);
 
     let evex = EvexPrefix {
         map: op.evex_map(),
@@ -1616,9 +1542,7 @@ pub fn emit_x64_512_align_inst(
     merge: MergeMode,
     sink: &mut MachBuffer<Inst>,
 ) {
-    let mask_enc = mask
-        .map(|m| kreg_enc(m.to_reg()))
-        .unwrap_or(0);
+    let mask_enc = mask.map(|m| kreg_enc(m.to_reg())).unwrap_or(0);
 
     let evex = EvexPrefix {
         map: op.evex_map(),
@@ -1688,9 +1612,7 @@ pub fn emit_x64_512_ternlog_inst(
     // VPTERNLOGQ: EVEX.512.66.0F3A.W1 25 /r ib
     let w = matches!(size, OperandSize::Size64);
 
-    let mask_enc = mask
-        .map(|m| kreg_enc(m.to_reg()))
-        .unwrap_or(0);
+    let mask_enc = mask.map(|m| kreg_enc(m.to_reg())).unwrap_or(0);
 
     let evex = EvexPrefix {
         map: 0x03, // 0F3A map
@@ -1762,9 +1684,7 @@ pub fn emit_x64_512_imm_rotate_inst(
     // VPROLD/VPROLQ/VPRORD/VPRORQ: EVEX.512.66.0F.W0/W1 72 /0 or /1 ib
     let w = matches!(size, OperandSize::Size64);
 
-    let mask_enc = mask
-        .map(|m| kreg_enc(m.to_reg()))
-        .unwrap_or(0);
+    let mask_enc = mask.map(|m| kreg_enc(m.to_reg())).unwrap_or(0);
 
     let evex = EvexPrefix {
         map: 0x01, // 0F map
@@ -1830,9 +1750,7 @@ pub fn emit_x64_512_fp_cmp_inst(
         _ => panic!("Invalid size for VCMPPS/PD"),
     };
 
-    let mask_enc = mask
-        .map(|m| kreg_enc(m.to_reg()))
-        .unwrap_or(0);
+    let mask_enc = mask.map(|m| kreg_enc(m.to_reg())).unwrap_or(0);
 
     let evex = EvexPrefix {
         map: 0x01, // 0F map
@@ -1886,9 +1804,7 @@ pub fn emit_x64_512_imm_shuffle_inst(
     merge: MergeMode,
     sink: &mut MachBuffer<Inst>,
 ) {
-    let mask_enc = mask
-        .map(|m| kreg_enc(m.to_reg()))
-        .unwrap_or(0);
+    let mask_enc = mask.map(|m| kreg_enc(m.to_reg())).unwrap_or(0);
 
     let evex = EvexPrefix {
         map: op.evex_map(),
@@ -1944,9 +1860,7 @@ pub fn emit_x64_512_lane_shuffle_inst(
     merge: MergeMode,
     sink: &mut MachBuffer<Inst>,
 ) {
-    let mask_enc = mask
-        .map(|m| kreg_enc(m.to_reg()))
-        .unwrap_or(0);
+    let mask_enc = mask.map(|m| kreg_enc(m.to_reg())).unwrap_or(0);
 
     let evex = EvexPrefix {
         map: op.evex_map(),
@@ -2156,10 +2070,10 @@ pub fn emit_x64_512_extract(
         map: op.evex_map(),
         w: op.evex_w(),
         pp: op.evex_pp(),
-        aaa: 0,    // No masking
+        aaa: 0, // No masking
         z: false,
         b: false,
-        ll: 0b10,  // 512-bit source
+        ll: 0b10, // 512-bit source
     };
 
     let dst_enc = dst.to_reg().to_real_reg().unwrap().hw_enc();
@@ -2192,9 +2106,7 @@ pub fn emit_x64_512_insert_inst(
     merge: MergeMode,
     sink: &mut MachBuffer<Inst>,
 ) {
-    let mask_enc = mask
-        .map(|m| kreg_enc(m.to_reg()))
-        .unwrap_or(0);
+    let mask_enc = mask.map(|m| kreg_enc(m.to_reg())).unwrap_or(0);
 
     // EVEX.512.66.0F3A.W0/W1 38/3A /r imm8
     let evex = EvexPrefix {
@@ -2245,9 +2157,7 @@ pub fn emit_x64_512_fp_special(
     merge: MergeMode,
     sink: &mut MachBuffer<Inst>,
 ) {
-    let mask_enc = mask
-        .map(|m| kreg_enc(m.to_reg()))
-        .unwrap_or(0);
+    let mask_enc = mask.map(|m| kreg_enc(m.to_reg())).unwrap_or(0);
 
     let evex = EvexPrefix {
         map: op.evex_map(),

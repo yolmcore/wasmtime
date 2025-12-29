@@ -54,7 +54,10 @@ impl dsl::Format {
     /// once Cranelift has switched to using this assembler predominantly
     /// (TODO).
     #[must_use]
-    #[allow(dead_code, reason = "Will be used when switching to Intel-style printing")]
+    #[allow(
+        dead_code,
+        reason = "Will be used when switching to Intel-style printing"
+    )]
     pub(crate) fn generate_att_style_operands(&self) -> String {
         self.generate_att_style_operands_with_masking(false, false)
     }
@@ -383,7 +386,11 @@ impl dsl::Format {
             // Tuple1Scalar: scaling factor is the input element size
             // W=0: 4 bytes (32-bit), W=1: 8 bytes (64-bit)
             dsl::TupleType::Tuple1Scalar => {
-                if evex.w.as_bool() { 8 } else { 4 }
+                if evex.w.as_bool() {
+                    8
+                } else {
+                    4
+                }
             }
             dsl::TupleType::Tuple1Fixed => unimplemented!(),
             dsl::TupleType::Tuple2 => unimplemented!(),
@@ -613,7 +620,11 @@ impl dsl::Format {
                     evex_scaling,
                 }
             }
-            unknown => unimplemented!("unknown EVEX pattern: {unknown:?} (format: {}, operands: {:?})", self.name, self.operands),
+            unknown => unimplemented!(
+                "unknown EVEX pattern: {unknown:?} (format: {}, operands: {:?})",
+                self.name,
+                self.operands
+            ),
         };
 
         fmtln!(f, "prefix.encode(buf);");

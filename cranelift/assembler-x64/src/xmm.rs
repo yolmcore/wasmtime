@@ -1,4 +1,10 @@
 //! Xmm register operands; see [`Xmm`].
+//!
+//! This module supports both legacy SSE/AVX registers (xmm0-xmm15) and
+//! AVX-512 extended registers (xmm16-xmm31, also known as zmm16-zmm31).
+//!
+//! Note: Registers 16-31 require EVEX encoding and are only available
+//! with AVX-512 instructions.
 
 use crate::{AsReg, CodeSink, rex::encode_modrm};
 
@@ -17,10 +23,12 @@ impl<R: AsReg> Xmm<R> {
     ///
     /// # Panics
     ///
-    /// Panics if the register is not a valid Xmm register.
+    /// Panics if the register is not a valid Xmm register (0-31).
+    /// Note: Registers 16-31 require EVEX encoding (AVX-512).
+    #[must_use]
     pub fn enc(&self) -> u8 {
         let enc = self.0.enc();
-        assert!(enc < 16, "invalid register: {enc}");
+        assert!(enc < 32, "invalid register: {enc}");
         enc
     }
 
@@ -76,6 +84,7 @@ impl<R: AsReg> From<R> for Xmm<R> {
 
 /// Encode xmm registers.
 pub mod enc {
+    // Legacy SSE/AVX registers (available with VEX and EVEX encoding)
     pub const XMM0: u8 = 0;
     pub const XMM1: u8 = 1;
     pub const XMM2: u8 = 2;
@@ -93,11 +102,29 @@ pub mod enc {
     pub const XMM14: u8 = 14;
     pub const XMM15: u8 = 15;
 
+    // AVX-512 extended registers (EVEX encoding only)
+    pub const XMM16: u8 = 16;
+    pub const XMM17: u8 = 17;
+    pub const XMM18: u8 = 18;
+    pub const XMM19: u8 = 19;
+    pub const XMM20: u8 = 20;
+    pub const XMM21: u8 = 21;
+    pub const XMM22: u8 = 22;
+    pub const XMM23: u8 = 23;
+    pub const XMM24: u8 = 24;
+    pub const XMM25: u8 = 25;
+    pub const XMM26: u8 = 26;
+    pub const XMM27: u8 = 27;
+    pub const XMM28: u8 = 28;
+    pub const XMM29: u8 = 29;
+    pub const XMM30: u8 = 30;
+    pub const XMM31: u8 = 31;
+
     /// Return the name of a XMM encoding (`enc`).
     ///
     /// # Panics
     ///
-    /// This function will panic if the encoding is not a valid x64 register.
+    /// This function will panic if the encoding is not a valid x64 register (0-31).
     pub fn to_string(enc: u8) -> &'static str {
         match enc {
             XMM0 => "%xmm0",
@@ -116,6 +143,22 @@ pub mod enc {
             XMM13 => "%xmm13",
             XMM14 => "%xmm14",
             XMM15 => "%xmm15",
+            XMM16 => "%xmm16",
+            XMM17 => "%xmm17",
+            XMM18 => "%xmm18",
+            XMM19 => "%xmm19",
+            XMM20 => "%xmm20",
+            XMM21 => "%xmm21",
+            XMM22 => "%xmm22",
+            XMM23 => "%xmm23",
+            XMM24 => "%xmm24",
+            XMM25 => "%xmm25",
+            XMM26 => "%xmm26",
+            XMM27 => "%xmm27",
+            XMM28 => "%xmm28",
+            XMM29 => "%xmm29",
+            XMM30 => "%xmm30",
+            XMM31 => "%xmm31",
             _ => panic!("%invalid{enc}"),
         }
     }

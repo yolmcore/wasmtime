@@ -66,7 +66,6 @@ pub enum Avx512AluOp {
     // =========================================
     // Integer Arithmetic Operations
     // =========================================
-
     /// VPADDD - Packed doubleword (32-bit) integer add
     Vpaddd,
     /// VPADDQ - Packed quadword (64-bit) integer add
@@ -87,7 +86,6 @@ pub enum Avx512AluOp {
     // =========================================
     // Byte/Word Arithmetic Operations (AVX-512BW)
     // =========================================
-
     /// VPADDB - Packed byte (8-bit) integer add
     Vpaddb,
     /// VPADDW - Packed word (16-bit) integer add
@@ -128,7 +126,6 @@ pub enum Avx512AluOp {
     // =========================================
     // Bitwise Logical Operations
     // =========================================
-
     /// VPANDD - Packed bitwise AND (32-bit elements)
     Vpandd,
     /// VPANDQ - Packed bitwise AND (64-bit elements)
@@ -149,7 +146,6 @@ pub enum Avx512AluOp {
     // =========================================
     // Shift Operations
     // =========================================
-
     /// VPSLLD - Packed shift left logical (32-bit, uniform shift)
     Vpslld,
     /// VPSLLQ - Packed shift left logical (64-bit, uniform shift)
@@ -178,7 +174,6 @@ pub enum Avx512AluOp {
     // =========================================
     // Rotate Operations
     // =========================================
-
     /// VPROLVD - Packed rotate left variable (32-bit, per-element rotation)
     Vprolvd,
     /// VPROLVQ - Packed rotate left variable (64-bit, per-element rotation)
@@ -187,7 +182,6 @@ pub enum Avx512AluOp {
     // =========================================
     // Min/Max Operations
     // =========================================
-
     /// VPMINSD - Packed minimum signed (32-bit)
     Vpminsd,
     /// VPMINSQ - Packed minimum signed (64-bit)
@@ -208,7 +202,6 @@ pub enum Avx512AluOp {
     // =========================================
     // Absolute Value Operations
     // =========================================
-
     /// VPABSD - Packed absolute value (32-bit)
     Vpabsd,
     /// VPABSQ - Packed absolute value (64-bit)
@@ -217,7 +210,6 @@ pub enum Avx512AluOp {
     // =========================================
     // Population Count Operations (AVX-512 VPOPCNTDQ)
     // =========================================
-
     /// VPOPCNTD - Population count (count 1 bits) for each 32-bit element
     Vpopcntd,
     /// VPOPCNTQ - Population count (count 1 bits) for each 64-bit element
@@ -226,7 +218,6 @@ pub enum Avx512AluOp {
     // =========================================
     // Broadcast Operations
     // =========================================
-
     /// VPBROADCASTD - Broadcast 32-bit element to all lanes
     Vpbroadcastd,
     /// VPBROADCASTQ - Broadcast 64-bit element to all lanes
@@ -235,7 +226,6 @@ pub enum Avx512AluOp {
     // =========================================
     // Blend Operations
     // =========================================
-
     /// VPBLENDMD - Blend 32-bit elements using mask
     Vpblendmd,
     /// VPBLENDMQ - Blend 64-bit elements using mask
@@ -244,7 +234,6 @@ pub enum Avx512AluOp {
     // =========================================
     // Permute Operations (critical for columnar operations)
     // =========================================
-
     /// VPERMD - Permute 32-bit elements
     Vpermd,
     /// VPERMQ - Permute 64-bit elements
@@ -261,7 +250,6 @@ pub enum Avx512AluOp {
     // =========================================
     // Conflict Detection (for parallel histograms)
     // =========================================
-
     /// VPCONFLICTD - Detect 32-bit element conflicts
     Vpconflictd,
     /// VPCONFLICTQ - Detect 64-bit element conflicts
@@ -270,7 +258,6 @@ pub enum Avx512AluOp {
     // =========================================
     // Leading Zero Count (for find-first, log2)
     // =========================================
-
     /// VPLZCNTD - Count leading zeros per 32-bit element
     Vplzcntd,
     /// VPLZCNTQ - Count leading zeros per 64-bit element
@@ -279,7 +266,6 @@ pub enum Avx512AluOp {
     // =========================================
     // Ternary Logic (powerful for complex operations)
     // =========================================
-
     /// VPTERNLOGD - Ternary logic on 32-bit elements
     Vpternlogd,
     /// VPTERNLOGQ - Ternary logic on 64-bit elements
@@ -288,7 +274,6 @@ pub enum Avx512AluOp {
     // =========================================
     // Pack/Unpack Operations (type narrowing/widening)
     // =========================================
-
     /// VPACKSSDW - Pack 32-bit signed to 16-bit signed with saturation
     Vpackssdw,
     /// VPACKUSDW - Pack 32-bit unsigned to 16-bit unsigned with saturation
@@ -318,7 +303,6 @@ pub enum Avx512AluOp {
     // =========================================
     // Shuffle Operations (data rearrangement)
     // =========================================
-
     /// VPSHUFB - Shuffle bytes using indices from another vector
     Vpshufb,
     /// VPSHUFD - Shuffle dwords using immediate control
@@ -331,7 +315,6 @@ pub enum Avx512AluOp {
     // =========================================
     // Multiply-Add Operations (dot products)
     // =========================================
-
     /// VPMADDWD - Multiply-add packed words to dwords
     Vpmaddwd,
     /// VPMADDUBSW - Multiply-add packed unsigned/signed bytes to words
@@ -348,7 +331,6 @@ pub enum Avx512FpAluOp {
     // =========================================
     // Floating-Point Arithmetic
     // =========================================
-
     /// VADDPS - Packed single-precision add
     Vaddps,
     /// VADDPD - Packed double-precision add
@@ -369,7 +351,6 @@ pub enum Avx512FpAluOp {
     // =========================================
     // Floating-Point Min/Max
     // =========================================
-
     /// VMINPS - Packed single-precision minimum
     Vminps,
     /// VMINPD - Packed double-precision minimum
@@ -382,7 +363,6 @@ pub enum Avx512FpAluOp {
     // =========================================
     // Floating-Point Square Root
     // =========================================
-
     /// VSQRTPS - Packed single-precision square root
     Vsqrtps,
     /// VSQRTPD - Packed double-precision square root
@@ -391,7 +371,6 @@ pub enum Avx512FpAluOp {
     // =========================================
     // Floating-Point Absolute/Negate (via bitwise)
     // =========================================
-
     /// VANDPS - Packed single-precision AND (for abs via mask)
     Vandps,
     /// VANDPD - Packed double-precision AND (for abs via mask)
@@ -565,7 +544,6 @@ pub enum Avx512FmaOp {
     // =========================================
     // VFMADD - (a * b) + c
     // =========================================
-
     /// VFMADD132PS - Fused multiply-add single-precision (132 form)
     Vfmadd132ps,
     /// VFMADD132PD - Fused multiply-add double-precision (132 form)
@@ -582,7 +560,6 @@ pub enum Avx512FmaOp {
     // =========================================
     // VFMSUB - (a * b) - c
     // =========================================
-
     /// VFMSUB132PS - Fused multiply-subtract single-precision (132 form)
     Vfmsub132ps,
     /// VFMSUB132PD - Fused multiply-subtract double-precision (132 form)
@@ -599,7 +576,6 @@ pub enum Avx512FmaOp {
     // =========================================
     // VFNMADD - -(a * b) + c = c - (a * b)
     // =========================================
-
     /// VFNMADD132PS - Fused negate-multiply-add single-precision (132 form)
     Vfnmadd132ps,
     /// VFNMADD132PD - Fused negate-multiply-add double-precision (132 form)
@@ -616,7 +592,6 @@ pub enum Avx512FmaOp {
     // =========================================
     // VFNMSUB - -(a * b) - c
     // =========================================
-
     /// VFNMSUB132PS - Fused negate-multiply-subtract single-precision (132 form)
     Vfnmsub132ps,
     /// VFNMSUB132PD - Fused negate-multiply-subtract double-precision (132 form)
@@ -823,24 +798,24 @@ impl Avx512AluOp {
             Avx512AluOp::Vpsubq => 0xFB,
             Avx512AluOp::Vpmulld => 0x40,
             Avx512AluOp::Vpmullq => 0x40,
-            Avx512AluOp::Vpmuludq => 0xF4,  // 0F map
-            Avx512AluOp::Vpmuldq => 0x28,   // 0F38 map
+            Avx512AluOp::Vpmuludq => 0xF4, // 0F map
+            Avx512AluOp::Vpmuldq => 0x28,  // 0F38 map
 
             // Byte/word arithmetic (AVX-512BW)
             Avx512AluOp::Vpaddb => 0xFC,
             Avx512AluOp::Vpaddw => 0xFD,
             Avx512AluOp::Vpsubb => 0xF8,
             Avx512AluOp::Vpsubw => 0xF9,
-            Avx512AluOp::Vpminsb => 0x38,   // 0F38 map
+            Avx512AluOp::Vpminsb => 0x38, // 0F38 map
             Avx512AluOp::Vpminub => 0xDA,
             Avx512AluOp::Vpminsw => 0xEA,
-            Avx512AluOp::Vpminuw => 0x3A,   // 0F38 map
-            Avx512AluOp::Vpmaxsb => 0x3C,   // 0F38 map
+            Avx512AluOp::Vpminuw => 0x3A, // 0F38 map
+            Avx512AluOp::Vpmaxsb => 0x3C, // 0F38 map
             Avx512AluOp::Vpmaxub => 0xDE,
             Avx512AluOp::Vpmaxsw => 0xEE,
-            Avx512AluOp::Vpmaxuw => 0x3E,   // 0F38 map
-            Avx512AluOp::Vpabsb => 0x1C,    // 0F38 map
-            Avx512AluOp::Vpabsw => 0x1D,    // 0F38 map
+            Avx512AluOp::Vpmaxuw => 0x3E, // 0F38 map
+            Avx512AluOp::Vpabsb => 0x1C,  // 0F38 map
+            Avx512AluOp::Vpabsw => 0x1D,  // 0F38 map
             Avx512AluOp::Vpcmpeqb => 0x74,
             Avx512AluOp::Vpcmpeqw => 0x75,
             Avx512AluOp::Vpcmpgtb => 0x64,
@@ -939,14 +914,14 @@ impl Avx512AluOp {
             Avx512AluOp::Vpunpckhqdq => 0x6D,
 
             // Shuffle operations
-            Avx512AluOp::Vpshufb => 0x00,   // 0F38 map
-            Avx512AluOp::Vpshufd => 0x70,   // 0F map
-            Avx512AluOp::Vpshufhw => 0x70,  // 0F map
-            Avx512AluOp::Vpshuflw => 0x70,  // 0F map
+            Avx512AluOp::Vpshufb => 0x00,  // 0F38 map
+            Avx512AluOp::Vpshufd => 0x70,  // 0F map
+            Avx512AluOp::Vpshufhw => 0x70, // 0F map
+            Avx512AluOp::Vpshuflw => 0x70, // 0F map
 
             // Multiply-add operations
-            Avx512AluOp::Vpmaddwd => 0xF5,    // 0F map
-            Avx512AluOp::Vpmaddubsw => 0x04,  // 0F38 map
+            Avx512AluOp::Vpmaddwd => 0xF5,   // 0F map
+            Avx512AluOp::Vpmaddubsw => 0x04, // 0F38 map
         }
     }
 
@@ -1324,10 +1299,14 @@ impl MaskShiftOp {
     /// W=0 for byte, W=1 for word, W=0 for dword, W=1 for qword
     pub fn vex_w(&self) -> bool {
         match self {
-            MaskShiftOp::Kshiftlb | MaskShiftOp::Kshiftld
-            | MaskShiftOp::Kshiftrb | MaskShiftOp::Kshiftrd => false,
-            MaskShiftOp::Kshiftlw | MaskShiftOp::Kshiftlq
-            | MaskShiftOp::Kshiftrw | MaskShiftOp::Kshiftrq => true,
+            MaskShiftOp::Kshiftlb
+            | MaskShiftOp::Kshiftld
+            | MaskShiftOp::Kshiftrb
+            | MaskShiftOp::Kshiftrd => false,
+            MaskShiftOp::Kshiftlw
+            | MaskShiftOp::Kshiftlq
+            | MaskShiftOp::Kshiftrw
+            | MaskShiftOp::Kshiftrq => true,
         }
     }
 
@@ -1589,7 +1568,6 @@ pub enum Avx512CvtOp {
     // =========================================
     // Integer to Float Conversions
     // =========================================
-
     /// VCVTDQ2PS - Convert packed i32 to packed f32 (I32X16 -> F32X16)
     Vcvtdq2ps,
     /// VCVTQQ2PD - Convert packed i64 to packed f64 (I64X8 -> F64X8)
@@ -1600,7 +1578,6 @@ pub enum Avx512CvtOp {
     // =========================================
     // Float to Integer Conversions (with rounding)
     // =========================================
-
     /// VCVTPS2DQ - Convert packed f32 to packed i32 with rounding (F32X16 -> I32X16)
     Vcvtps2dq,
     /// VCVTPD2QQ - Convert packed f64 to packed i64 with rounding (F64X8 -> I64X8)
@@ -1611,7 +1588,6 @@ pub enum Avx512CvtOp {
     // =========================================
     // Float to Integer Conversions (with truncation)
     // =========================================
-
     /// VCVTTPS2DQ - Convert packed f32 to packed i32 with truncation (F32X16 -> I32X16)
     Vcvttps2dq,
     /// VCVTTPD2QQ - Convert packed f64 to packed i64 with truncation (F64X8 -> I64X8)
@@ -1622,7 +1598,6 @@ pub enum Avx512CvtOp {
     // =========================================
     // Float to Float Conversions
     // =========================================
-
     /// VCVTPS2PD - Convert packed f32 to packed f64 (F32X8 -> F64X8)
     Vcvtps2pd,
     /// VCVTPD2PS - Convert packed f64 to packed f32 (F64X8 -> F32X8)
@@ -1631,7 +1606,6 @@ pub enum Avx512CvtOp {
     // =========================================
     // Integer to Float/Float to Integer (widening/narrowing)
     // =========================================
-
     /// VCVTDQ2PD - Convert packed i32 to packed f64 (I32X8 -> F64X8)
     Vcvtdq2pd,
     /// VCVTPD2DQ - Convert packed f64 to packed i32 with rounding (F64X8 -> I32X8)
@@ -1642,7 +1616,6 @@ pub enum Avx512CvtOp {
     // =========================================
     // Integer Zero/Sign Extension (VPMOVZX/VPMOVSX)
     // =========================================
-
     /// VPMOVZXBD - Zero-extend packed bytes to dwords (I8X16 low -> I32X16)
     Vpmovzxbd,
     /// VPMOVZXBQ - Zero-extend packed bytes to qwords (I8X8 low -> I64X8)
@@ -1667,7 +1640,6 @@ pub enum Avx512CvtOp {
     // =========================================
     // Integer Truncation (VPMOV - down-conversion)
     // =========================================
-
     /// VPMOVDB - Truncate packed dwords to bytes (I32X16 -> I8X16 low)
     Vpmovdb,
     /// VPMOVDW - Truncate packed dwords to words (I32X16 -> I16X16 low)
@@ -2143,7 +2115,9 @@ pub fn validate_active_mask_register(kreg: u8) -> Result<(), &'static str> {
 /// Validates that OperandSize is appropriate for AVX-512 integer operations.
 #[inline]
 #[allow(dead_code, reason = "validation utility reserved for future use")]
-pub fn validate_x64_512_operand_size(size: &crate::isa::x64::inst::args::OperandSize) -> Result<(), &'static str> {
+pub fn validate_x64_512_operand_size(
+    size: &crate::isa::x64::inst::args::OperandSize,
+) -> Result<(), &'static str> {
     use crate::isa::x64::inst::args::OperandSize;
     match size {
         OperandSize::Size32 | OperandSize::Size64 => Ok(()),

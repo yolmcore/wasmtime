@@ -15,9 +15,8 @@ use crate::ir::{
     BlockCall, Inst, InstructionData, LibCall, MemFlags, Opcode, TrapCode, Value, ValueList,
 };
 use crate::isa::x64::X64Backend;
-use crate::isa::x64::inst::{ReturnCallInfo, args::*, args::OptionReg, regs, avx512};
+use crate::isa::x64::inst::{ReturnCallInfo, args::OptionReg, args::*, avx512, regs};
 // Re-export Avx512 types for ISLE generated code (only types still used by manual implementations)
-pub(crate) use avx512::{Avx512Cond, Vp2IntersectOp, GatherOp, ScatterOp};
 use crate::isa::x64::lower::{InsnInput, emit_vm_call};
 use crate::machinst::isle::*;
 use crate::machinst::{
@@ -25,6 +24,7 @@ use crate::machinst::{
     VCodeConstantData,
 };
 use alloc::vec::Vec;
+pub(crate) use avx512::{Avx512Cond, GatherOp, ScatterOp, Vp2IntersectOp};
 use cranelift_assembler_x64 as asm;
 use regalloc2::PReg;
 use std::boxed::Box;

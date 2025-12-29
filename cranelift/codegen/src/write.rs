@@ -554,7 +554,11 @@ pub fn write_operands(w: &mut dyn Write, dfg: &DataFlowGraph, inst: Inst) -> fmt
             args,
             offset,
             ..
-        } => write!(w, "{} {}, {}, {}{}", flags, args[0], args[1], args[2], offset),
+        } => write!(
+            w,
+            "{} {}, {}, {}{}",
+            flags, args[0], args[1], args[2], offset
+        ),
         SimdScatter {
             flags,
             args,

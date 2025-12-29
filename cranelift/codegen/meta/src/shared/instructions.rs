@@ -781,11 +781,7 @@ fn define_simd_arithmetic(
 }
 
 /// Define AVX-512 SIMD memory operations: gather, scatter, masked load/store, compress, expand.
-fn define_simd_memory(
-    ig: &mut InstructionGroupBuilder,
-    formats: &Formats,
-    imm: &Immediates,
-) {
+fn define_simd_memory(ig: &mut InstructionGroupBuilder, formats: &Formats, imm: &Immediates) {
     // Type variable for 512-bit SIMD vectors
     let IxN512 = &TypeVar::new(
         "IxN512",
@@ -856,7 +852,9 @@ fn define_simd_memory(
             Operand::new("scale", &imm.uimm8).with_doc("Scale factor: 1, 2, 4, or 8"),
             Operand::new("Offset", &imm.offset32).with_doc("Constant offset added to each address"),
         ])
-        .operands_out(vec![Operand::new("result", IxN512).with_doc("Gathered elements")])
+        .operands_out(vec![
+            Operand::new("result", IxN512).with_doc("Gathered elements"),
+        ])
         .can_load(),
     );
 
@@ -919,7 +917,9 @@ fn define_simd_memory(
             Operand::new("base", iAddr).with_doc("Base address for load"),
             Operand::new("Offset", &imm.offset32).with_doc("Byte offset from base address"),
         ])
-        .operands_out(vec![Operand::new("result", IxN512).with_doc("Loaded vector")])
+        .operands_out(vec![
+            Operand::new("result", IxN512).with_doc("Loaded vector"),
+        ])
         .can_load(),
     );
 
@@ -974,7 +974,9 @@ fn define_simd_memory(
             Operand::new("mask", Mask).with_doc("Mask vector - compress where mask bit is 1"),
             Operand::new("value", IxN512).with_doc("Vector of values to compress"),
         ])
-        .operands_out(vec![Operand::new("result", IxN512).with_doc("Compressed vector")]),
+        .operands_out(vec![
+            Operand::new("result", IxN512).with_doc("Compressed vector"),
+        ]),
     );
 
     // =========================================================================
@@ -999,10 +1001,13 @@ fn define_simd_memory(
             &formats.binary,
         )
         .operands_in(vec![
-            Operand::new("mask", Mask).with_doc("Mask vector - expand to positions where mask bit is 1"),
+            Operand::new("mask", Mask)
+                .with_doc("Mask vector - expand to positions where mask bit is 1"),
             Operand::new("value", IxN512).with_doc("Vector of contiguous values to expand"),
         ])
-        .operands_out(vec![Operand::new("result", IxN512).with_doc("Expanded vector")]),
+        .operands_out(vec![
+            Operand::new("result", IxN512).with_doc("Expanded vector"),
+        ]),
     );
 }
 

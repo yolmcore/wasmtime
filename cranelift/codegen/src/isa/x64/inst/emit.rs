@@ -1839,11 +1839,27 @@ pub(crate) fn emit(
             avx512::emit::emit_kmov_store(*src, &addr, sink);
         }
 
-        Inst::Avx512Gather { op, dst, base, index, scale, disp, mask } => {
+        Inst::Avx512Gather {
+            op,
+            dst,
+            base,
+            index,
+            scale,
+            disp,
+            mask,
+        } => {
             avx512::emit::emit_gather(*op, *dst, *base, *index, *scale, *disp, *mask, sink);
         }
 
-        Inst::Avx512Scatter { op, src, base, index, scale, disp, mask } => {
+        Inst::Avx512Scatter {
+            op,
+            src,
+            base,
+            index,
+            scale,
+            disp,
+            mask,
+        } => {
             avx512::emit::emit_scatter(*op, *src, *base, *index, *scale, *disp, *mask, sink);
         }
 

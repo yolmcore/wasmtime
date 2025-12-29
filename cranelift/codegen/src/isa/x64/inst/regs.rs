@@ -1,9 +1,22 @@
 //! Register definitions for regalloc2.
 //!
 //! We define 16 GPRs, with indices equal to the hardware encoding,
-//! and 16 XMM registers.
+//! and up to 32 XMM/YMM/ZMM registers.
 //!
 //! Note also that we make use of pinned VRegs to refer to PRegs.
+//!
+//! ## AVX-512 Register Support
+//!
+//! AVX-512 provides 32 ZMM registers (zmm0-zmm31). When AVX-512 is enabled,
+//! all 32 registers are exposed to the register allocator:
+//!
+//! - **xmm0-xmm15**: Available with SSE, AVX (VEX), and AVX-512 (EVEX) encoding
+//! - **xmm16-xmm31**: Available only with AVX-512 (EVEX) encoding
+//!
+//! The extended registers (16-31) are conditionally added to the allocatable
+//! register pool when `has_avx512f` is enabled. This is safe because all
+//! 512-bit vector operations use EVEX encoding, which supports the full
+//! 32-register file.
 
 use crate::machinst::Reg;
 use alloc::string::ToString;
@@ -133,6 +146,57 @@ pub(crate) const fn xmm14() -> Reg {
 }
 pub(crate) const fn xmm15() -> Reg {
     fpr(xmm::enc::XMM15)
+}
+
+// AVX-512 extended registers (xmm16-xmm31)
+// These require EVEX encoding and are only available with AVX-512.
+pub(crate) const fn xmm16() -> Reg {
+    fpr(xmm::enc::XMM16)
+}
+pub(crate) const fn xmm17() -> Reg {
+    fpr(xmm::enc::XMM17)
+}
+pub(crate) const fn xmm18() -> Reg {
+    fpr(xmm::enc::XMM18)
+}
+pub(crate) const fn xmm19() -> Reg {
+    fpr(xmm::enc::XMM19)
+}
+pub(crate) const fn xmm20() -> Reg {
+    fpr(xmm::enc::XMM20)
+}
+pub(crate) const fn xmm21() -> Reg {
+    fpr(xmm::enc::XMM21)
+}
+pub(crate) const fn xmm22() -> Reg {
+    fpr(xmm::enc::XMM22)
+}
+pub(crate) const fn xmm23() -> Reg {
+    fpr(xmm::enc::XMM23)
+}
+pub(crate) const fn xmm24() -> Reg {
+    fpr(xmm::enc::XMM24)
+}
+pub(crate) const fn xmm25() -> Reg {
+    fpr(xmm::enc::XMM25)
+}
+pub(crate) const fn xmm26() -> Reg {
+    fpr(xmm::enc::XMM26)
+}
+pub(crate) const fn xmm27() -> Reg {
+    fpr(xmm::enc::XMM27)
+}
+pub(crate) const fn xmm28() -> Reg {
+    fpr(xmm::enc::XMM28)
+}
+pub(crate) const fn xmm29() -> Reg {
+    fpr(xmm::enc::XMM29)
+}
+pub(crate) const fn xmm30() -> Reg {
+    fpr(xmm::enc::XMM30)
+}
+pub(crate) const fn xmm31() -> Reg {
+    fpr(xmm::enc::XMM31)
 }
 
 // K-registers are AVX-512 mask registers.

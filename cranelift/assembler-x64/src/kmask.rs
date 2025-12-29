@@ -16,6 +16,7 @@ pub struct Kmask<R: AsReg = u8>(pub(crate) R);
 
 impl<R: AsReg> Kmask<R> {
     /// Create a new [`Kmask`] register.
+    #[must_use]
     pub fn new(reg: R) -> Self {
         Self(reg)
     }
@@ -26,6 +27,7 @@ impl<R: AsReg> Kmask<R> {
     /// # Panics
     ///
     /// Panics if the register is not a valid Kmask register.
+    #[must_use]
     pub fn enc(&self) -> u8 {
         let enc = self.0.enc();
         assert!(enc < 8, "invalid k-register: {enc}");
@@ -33,6 +35,7 @@ impl<R: AsReg> Kmask<R> {
     }
 
     /// Return the register name.
+    #[must_use]
     pub fn to_string(&self) -> String {
         enc::to_string(self.enc()).to_owned()
     }

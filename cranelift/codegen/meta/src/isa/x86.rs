@@ -289,7 +289,14 @@ pub(crate) fn define() -> TargetIsa {
     let cannonlake = settings.add_preset(
         "cannonlake",
         "Canon Lake microarchitecture.",
-        preset!(skylake && has_avx512f && has_avx512bw && has_avx512dq && has_avx512vl && has_avx512vbmi),
+        preset!(
+            skylake
+                && has_avx512f
+                && has_avx512bw
+                && has_avx512dq
+                && has_avx512vl
+                && has_avx512vbmi
+        ),
     );
     let icelake_client = settings.add_preset(
         "icelake-client",

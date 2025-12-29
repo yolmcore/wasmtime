@@ -877,12 +877,26 @@ impl ABIMachineSpec for X64ABIMachineSpec {
     }
 
     fn get_machine_env(flags: &settings::Flags, _call_conv: isa::CallConv) -> &MachineEnv {
-        if flags.enable_pinned_reg() {
-            static MACHINE_ENV: OnceLock<MachineEnv> = OnceLock::new();
-            MACHINE_ENV.get_or_init(|| create_reg_env_systemv(true))
-        } else {
-            static MACHINE_ENV: OnceLock<MachineEnv> = OnceLock::new();
-            MACHINE_ENV.get_or_init(|| create_reg_env_systemv(false))
+        // We have 4 possible machine environments based on flag combinations:
+        // - enable_pinned_reg: excludes r15 from allocation
+        // - enable_simd32: includes xmm16-31 (AVX-512 extended registers)
+        match (flags.enable_pinned_reg(), flags.enable_simd32()) {
+            (true, true) => {
+                static MACHINE_ENV: OnceLock<MachineEnv> = OnceLock::new();
+                MACHINE_ENV.get_or_init(|| create_reg_env_systemv(true, true))
+            }
+            (true, false) => {
+                static MACHINE_ENV: OnceLock<MachineEnv> = OnceLock::new();
+                MACHINE_ENV.get_or_init(|| create_reg_env_systemv(true, false))
+            }
+            (false, true) => {
+                static MACHINE_ENV: OnceLock<MachineEnv> = OnceLock::new();
+                MACHINE_ENV.get_or_init(|| create_reg_env_systemv(false, true))
+            }
+            (false, false) => {
+                static MACHINE_ENV: OnceLock<MachineEnv> = OnceLock::new();
+                MACHINE_ENV.get_or_init(|| create_reg_env_systemv(false, false))
+            }
         }
     }
 
@@ -1292,9 +1306,44 @@ const fn all_clobbers() -> PRegSet {
     // 3. Including them would break non-AVX-512 targets using preserve_all
 }
 
-fn create_reg_env_systemv(enable_pinned_reg: bool) -> MachineEnv {
+fn create_reg_env_systemv(enable_pinned_reg: bool, enable_simd32: bool) -> MachineEnv {
     fn preg(r: Reg) -> PReg {
         r.to_real_reg().unwrap().into()
+    }
+
+    // Non-preferred XMMs: xmm8-15, which require larger encodings with AVX.
+    let mut non_preferred_xmms = vec![
+        preg(regs::xmm8()),
+        preg(regs::xmm9()),
+        preg(regs::xmm10()),
+        preg(regs::xmm11()),
+        preg(regs::xmm12()),
+        preg(regs::xmm13()),
+        preg(regs::xmm14()),
+        preg(regs::xmm15()),
+    ];
+
+    // AVX-512 extended registers (xmm16-31) require EVEX encoding.
+    // Only add them if enable_simd32 is set (indicating AVX-512 support).
+    if enable_simd32 {
+        non_preferred_xmms.extend([
+            preg(regs::xmm16()),
+            preg(regs::xmm17()),
+            preg(regs::xmm18()),
+            preg(regs::xmm19()),
+            preg(regs::xmm20()),
+            preg(regs::xmm21()),
+            preg(regs::xmm22()),
+            preg(regs::xmm23()),
+            preg(regs::xmm24()),
+            preg(regs::xmm25()),
+            preg(regs::xmm26()),
+            preg(regs::xmm27()),
+            preg(regs::xmm28()),
+            preg(regs::xmm29()),
+            preg(regs::xmm30()),
+            preg(regs::xmm31()),
+        ]);
     }
 
     let mut env = MachineEnv {
@@ -1337,18 +1386,8 @@ fn create_reg_env_systemv(enable_pinned_reg: bool) -> MachineEnv {
                 preg(regs::r13()),
                 preg(regs::r14()),
             ],
-            // Non-preferred XMMs: the last 8 registers, which can have larger
-            // encodings with AVX instructions.
-            vec![
-                preg(regs::xmm8()),
-                preg(regs::xmm9()),
-                preg(regs::xmm10()),
-                preg(regs::xmm11()),
-                preg(regs::xmm12()),
-                preg(regs::xmm13()),
-                preg(regs::xmm14()),
-                preg(regs::xmm15()),
-            ],
+            // Non-preferred XMMs: xmm8-15 (and xmm16-31 with AVX-512)
+            non_preferred_xmms,
             // The Vector Regclass is unused
             vec![],
         ],
