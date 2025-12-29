@@ -97,12 +97,15 @@ where F: FnMut()
     let rows_per_sec = rows as f64 / (avg as f64 / 1e9);
     let gb_per_sec = (rows * bytes_per_row) as f64 / 1e9 / (avg as f64 / 1e9);
 
-    println!("\n=== {} ===", name);
-    println!("  Rows:       {:>12}", rows);
-    println!("  Min time:   {:>12.3} ms", min as f64 / 1e6);
-    println!("  Avg time:   {:>12.3} ms", avg as f64 / 1e6);
-    println!("  Throughput: {:>12.2} M rows/sec", rows_per_sec / 1e6);
-    println!("  Bandwidth:  {:>12.2} GB/sec", gb_per_sec);
+    let min_ms = min as f64 / 1e6;
+    let avg_ms = avg as f64 / 1e6;
+    let throughput = rows_per_sec / 1e6;
+    println!("\n=== {name} ===");
+    println!("  Rows:       {rows:>12}");
+    println!("  Min time:   {min_ms:>12.3} ms");
+    println!("  Avg time:   {avg_ms:>12.3} ms");
+    println!("  Throughput: {throughput:>12.2} M rows/sec");
+    println!("  Bandwidth:  {gb_per_sec:>12.2} GB/sec");
 }
 
 // =============================================================================
@@ -115,7 +118,6 @@ impl SqlCompiler {
     /// Compile: check if value is in bitmask set
     /// Returns: 1 if in set, 0 otherwise
     fn compile_enum_in_bitmask(&mut self, name: &str) -> Result<*const u8, ModuleError> {
-        let ptr = self.ptr();
         let mut sig = self.module.make_signature();
         sig.params.push(AbiParam::new(I32));    // enum ordinal
         sig.params.push(AbiParam::new(I64));    // bitmask
@@ -389,7 +391,7 @@ fn test_filter_compare_i32x16() {
     assert_eq!(count, 8, "Should have 8 matches (8..15 > 7)");
     for i in 0..16 {
         let expected = if i > 7 { -1 } else { 0 };
-        assert_eq!(mask[i as usize], expected, "Mask lane {} incorrect", i);
+        assert_eq!(mask[i as usize], expected, "Mask lane {i} incorrect");
     }
     println!("Filter compare I32X16: PASS");
 
@@ -463,53 +465,6 @@ impl SqlCompiler {
         Ok(self.module.get_finalized_function(func_id))
     }
 
-    /// Compile: blend-based masked sum (more efficient)
-    fn compile_masked_sum_blend(&mut self, name: &str) -> Result<*const u8, ModuleError> {
-        let ptr = self.ptr();
-        let mut sig = self.module.make_signature();
-        sig.params.push(AbiParam::new(ptr));    // values ptr
-        sig.params.push(AbiParam::new(ptr));    // mask ptr
-        sig.params.push(AbiParam::new(ptr));    // acc ptr
-        sig.call_conv = CallConv::SystemV;
-
-        let func_id = self.module.declare_function(name, Linkage::Local, &sig)?;
-        self.ctx.func = Function::with_name_signature(
-            UserFuncName::user(0, func_id.as_u32()),
-            sig,
-        );
-
-        {
-            let mut builder = FunctionBuilder::new(&mut self.ctx.func, &mut self.func_ctx);
-            let block = builder.create_block();
-            builder.append_block_params_for_function_params(block);
-            builder.switch_to_block(block);
-
-            let params = builder.block_params(block).to_vec();
-            let values_ptr = params[0];
-            let mask_ptr = params[1];
-            let acc_ptr = params[2];
-
-            let values = builder.ins().load(I64X8, MemFlags::trusted(), values_ptr, 0);
-            let mask = builder.ins().load(I64X8, MemFlags::trusted(), mask_ptr, 0);
-            let acc = builder.ins().load(I64X8, MemFlags::trusted(), acc_ptr, 0);
-
-            // FUSED pattern: bitselect(mask, iadd(acc, values), acc) -> masked VPADDQ
-            // This generates a single AVX-512 masked add instruction!
-            let sum = builder.ins().iadd(acc, values);
-            let new_acc = builder.ins().bitselect(mask, sum, acc);
-
-            builder.ins().store(MemFlags::trusted(), new_acc, acc_ptr, 0);
-            builder.ins().return_(&[]);
-
-            builder.seal_all_blocks();
-            builder.finalize();
-        }
-
-        self.module.define_function(func_id, &mut self.ctx)?;
-        self.module.clear_context(&mut self.ctx);
-        self.module.finalize_definitions()?;
-        Ok(self.module.get_finalized_function(func_id))
-    }
 }
 
 #[test]
@@ -532,7 +487,7 @@ fn test_masked_sum() {
     func(values.as_ptr(), mask.as_ptr(), acc.as_mut_ptr());
 
     let sum: i64 = acc.iter().sum();
-    assert_eq!(sum, 160, "Masked sum should be 160 (10+30+50+70), got {}", sum);
+    assert_eq!(sum, 160, "Masked sum should be 160 (10+30+50+70), got {sum}");
     println!("Masked SUM I64X8: PASS");
 
     // Benchmark
@@ -718,7 +673,7 @@ fn test_range_filter() {
 
     let count = func(values.as_ptr(), 5, 10, mask.as_mut_ptr());
 
-    assert_eq!(count, 6, "Range [5,10] should have 6 matches, got {}", count);
+    assert_eq!(count, 6, "Range [5,10] should have 6 matches, got {count}");
     println!("Range filter I32X16: PASS");
 
     // Benchmark
@@ -853,8 +808,8 @@ impl SqlCompiler {
 
             let mut count = builder.ins().iconst(I64, 0);
 
-            for i in 0..8 {
-                let offset = (i as i32) * 16;
+            for i in 0i32..8 {
+                let offset = i * 16;
                 // Load just the first 4 bytes (prefix) from each GermanString
                 let prefix_i = builder.ins().load(I32, MemFlags::trusted(), gstrings_ptr, offset);
 
@@ -916,8 +871,8 @@ impl SqlCompiler {
             let mut count = builder.ins().iconst(I64, 0);
 
             // Process 8 GermanStrings
-            for i in 0..8 {
-                let offset = (i as i32) * 16;
+            for i in 0i32..8 {
+                let offset = i * 16;
 
                 // Load byte[15] (tag/length byte) and bytes[4..8] (len_tag32)
                 let tag_byte = builder.ins().load(I8, MemFlags::trusted(), gstrings_ptr, offset + 15);
@@ -1000,8 +955,8 @@ impl SqlCompiler {
             // For inline strings, we can compare both 64-bit halves directly
             // This is a fast path for short string equality
 
-            for i in 0..8 {
-                let offset = (i as i32) * 16;
+            for i in 0i32..8 {
+                let offset = i * 16;
 
                 // Load both halves of the GermanString
                 let lo = builder.ins().load(I64, MemFlags::trusted(), gstrings_ptr, offset);
@@ -1074,7 +1029,7 @@ fn test_gstring_prefix_match() {
     let prefix = i32::from_le_bytes([b'A', b'B', b'C', b'D']);
 
     let count = func(gstrings.as_ptr(), prefix);
-    assert_eq!(count, 5, "Should find 5 strings starting with ABCD, got {}", count);
+    assert_eq!(count, 5, "Should find 5 strings starting with ABCD, got {count}");
     println!("GermanString prefix match: PASS");
 
     // Benchmark
@@ -1120,7 +1075,7 @@ fn test_gstring_length_filter() {
     // Lengths: 0, 1, 2, 3, 4, 5, 10, 14
     // In range [3,10]: 3, 4, 5, 10 = 4 strings
     let count = func(gstrings.as_ptr(), 3, 10);
-    assert_eq!(count, 4, "Should find 4 strings with length 3-10, got {}", count);
+    assert_eq!(count, 4, "Should find 4 strings with length 3-10, got {count}");
     println!("GermanString length filter: PASS");
 }
 
@@ -1154,7 +1109,7 @@ fn test_gstring_equality() {
     let target_hi = i64::from_le_bytes(target_bytes[8..16].try_into().unwrap());
 
     let count = func(gstrings.as_ptr(), target_lo, target_hi);
-    assert_eq!(count, 3, "Should find 3 exact matches for 'Hello', got {}", count);
+    assert_eq!(count, 3, "Should find 3 exact matches for 'Hello', got {count}");
     println!("GermanString equality: PASS");
 
     // Benchmark
@@ -1163,7 +1118,7 @@ fn test_gstring_equality() {
             if i % 100 == 0 {
                 target // 1% match rate
             } else {
-                make_inline_gstring(format!("str{:05}", i).as_bytes())
+                make_inline_gstring(format!("str{i:05}").as_bytes())
             }
         })
         .collect();
@@ -2360,7 +2315,7 @@ fn test_i32x16_arithmetic_register_pressure() {
 
     // Expected: (1+2) * (10-3) + (4*5) - (6+7) = 3*7 + 20 - 13 = 21 + 20 - 13 = 28
     for i in 0..16 {
-        assert_eq!(result[i], 28, "I32X16 arithmetic failed at index {}", i);
+        assert_eq!(result[i], 28, "I32X16 arithmetic failed at index {i}");
     }
     println!("I32X16 arithmetic with register pressure: PASS");
 }
@@ -2422,7 +2377,7 @@ fn test_i64x8_arithmetic_complex() {
     // Expected: a + 2b
     for i in 0..8 {
         let expected = a[i] + 2 * b[i];
-        assert_eq!(result[i], expected, "I64X8 arithmetic failed at index {}", i);
+        assert_eq!(result[i], expected, "I64X8 arithmetic failed at index {i}");
     }
     println!("I64X8 arithmetic: PASS");
 }
@@ -2545,8 +2500,8 @@ fn test_i32x16_minmax() {
     for i in 0..16 {
         let expected_min = a[i].min(b[i]);
         let expected_max = a[i].max(b[i]);
-        assert_eq!(smin_result[i], expected_min, "smin failed at index {}", i);
-        assert_eq!(smax_result[i], expected_max, "smax failed at index {}", i);
+        assert_eq!(smin_result[i], expected_min, "smin failed at index {i}");
+        assert_eq!(smax_result[i], expected_max, "smax failed at index {i}");
     }
     println!("I32X16 smin/smax: PASS");
 }
@@ -2607,8 +2562,8 @@ fn test_f64x8_minmax() {
     for i in 0..8 {
         let expected_min = a[i].min(b[i]);
         let expected_max = a[i].max(b[i]);
-        assert!((fmin_result[i] - expected_min).abs() < 0.001, "fmin failed at index {}", i);
-        assert!((fmax_result[i] - expected_max).abs() < 0.001, "fmax failed at index {}", i);
+        assert!((fmin_result[i] - expected_min).abs() < 0.001, "fmin failed at index {i}");
+        assert!((fmax_result[i] - expected_max).abs() < 0.001, "fmax failed at index {i}");
     }
     println!("F64X8 fmin/fmax: PASS");
 }
@@ -2671,7 +2626,7 @@ fn test_bitwise_complex() {
 
     for i in 0..16 {
         let expected = (a[i] & b[i]) | (c_arr[i] ^ !a[i]);
-        assert_eq!(result[i], expected, "Bitwise complex failed at index {}", i);
+        assert_eq!(result[i], expected, "Bitwise complex failed at index {i}");
     }
     println!("Bitwise complex operations: PASS");
 }
@@ -2847,7 +2802,7 @@ fn test_between_filter() {
     let count = func(data.as_ptr(), 10, 50);
     assert_eq!(count, 9, "BETWEEN filter failed");
 
-    println!("BETWEEN filter (icmp + band): PASS (count = {})", count);
+    println!("BETWEEN filter (icmp + band): PASS (count = {count})");
 }
 
 /// Test COALESCE pattern: COALESCE(a, b) = if a is not null then a else b
@@ -2913,7 +2868,7 @@ fn test_coalesce() {
     // Expected: a where not null, b where null
     for i in 0..16 {
         let expected = if a_null[i] == 0 { a[i] } else { b[i] };
-        assert_eq!(result[i], expected, "COALESCE failed at index {}", i);
+        assert_eq!(result[i], expected, "COALESCE failed at index {i}");
     }
 
     println!("COALESCE (bnot + bitselect): PASS");
@@ -2973,7 +2928,7 @@ fn test_conversion_roundtrip() {
     func(input.as_ptr(), f64_out.as_mut_ptr(), i64_out.as_mut_ptr());
 
     for i in 0..8 {
-        assert_eq!(i64_out[i], input[i], "Conversion round-trip failed at index {}", i);
+        assert_eq!(i64_out[i], input[i], "Conversion round-trip failed at index {i}");
     }
 
     println!("i64 <-> f64 conversion round-trip: PASS");
@@ -3036,7 +2991,7 @@ fn test_fma_f64x8_basic() {
 
     for i in 0..8 {
         // fma: 2*3+1 = 7
-        assert!((fma_out[i] - 7.0).abs() < 0.001, "fma failed at {}", i);
+        assert!((fma_out[i] - 7.0).abs() < 0.001, "fma failed at {i}");
     }
 
     println!("FMA F64X8 (a*b+c): PASS");
@@ -3111,10 +3066,10 @@ fn test_icmp_all_conditions() {
         let exp_slt = if a[i] < b[i] { -1i32 } else { 0 };
         let exp_sgt = if a[i] > b[i] { -1i32 } else { 0 };
 
-        assert_eq!(eq_out[i], exp_eq, "EQ failed at {}", i);
-        assert_eq!(ne_out[i], exp_ne, "NE failed at {}", i);
-        assert_eq!(slt_out[i], exp_slt, "SLT failed at {}", i);
-        assert_eq!(sgt_out[i], exp_sgt, "SGT failed at {}", i);
+        assert_eq!(eq_out[i], exp_eq, "EQ failed at {i}");
+        assert_eq!(ne_out[i], exp_ne, "NE failed at {i}");
+        assert_eq!(slt_out[i], exp_slt, "SLT failed at {i}");
+        assert_eq!(sgt_out[i], exp_sgt, "SGT failed at {i}");
     }
 
     println!("icmp all conditions (EQ, NE, SLT, SGT): PASS");
@@ -3183,78 +3138,14 @@ fn test_fcmp_all_conditions() {
         let exp_lt = if a[i] < b[i] { -1i64 } else { 0 };
         let exp_le = if a[i] <= b[i] { -1i64 } else { 0 };
 
-        assert_eq!(eq_out[i], exp_eq, "fcmp EQ failed at {}", i);
-        assert_eq!(lt_out[i], exp_lt, "fcmp LT failed at {}", i);
-        assert_eq!(le_out[i], exp_le, "fcmp LE failed at {}", i);
+        assert_eq!(eq_out[i], exp_eq, "fcmp EQ failed at {i}");
+        assert_eq!(lt_out[i], exp_lt, "fcmp LT failed at {i}");
+        assert_eq!(le_out[i], exp_le, "fcmp LE failed at {i}");
     }
 
     println!("fcmp all conditions (EQ, LT, LE) F64X8: PASS");
 }
 
-// =============================================================================
-// Comprehensive summary of ALL AVX-512 operations
-// =============================================================================
-
-#[test]
-fn print_comprehensive_avx512_summary() {
-    if !has_avx512() {
-        println!("AVX-512 not available");
-        return;
-    }
-
-    println!("\n╔══════════════════════════════════════════════════════════════════╗");
-    println!("║           COMPREHENSIVE AVX-512 SQL OPERATIONS SUMMARY           ║");
-    println!("╠══════════════════════════════════════════════════════════════════╣");
-    println!("║ CATEGORY              │ OPERATIONS                    │ STATUS   ║");
-    println!("╠═══════════════════════╪═══════════════════════════════╪══════════╣");
-    println!("║ Integer Arithmetic    │ iadd, isub, imul (I32X16)     │ ✓ PASS   ║");
-    println!("║                       │ iadd, isub, imul (I64X8)      │ ✓ PASS   ║");
-    println!("║ FP Arithmetic         │ fadd, fsub, fmul, fdiv        │ ✓ PASS   ║");
-    println!("║ FMA                   │ fma, fms, fnma (F32X16/F64X8) │ ✓ PASS   ║");
-    println!("║ Min/Max               │ smin, smax (I32X16/I64X8)     │ ✓ PASS   ║");
-    println!("║                       │ fmin, fmax (F32X16/F64X8)     │ ✓ PASS   ║");
-    println!("║ Bitwise               │ band, bor, bxor, bnot         │ ✓ PASS   ║");
-    println!("║ Shifts                │ ishl, ushr, sshr              │ ✓ PASS   ║");
-    println!("║ Rotate                │ rotl, rotr                    │ ✓ PASS   ║");
-    println!("║ Broadcast             │ splat                         │ ✓ PASS   ║");
-    println!("║ Blend/Select          │ bitselect (VPBLENDM)          │ ✓ PASS   ║");
-    println!("║ Integer Compare       │ icmp (all IntCC)              │ ✓ PASS   ║");
-    println!("║ FP Compare            │ fcmp (all FloatCC)            │ ✓ PASS   ║");
-    println!("║ Gather                │ x86_simd_gather               │ ✓ PASS   ║");
-    println!("║ Scatter               │ x86_simd_scatter              │ ✓ PASS   ║");
-    println!("║ Compress/Expand       │ VPCOMPRESSD, VPEXPANDD        │ ✓ PASS   ║");
-    println!("║ Conflict Detection    │ VPCONFLICTD/Q                 │ ✓ PASS   ║");
-    println!("║ Masked Load/Store     │ VMOVDQU32/64                  │ ✓ PASS   ║");
-    println!("║ Population Count      │ VPOPCNTD/Q                    │ ✓ PASS   ║");
-    println!("║ Leading Zeros         │ VPLZCNTD/Q                    │ ✓ PASS   ║");
-    println!("║ Ternary Logic         │ VPTERNLOGD/Q                  │ ✓ PASS   ║");
-    println!("║ Lane Extract          │ extractlane (all lanes)       │ ✓ PASS   ║");
-    println!("║ Conversions           │ i64<->f64, i32<->f32          │ ✓ PASS   ║");
-    println!("╠═══════════════════════╪═══════════════════════════════╪══════════╣");
-    println!("║ SQL PATTERNS          │ IMPLEMENTATION                │ STATUS   ║");
-    println!("╠═══════════════════════╪═══════════════════════════════╪══════════╣");
-    println!("║ WHERE col > val       │ icmp/fcmp → mask              │ ✓ PASS   ║");
-    println!("║ WHERE BETWEEN         │ icmp + band                   │ ✓ PASS   ║");
-    println!("║ CASE WHEN             │ icmp + bitselect              │ ✓ PASS   ║");
-    println!("║ COALESCE              │ is_null + bitselect           │ ✓ PASS   ║");
-    println!("║ NULL handling         │ Masked ops + blend            │ ✓ PASS   ║");
-    println!("║ SUM/COUNT/MIN/MAX     │ Loop + horizontal reduce      │ ✓ PASS   ║");
-    println!("║ Hash Join probe       │ x86_simd_gather               │ ✓ PASS   ║");
-    println!("║ Hash Join build       │ x86_simd_scatter              │ ✓ PASS   ║");
-    println!("║ GROUP BY conflicts    │ VPCONFLICTD + serialize       │ ✓ PASS   ║");
-    println!("║ Tail handling         │ Masked load/store             │ ✓ PASS   ║");
-    println!("╠═══════════════════════╪═══════════════════════════════╪══════════╣");
-    println!("║ K-MASK OPERATIONS     │ INSTRUCTION                   │ STATUS   ║");
-    println!("╠═══════════════════════╪═══════════════════════════════╪══════════╣");
-    println!("║ K-mask AND            │ KANDW (via band on masks)     │ ✓ PASS   ║");
-    println!("║ K-mask OR             │ KORW (via bor on masks)       │ ✓ PASS   ║");
-    println!("║ K-mask XOR            │ KXORW (via bxor on masks)     │ ✓ PASS   ║");
-    println!("║ K-mask NOT            │ KNOTW (via bnot on masks)     │ ✓ PASS   ║");
-    println!("║ K-mask ANDN           │ KANDNW                        │ ✓ PASS   ║");
-    println!("║ K-mask test           │ KORTESTW                      │ ✓ AVAIL  ║");
-    println!("╚═══════════════════════╧═══════════════════════════════╧══════════╝");
-    println!("\nAll AVX-512 operations for SQL HTAP workloads are fully functional!");
-}
 
 // =============================================================================
 // THROUGHPUT BENCHMARKS - Complex & Weird Query Patterns
@@ -3410,22 +3301,12 @@ fn bench_complex_filter_i32x16() {
     }
 
     let min = *times.iter().min().unwrap();
-    let avg = times.iter().sum::<u64>() / times.len() as u64;
+    let _avg = times.iter().sum::<u64>() / times.len() as u64;
     let bytes = NUM_ROWS * 4 * 4; // 4 columns * 4 bytes each
     let gb_per_sec = bytes as f64 / 1e9 / (min as f64 / 1e9);
     let rows_per_sec = NUM_ROWS as f64 / (min as f64 / 1e9);
 
-    println!("\n╔══════════════════════════════════════════════════════════════════╗");
-    println!("║      BENCHMARK: Complex 4-Column Filter (I32X16)                 ║");
-    println!("╠══════════════════════════════════════════════════════════════════╣");
-    println!("║ Pattern: (a > 10 AND b < 100) OR (c == 42 AND d != 0)            ║");
-    println!("╠══════════════════════════════════════════════════════════════════╣");
-    println!("║ Rows:        {:>12}                                        ║", NUM_ROWS);
-    println!("║ Min time:    {:>12.3} ms                                      ║", min as f64 / 1e6);
-    println!("║ Avg time:    {:>12.3} ms                                      ║", avg as f64 / 1e6);
-    println!("║ Throughput:  {:>12.2} M rows/sec                               ║", rows_per_sec / 1e6);
-    println!("║ Bandwidth:   {:>12.2} GB/sec                                   ║", gb_per_sec);
-    println!("╚══════════════════════════════════════════════════════════════════╝");
+    println!("Complex 4-Column Filter: {:.0} M rows/sec, {:.1} GB/s", rows_per_sec / 1e6, gb_per_sec);
 }
 
 /// Benchmark: TPC-H style aggregation with multiple accumulators
@@ -3630,23 +3511,12 @@ fn bench_tpch_aggregation_i64x8() {
     }
 
     let min = *times.iter().min().unwrap();
-    let avg = times.iter().sum::<u64>() / times.len() as u64;
+    let _avg = times.iter().sum::<u64>() / times.len() as u64;
     let bytes = NUM_ROWS * 8 * 5; // 5 columns * 8 bytes each
     let gb_per_sec = bytes as f64 / 1e9 / (min as f64 / 1e9);
     let rows_per_sec = NUM_ROWS as f64 / (min as f64 / 1e9);
 
-    println!("\n╔══════════════════════════════════════════════════════════════════╗");
-    println!("║      BENCHMARK: TPC-H Style 4-Way Aggregation (I64X8)            ║");
-    println!("╠══════════════════════════════════════════════════════════════════╣");
-    println!("║ Pattern: SUM(a), SUM(b), MIN(c), MAX(d) WHERE filter > 50        ║");
-    println!("╠══════════════════════════════════════════════════════════════════╣");
-    println!("║ Rows:        {:>12}                                        ║", NUM_ROWS);
-    println!("║ Min time:    {:>12.3} ms                                      ║", min as f64 / 1e6);
-    println!("║ Avg time:    {:>12.3} ms                                      ║", avg as f64 / 1e6);
-    println!("║ Throughput:  {:>12.2} M rows/sec                               ║", rows_per_sec / 1e6);
-    println!("║ Bandwidth:   {:>12.2} GB/sec                                   ║", gb_per_sec);
-    println!("║ Results: SUM_A={:<12} SUM_B={:<12}                  ║", results[0], results[1]);
-    println!("╚══════════════════════════════════════════════════════════════════╝");
+    println!("TPC-H 4-Way Aggregation: {:.0} M rows/sec, {:.1} GB/s", rows_per_sec / 1e6, gb_per_sec);
 }
 
 /// Benchmark: FP-heavy workload with FMA chains
@@ -3779,22 +3649,12 @@ fn bench_fma_chain_f64x8() {
     }
 
     let min = *times.iter().min().unwrap();
-    let avg = times.iter().sum::<u64>() / times.len() as u64;
+    let _avg = times.iter().sum::<u64>() / times.len() as u64;
     let bytes = NUM_ROWS * 8 * 7; // 6 input + 1 output columns
     let gb_per_sec = bytes as f64 / 1e9 / (min as f64 / 1e9);
     let rows_per_sec = NUM_ROWS as f64 / (min as f64 / 1e9);
 
-    println!("\n╔══════════════════════════════════════════════════════════════════╗");
-    println!("║      BENCHMARK: Chained FMA Operations (F64X8)                   ║");
-    println!("╠══════════════════════════════════════════════════════════════════╣");
-    println!("║ Pattern: a*b + c*d - e*f (2 FMAs + 1 fmul per vector)            ║");
-    println!("╠══════════════════════════════════════════════════════════════════╣");
-    println!("║ Rows:        {:>12}                                        ║", NUM_ROWS);
-    println!("║ Min time:    {:>12.3} ms                                      ║", min as f64 / 1e6);
-    println!("║ Avg time:    {:>12.3} ms                                      ║", avg as f64 / 1e6);
-    println!("║ Throughput:  {:>12.2} M rows/sec                               ║", rows_per_sec / 1e6);
-    println!("║ Bandwidth:   {:>12.2} GB/sec                                   ║", gb_per_sec);
-    println!("╚══════════════════════════════════════════════════════════════════╝");
+    println!("FMA Chain F64X8: {:.0} M rows/sec, {:.1} GB/s", rows_per_sec / 1e6, gb_per_sec);
 }
 
 /// Benchmark: Weird edge case - high selectivity filter (1% pass rate)
@@ -3896,24 +3756,13 @@ fn bench_high_selectivity_filter() {
     }
 
     let min = *times.iter().min().unwrap();
-    let avg = times.iter().sum::<u64>() / times.len() as u64;
+    let _avg = times.iter().sum::<u64>() / times.len() as u64;
     let bytes = NUM_ROWS * 4;
     let gb_per_sec = bytes as f64 / 1e9 / (min as f64 / 1e9);
     let rows_per_sec = NUM_ROWS as f64 / (min as f64 / 1e9);
     let selectivity = result as f64 / NUM_ROWS as f64 * 100.0;
 
-    println!("\n╔══════════════════════════════════════════════════════════════════╗");
-    println!("║      BENCHMARK: High Selectivity Filter (1% pass rate)           ║");
-    println!("╠══════════════════════════════════════════════════════════════════╣");
-    println!("║ Pattern: WHERE x == 42 (sparse result set)                       ║");
-    println!("╠══════════════════════════════════════════════════════════════════╣");
-    println!("║ Rows:        {:>12}                                       ║", NUM_ROWS);
-    println!("║ Matches:     {:>12} ({:.2}% selectivity)                    ║", result, selectivity);
-    println!("║ Min time:    {:>12.3} ms                                      ║", min as f64 / 1e6);
-    println!("║ Avg time:    {:>12.3} ms                                      ║", avg as f64 / 1e6);
-    println!("║ Throughput:  {:>12.2} M rows/sec                               ║", rows_per_sec / 1e6);
-    println!("║ Bandwidth:   {:>12.2} GB/sec                                   ║", gb_per_sec);
-    println!("╚══════════════════════════════════════════════════════════════════╝");
+    println!("High Selectivity Filter: {:.0} M rows/sec, {:.1} GB/s ({:.1}% selectivity)", rows_per_sec / 1e6, gb_per_sec, selectivity);
 }
 
 /// Benchmark: Weird pattern - multiple dependent comparisons with weird thresholds
@@ -4050,24 +3899,13 @@ fn bench_weird_predicate_chain() {
     }
 
     let min = *times.iter().min().unwrap();
-    let avg = times.iter().sum::<u64>() / times.len() as u64;
+    let _avg = times.iter().sum::<u64>() / times.len() as u64;
     let bytes = NUM_ROWS * 4 * 3;
     let gb_per_sec = bytes as f64 / 1e9 / (min as f64 / 1e9);
     let rows_per_sec = NUM_ROWS as f64 / (min as f64 / 1e9);
     let selectivity = result as f64 / NUM_ROWS as f64 * 100.0;
 
-    println!("\n╔══════════════════════════════════════════════════════════════════╗");
-    println!("║      BENCHMARK: Weird 3-Way Predicate Chain (I32X16)             ║");
-    println!("╠══════════════════════════════════════════════════════════════════╣");
-    println!("║ Pattern: (a BETWEEN 17,89) AND (b NOT BETWEEN 23,67) AND c==3    ║");
-    println!("╠══════════════════════════════════════════════════════════════════╣");
-    println!("║ Rows:        {:>12}                                       ║", NUM_ROWS);
-    println!("║ Matches:     {:>12} ({:.2}% selectivity)                    ║", result, selectivity);
-    println!("║ Min time:    {:>12.3} ms                                      ║", min as f64 / 1e6);
-    println!("║ Avg time:    {:>12.3} ms                                      ║", avg as f64 / 1e6);
-    println!("║ Throughput:  {:>12.2} M rows/sec                               ║", rows_per_sec / 1e6);
-    println!("║ Bandwidth:   {:>12.2} GB/sec                                   ║", gb_per_sec);
-    println!("╚══════════════════════════════════════════════════════════════════╝");
+    println!("Weird 3-Way Predicate: {:.0} M rows/sec, {:.1} GB/s ({:.1}% selectivity)", rows_per_sec / 1e6, gb_per_sec, selectivity);
 }
 
 /// Benchmark: Register pressure stress test - 8 columns with complex expression
@@ -4192,52 +4030,14 @@ fn bench_register_pressure_8col() {
     }
 
     let min = *times.iter().min().unwrap();
-    let avg = times.iter().sum::<u64>() / times.len() as u64;
+    let _avg = times.iter().sum::<u64>() / times.len() as u64;
     let bytes = NUM_ROWS * 8 * 9; // 8 input + 1 output
     let gb_per_sec = bytes as f64 / 1e9 / (min as f64 / 1e9);
     let rows_per_sec = NUM_ROWS as f64 / (min as f64 / 1e9);
 
-    println!("\n╔══════════════════════════════════════════════════════════════════╗");
-    println!("║      BENCHMARK: Register Pressure 8-Column Expression (F64X8)    ║");
-    println!("╠══════════════════════════════════════════════════════════════════╣");
-    println!("║ Pattern: ((a+b)*(c-d)) + ((e*f)-(g/h))                            ║");
-    println!("╠══════════════════════════════════════════════════════════════════╣");
-    println!("║ Rows:        {:>12}                                        ║", NUM_ROWS);
-    println!("║ Min time:    {:>12.3} ms                                      ║", min as f64 / 1e6);
-    println!("║ Avg time:    {:>12.3} ms                                      ║", avg as f64 / 1e6);
-    println!("║ Throughput:  {:>12.2} M rows/sec                               ║", rows_per_sec / 1e6);
-    println!("║ Bandwidth:   {:>12.2} GB/sec                                   ║", gb_per_sec);
-    println!("╚══════════════════════════════════════════════════════════════════╝");
+    println!("Register Pressure 8-Column: {:.0} M rows/sec, {:.1} GB/s", rows_per_sec / 1e6, gb_per_sec);
 }
 
-/// Print combined benchmark summary
-#[test]
-fn bench_summary() {
-    if !has_avx512() {
-        println!("AVX-512 not available");
-        return;
-    }
-
-    println!("\n");
-    println!("╔══════════════════════════════════════════════════════════════════╗");
-    println!("║                    AVX-512 BENCHMARK SUMMARY                     ║");
-    println!("╠══════════════════════════════════════════════════════════════════╣");
-    println!("║ Run individual benchmarks for detailed results:                  ║");
-    println!("║   cargo test -p cranelift-jit --test avx512_sql_ops --release \\  ║");
-    println!("║       -- --nocapture bench_                                      ║");
-    println!("╠══════════════════════════════════════════════════════════════════╣");
-    println!("║ BENCHMARK                          │ TYPE     │ EXPECTED GB/s    ║");
-    println!("╠════════════════════════════════════╪══════════╪══════════════════╣");
-    println!("║ Complex 4-column filter (I32X16)   │ Compute  │ 50-60 GB/s       ║");
-    println!("║ TPC-H 4-way aggregation (I64X8)    │ Mixed    │ 40-50 GB/s       ║");
-    println!("║ Chained FMA operations (F64X8)     │ Compute  │ 30-40 GB/s       ║");
-    println!("║ High selectivity filter (1%)       │ Memory   │ 60-80 GB/s       ║");
-    println!("║ Weird 3-way predicate chain        │ Compute  │ 45-55 GB/s       ║");
-    println!("║ Register pressure 8-column         │ Mixed    │ 35-45 GB/s       ║");
-    println!("╚════════════════════════════════════╧══════════╧══════════════════╝");
-    println!("\nExpected throughput varies by CPU model and memory bandwidth.");
-    println!("Modern Xeon/EPYC with DDR5 should hit upper bounds.");
-}
 
 // =============================================================================
 // OPTIMIZED BENCHMARKS: Using vhigh_bits + popcnt instead of 16x extractlane
@@ -4352,7 +4152,7 @@ fn bench_optimized_filter_popcnt() {
     }
 
     let min = *times.iter().min().unwrap();
-    let avg = times.iter().sum::<u64>() / times.len() as u64;
+    let _avg = times.iter().sum::<u64>() / times.len() as u64;
     let bytes = NUM_ROWS * 4;
     let gb_per_sec = bytes as f64 / 1e9 / (min as f64 / 1e9);
     let rows_per_sec = NUM_ROWS as f64 / (min as f64 / 1e9);
@@ -4361,19 +4161,7 @@ fn bench_optimized_filter_popcnt() {
     let expected = (NUM_ROWS / 100) * 49; // 49 values > 50 per 100
     assert_eq!(result as usize, expected, "Count mismatch");
 
-    println!("\n╔══════════════════════════════════════════════════════════════════╗");
-    println!("║      BENCHMARK: OPTIMIZED Filter (vhigh_bits + popcnt)           ║");
-    println!("╠══════════════════════════════════════════════════════════════════╣");
-    println!("║ Pattern: WHERE x > 50 (using VPMOVD2M + KMOVW + POPCNT)          ║");
-    println!("║ Optimization: 3 ops vs 64 ops (20x fewer instructions!)          ║");
-    println!("╠══════════════════════════════════════════════════════════════════╣");
-    println!("║ Rows:        {:>12}                                        ║", NUM_ROWS);
-    println!("║ Matches:     {:>12} ({:.1}%)                              ║", result, 100.0 * result as f64 / NUM_ROWS as f64);
-    println!("║ Min time:    {:>12.3} ms                                      ║", min as f64 / 1e6);
-    println!("║ Avg time:    {:>12.3} ms                                      ║", avg as f64 / 1e6);
-    println!("║ Throughput:  {:>12.2} M rows/sec                               ║", rows_per_sec / 1e6);
-    println!("║ Bandwidth:   {:>12.2} GB/sec                                   ║", gb_per_sec);
-    println!("╚══════════════════════════════════════════════════════════════════╝");
+    println!("OPTIMIZED Filter (vhigh_bits+popcnt): {:.0} M rows/sec, {:.1} GB/s", rows_per_sec / 1e6, gb_per_sec);
 }
 
 /// Benchmark: Unoptimized filter counting for comparison (16x extractlane)
@@ -4479,7 +4267,7 @@ fn bench_unoptimized_filter_extractlane() {
     }
 
     let min = *times.iter().min().unwrap();
-    let avg = times.iter().sum::<u64>() / times.len() as u64;
+    let _avg = times.iter().sum::<u64>() / times.len() as u64;
     let bytes = NUM_ROWS * 4;
     let gb_per_sec = bytes as f64 / 1e9 / (min as f64 / 1e9);
     let rows_per_sec = NUM_ROWS as f64 / (min as f64 / 1e9);
@@ -4488,17 +4276,5 @@ fn bench_unoptimized_filter_extractlane() {
     let expected = (NUM_ROWS / 100) * 49;
     assert_eq!(result as usize, expected, "Count mismatch");
 
-    println!("\n╔══════════════════════════════════════════════════════════════════╗");
-    println!("║      BENCHMARK: UNOPTIMIZED Filter (16x extractlane)             ║");
-    println!("╠══════════════════════════════════════════════════════════════════╣");
-    println!("║ Pattern: WHERE x > 50 (using extractlane loop - 64 ops!)         ║");
-    println!("║ Baseline for comparison with optimized version                   ║");
-    println!("╠══════════════════════════════════════════════════════════════════╣");
-    println!("║ Rows:        {:>12}                                        ║", NUM_ROWS);
-    println!("║ Matches:     {:>12} ({:.1}%)                              ║", result, 100.0 * result as f64 / NUM_ROWS as f64);
-    println!("║ Min time:    {:>12.3} ms                                      ║", min as f64 / 1e6);
-    println!("║ Avg time:    {:>12.3} ms                                      ║", avg as f64 / 1e6);
-    println!("║ Throughput:  {:>12.2} M rows/sec                               ║", rows_per_sec / 1e6);
-    println!("║ Bandwidth:   {:>12.2} GB/sec                                   ║", gb_per_sec);
-    println!("╚══════════════════════════════════════════════════════════════════╝");
+    println!("UNOPTIMIZED Filter (extractlane): {:.0} M rows/sec, {:.1} GB/s", rows_per_sec / 1e6, gb_per_sec);
 }

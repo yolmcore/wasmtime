@@ -54,6 +54,7 @@ impl dsl::Format {
     /// once Cranelift has switched to using this assembler predominantly
     /// (TODO).
     #[must_use]
+    #[allow(dead_code, reason = "Will be used when switching to Intel-style printing")]
     pub(crate) fn generate_att_style_operands(&self) -> String {
         self.generate_att_style_operands_with_masking(false, false)
     }
@@ -311,7 +312,7 @@ impl dsl::Format {
         let bcast = false;
         fmtln!(f, "let bcast = {bcast};");
         let bits = format!("ll, pp, mmm, w, bcast");
-        let is4 = false;
+        let _is4 = false;
 
         let length_bytes = match evex.length {
             dsl::Length::LZ | dsl::Length::LIG => unimplemented!(),
