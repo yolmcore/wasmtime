@@ -331,14 +331,17 @@ fn enc_xmm(xmm: &Xmm) -> u8 {
 /// We subtract 32 to get the actual hardware encoding (0-7).
 #[inline]
 fn enc_mask(mask: &Mask) -> u8 {
-    if let Some(real) = mask.to_reg().to_real_reg() {
-        let hw_enc = real.hw_enc();
-        // K-registers use PReg index 32-39, but actual hw encoding is 0-7
-        debug_assert!(hw_enc >= 32 && hw_enc < 40, "invalid k-register hw_enc: {hw_enc}");
-        hw_enc - 32
-    } else {
-        unreachable!()
-    }
+    let real = mask
+        .to_reg()
+        .to_real_reg()
+        .expect("enc_mask requires an allocated physical register, not a virtual register");
+    let hw_enc = real.hw_enc();
+    // K-registers use PReg index 32-39, but actual hw encoding is 0-7
+    debug_assert!(
+        hw_enc >= 32 && hw_enc < 40,
+        "invalid k-register hw_enc: {hw_enc}"
+    );
+    hw_enc - 32
 }
 
 /// A wrapper to implement the `cranelift-assembler-x64` register allocation trait,

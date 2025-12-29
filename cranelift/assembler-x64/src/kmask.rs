@@ -1,4 +1,12 @@
-//! K-mask register operands; see [`Kmask`].
+//! K-mask register operands for AVX-512 predicated operations.
+//!
+//! AVX-512 introduces 8 opmask registers (k0-k7) for predicated (masked)
+//! operations. Each bit in a mask register corresponds to one vector element.
+//!
+//! **Special case**: k0 is hardcoded as "no masking" - when used as a mask,
+//! all elements are processed unconditionally.
+//!
+//! See [`Kmask`] for the register type.
 
 use crate::{AsReg, CodeSink, rex::encode_modrm};
 
