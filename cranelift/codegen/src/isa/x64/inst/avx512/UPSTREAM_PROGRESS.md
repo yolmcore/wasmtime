@@ -2,7 +2,7 @@
 
 ## Status: IN PROGRESS
 
-Last Updated: 2025-12-28
+Last Updated: 2025-12-29
 
 ---
 
@@ -25,7 +25,7 @@ Last Updated: 2025-12-28
 | H3 | Rule formatting | DONE | Fixed 246 rules (rule 17/18 spacing) |
 | H4 | VCVTPS2PD tuple type | DONE | Fixed to Half, also fixed VCVTDQ2PD |
 | H5 | Move benchmarks | DONE | Already in correct location (cranelift/jit/tests/) |
-| H6 | Missing edge case tests | DEFER | Future work - tests cover happy paths |
+| H6 | Missing edge case tests | DONE | Added 16 edge case tests for boundary values, special FP values |
 
 ## Medium Priority Issues
 
@@ -42,9 +42,9 @@ Last Updated: 2025-12-28
 
 | # | Issue | Status | Notes |
 |---|-------|--------|-------|
-| L1 | Format name consolidation | DEFER | Style preference - not blocking |
+| L1 | Format name consolidation | DONE | Added comprehensive docs to avx512.rs header |
 | L2 | VL variants | DEFER | 128/256-bit EVEX - future work |
-| L3 | Gather/scatter support | DEFER | Future work |
+| L3 | Gather/scatter support | DEFER | Requires VSIB addressing mode - not in DSL |
 
 ---
 
@@ -55,7 +55,7 @@ Last Updated: 2025-12-28
 | cranelift-assembler-x64 | ✅ PASS | 16 tests |
 | cranelift-codegen | ✅ PASS | 218 tests |
 | avx512_sql_ops | ✅ PASS | 22 tests |
-| avx512_e2e | ✅ PASS | 17 tests |
+| avx512_e2e | ✅ PASS | 119 tests |
 | avx512_perf | ✅ PASS | 8 tests |
 
 ---
@@ -101,3 +101,21 @@ Last Updated: 2025-12-28
   - Removed 109 redundant "PASSED" println statements from avx512_e2e.rs
   - Removed "PASS" statements from avx512_sql_ops.rs
   - Kept informational "Skipping" and benchmark output messages
+- H6: Added comprehensive edge case tests to avx512_e2e.rs
+  - Integer boundary tests: MIN/MAX values, wraparound behavior
+  - Float special values: NaN, Infinity, -0.0, subnormals
+  - Division edge cases: div by zero, 0/0, Inf/Inf
+  - sqrt edge cases: sqrt(0), sqrt(-1), sqrt(Inf)
+  - Bitwise pattern tests: all-ones, all-zeros, x&x, x^x
+  - Negation overflow: -MIN = MIN for signed integers
+  - Signed/unsigned comparison boundary tests
+  - Float comparison with NaN (unordered)
+  - Lane pattern tests (alternating, first/last only)
+- L1: Added format naming documentation to avx512.rs
+  - Documented primary prefixes: Z (512-bit), Y (256-bit), K (k-mask), x/y (cross-width)
+  - Documented suffixes: _unary, l/s (load/store), _km (masked), _fma, _i (immediate)
+  - Documented specialized patterns: Z_ternlog, Z_perm2, ZC (compare), etc.
+- L3: Reviewed gather/scatter status
+  - VSIB addressing mode (vector index) not yet supported in DSL
+  - Instructions like VPGATHERD/VPSCATTERD need this first
+  - Appropriately deferred until DSL supports VSIB

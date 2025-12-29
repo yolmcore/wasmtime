@@ -4,6 +4,43 @@
 //! replacing the manual definitions in `cranelift/codegen/src/isa/x64/inst/avx512/`.
 //!
 //! All instructions use EVEX encoding with 512-bit vector length (L=10b).
+//!
+//! ## Format Naming Convention
+//!
+//! Format names uniquely identify instruction operand patterns. The naming scheme:
+//!
+//! ### Primary Prefixes (Vector Size)
+//! - `Z`  - 512-bit ZMM operations
+//! - `Y`  - 256-bit YMM operations
+//! - `K`  - K-mask register operations
+//! - `x`, `y` - Lower-case for cross-width conversions (e.g., `xZ` = XMM to ZMM)
+//!
+//! ### Suffixes (Operation Type)
+//! - (none)    - Binary: `zmm1 = op(zmm2, zmm3/mem)` - most common
+//! - `_unary`  - Unary: `zmm1 = op(zmm2/mem)`
+//! - `l`       - Load: `zmm1 = load(mem)` (register-first destination)
+//! - `s`       - Store: `store(mem, zmm1)` (memory-first destination)
+//! - `_km`     - With k-mask: includes mask register operand
+//! - `_fma`    - Fused multiply-add: 3-source accumulator pattern
+//! - `_i`      - With immediate: includes imm8 operand
+//!
+//! ### Specialized Patterns
+//! - `Z_ternlog`    - Ternary logic (3 sources + imm8)
+//! - `Z_perm2`      - Two-source permute with immediate
+//! - `Z_laneshuffle`- Lane shuffle operations
+//! - `Z_immrotate`  - Immediate rotate operations
+//! - `Z_align`      - Alignment operations
+//! - `ZC`           - Compare to k-mask output
+//! - `Zk`           - Operations with k-mask as operand
+//!
+//! ### Examples
+//! - `Z`        = `vpaddd zmm1, zmm2, zmm3/m512`
+//! - `Z_unary`  = `vsqrtps zmm1, zmm2/m512`
+//! - `Zl`       = `vmovaps zmm1, m512` (load)
+//! - `Zs`       = `vmovaps m512, zmm1` (store)
+//! - `Z_km`     = `vaddps zmm1{k1}, zmm2, zmm3/m512`
+//! - `K`        = `kmovq k1, k2/m64`
+//! - `ZC`       = `vpcmpd k1, zmm2, zmm3/m512, imm8`
 
 use crate::dsl::{Feature::*, Inst, Length::*, Location::*, TupleType::*};
 use crate::dsl::{evex, fmt, inst, r, rw, vex, w};
