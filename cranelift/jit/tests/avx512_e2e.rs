@@ -1207,7 +1207,6 @@ fn test_i64x8_iadd() {
     }
     assert_eq!(result, I64x8::splat(0));
 
-    println!("test_i64x8_iadd: PASSED");
 }
 
 #[test]
@@ -1240,7 +1239,6 @@ fn test_i32x16_iadd() {
         ])
     );
 
-    println!("test_i32x16_iadd: PASSED");
 }
 
 // =============================================================================
@@ -1272,7 +1270,6 @@ fn test_i64x8_isub() {
 
     assert_eq!(result, I64x8::new([99, 198, 297, 396, 495, 594, 693, 792]));
 
-    println!("test_i64x8_isub: PASSED");
 }
 
 #[test]
@@ -1305,7 +1302,6 @@ fn test_i32x16_isub() {
         ])
     );
 
-    println!("test_i32x16_isub: PASSED");
 }
 
 // =============================================================================
@@ -1346,7 +1342,6 @@ fn test_i64x8_band() {
     }
     assert_eq!(result, I64x8::new([1, 2, 3, 4, 5, 6, 7, 8]));
 
-    println!("test_i64x8_band: PASSED");
 }
 
 #[test]
@@ -1374,7 +1369,6 @@ fn test_i32x16_band() {
 
     assert_eq!(result, I32x16::splat(0x00FF));
 
-    println!("test_i32x16_band: PASSED");
 }
 
 // =============================================================================
@@ -1406,7 +1400,6 @@ fn test_i64x8_bor() {
 
     assert_eq!(result, I64x8::splat(0xFF));
 
-    println!("test_i64x8_bor: PASSED");
 }
 
 #[test]
@@ -1434,7 +1427,6 @@ fn test_i32x16_bor() {
 
     assert_eq!(result, I32x16::splat(0xFFFF));
 
-    println!("test_i32x16_bor: PASSED");
 }
 
 // =============================================================================
@@ -1474,7 +1466,6 @@ fn test_i64x8_bxor() {
     }
     assert_eq!(result, I64x8::splat(-1));
 
-    println!("test_i64x8_bxor: PASSED");
 }
 
 #[test]
@@ -1502,7 +1493,6 @@ fn test_i32x16_bxor() {
 
     assert_eq!(result, I32x16::splat(0xFFFF));
 
-    println!("test_i32x16_bxor: PASSED");
 }
 
 // =============================================================================
@@ -1534,7 +1524,6 @@ fn test_i64x8_smin() {
 
     assert_eq!(result, I64x8::new([5, -5, -100, -100, 0, -50, -50, -1000]));
 
-    println!("test_i64x8_smin: PASSED");
 }
 
 #[test]
@@ -1562,7 +1551,6 @@ fn test_i64x8_smax() {
 
     assert_eq!(result, I64x8::new([10, 10, 100, 100, 0, 50, 50, 1000]));
 
-    println!("test_i64x8_smax: PASSED");
 }
 
 #[test]
@@ -1595,7 +1583,6 @@ fn test_i32x16_smin() {
         ])
     );
 
-    println!("test_i32x16_smin: PASSED");
 }
 
 #[test]
@@ -1626,7 +1613,6 @@ fn test_i32x16_smax() {
         I32x16::new([10, 10, 100, 100, 0, 50, 50, 1000, 8, 7, 6, 5, 5, 6, 7, 8])
     );
 
-    println!("test_i32x16_smax: PASSED");
 }
 
 // =============================================================================
@@ -1659,7 +1645,6 @@ fn test_i64x8_umin() {
 
     assert_eq!(result, I64x8::new([5, 5, 100, 100, 0, 50, 1, 500]));
 
-    println!("test_i64x8_umin: PASSED");
 }
 
 #[test]
@@ -1687,7 +1672,6 @@ fn test_i64x8_umax() {
 
     assert_eq!(result, I64x8::new([10, 10, 200, 200, 0, 100, 2, 1000]));
 
-    println!("test_i64x8_umax: PASSED");
 }
 
 // =============================================================================
@@ -1793,7 +1777,6 @@ fn test_columnar_sum_pattern() {
         I64x8::new([1111, 2222, 3333, 4444, 5555, 6666, 7777, 8888])
     );
 
-    println!("test_columnar_sum_pattern: PASSED");
 }
 
 /// Test a vectorized comparison pattern (useful for WHERE clauses)
@@ -1867,7 +1850,6 @@ fn test_vectorized_filter_mask() {
     compiler.module.clear_context(&mut compiler.ctx);
     compiler.module.finalize_definitions().unwrap();
 
-    println!("test_vectorized_filter_mask: PASSED (compilation successful)");
 }
 
 // =============================================================================
@@ -1943,7 +1925,6 @@ fn test_vcode_vpaddq_used() {
         "Expected VMOVDQU64 (512-bit load) instruction, but it wasn't generated"
     );
 
-    println!("test_vcode_vpaddq_used: PASSED - verified VPADDQ with VMOVDQU64");
 }
 
 /// Test that verifies VPADDD (512-bit 32-bit element add) instruction is generated.
@@ -2019,7 +2000,6 @@ fn test_vcode_vpaddd_used() {
         "Expected VMOVDQU32 (512-bit load) instruction, but it wasn't generated"
     );
 
-    println!("test_vcode_vpaddd_used: PASSED - verified VPADDD with VMOVDQU32");
 }
 
 /// Test that verifies VPANDQ/VPORD/VPXORQ (512-bit bitwise) instructions are generated.
@@ -2102,7 +2082,6 @@ fn test_vcode_bitwise_ops_used() {
         "Expected VPORQ instruction for I64X8 bor, but it wasn't generated"
     );
 
-    println!("test_vcode_bitwise_ops_used: PASSED - verified VPANDQ, VPXORQ, VPORQ");
 }
 
 /// Test that verifies VPMINSQ/VPMAXSQ (512-bit signed min/max) instructions are generated.
@@ -2178,7 +2157,6 @@ fn test_vcode_minmax_ops_used() {
         "Expected VPMAXSQ instruction for I64X8 smax, but it wasn't generated"
     );
 
-    println!("test_vcode_minmax_ops_used: PASSED - verified VPMINSQ, VPMAXSQ");
 }
 
 /// Test that verifies VMOVDQU64 (512-bit load/store) instructions are generated.
@@ -2242,7 +2220,6 @@ fn test_vcode_load_store_512bit() {
         "Expected VMOVDQU64/32 instruction for 512-bit load/store, but it wasn't generated"
     );
 
-    println!("test_vcode_load_store_512bit: PASSED - verified VMOVDQU64/32");
 }
 
 // NOTE: VPOPCNTD/Q tests are disabled because they require AVX-512 VPOPCNTDQ extension.
@@ -2307,7 +2284,6 @@ fn test_i64x8_imul() {
     }
     assert_eq!(result, I64x8::new([-1, -4, 9, -16, 25, -36, 49, -64]));
 
-    println!("test_i64x8_imul: PASSED");
 }
 
 /// Test 32-bit multiply low (VPMULLD).
@@ -2341,7 +2317,6 @@ fn test_i32x16_imul() {
         ])
     );
 
-    println!("test_i32x16_imul: PASSED");
 }
 
 // =============================================================================
@@ -2396,7 +2371,6 @@ fn test_i64x8_clz() {
     }
     assert_eq!(result, I64x8::new([63, 62, 61, 60, 59, 58, 57, 56]));
 
-    println!("test_i64x8_clz: PASSED");
 }
 
 /// Test I32X16 clz - VPLZCNTD instruction (AVX-512CD).
@@ -2449,7 +2423,6 @@ fn test_i32x16_clz() {
         I32x16::new([32, 31, 30, 29, 23, 16, 15, 8, 7, 3, 1, 0, 3, 19, 27, 31])
     );
 
-    println!("test_i32x16_clz: PASSED");
 }
 
 // =============================================================================
@@ -2503,7 +2476,6 @@ fn test_i64x8_vpsllv() {
         ])
     );
 
-    println!("test_i64x8_vpsllv: PASSED");
 }
 
 /// Test I32X16 per-element variable left shift (VPSLLVD).
@@ -2538,7 +2510,6 @@ fn test_i32x16_vpsllv() {
         ])
     );
 
-    println!("test_i32x16_vpsllv: PASSED");
 }
 
 /// Test I64X8 per-element variable unsigned right shift (VPSRLVQ).
@@ -2580,7 +2551,6 @@ fn test_i64x8_vpsrlv() {
         ])
     );
 
-    println!("test_i64x8_vpsrlv: PASSED");
 }
 
 /// Test I32X16 per-element variable unsigned right shift (VPSRLVD).
@@ -2630,7 +2600,6 @@ fn test_i32x16_vpsrlv() {
         ])
     );
 
-    println!("test_i32x16_vpsrlv: PASSED");
 }
 
 /// Test I64X8 per-element variable signed right shift (VPSRAVQ).
@@ -2681,7 +2650,6 @@ fn test_i64x8_vpsrav() {
         ])
     );
 
-    println!("test_i64x8_vpsrav: PASSED");
 }
 
 /// Test I32X16 per-element variable signed right shift (VPSRAVD).
@@ -2718,7 +2686,6 @@ fn test_i32x16_vpsrav() {
         ])
     );
 
-    println!("test_i32x16_vpsrav: PASSED");
 }
 
 // =============================================================================
@@ -2818,7 +2785,6 @@ fn test_i64x8_pmullq_low() {
     // 5*3=15, 10*5=50, 100*2=200, 1000*4=4000
     assert_eq!(result, I64x8::new([15, 50, 200, 4000, 15, 50, 200, 4000]));
 
-    println!("test_i64x8_pmullq_low: PASSED");
 }
 
 /// Test I64X8 signed widening multiply (VPMULDQ).
@@ -2904,7 +2870,6 @@ fn test_i64x8_smullq_low() {
     ]);
     assert_eq!(result, expected);
 
-    println!("test_i64x8_smullq_low: PASSED");
 }
 
 // =============================================================================
@@ -2983,7 +2948,6 @@ fn test_f64x8_fmin() {
     assert_eq!(result.0[6], f64::MIN);
     assert_eq!(result.0[7], f64::MIN);
 
-    println!("test_f64x8_fmin: PASSED");
 }
 
 /// Test F64X8 maximum (VMAXPD).
@@ -3025,7 +2989,6 @@ fn test_f64x8_fmax() {
         F64x8::new([2.0, -3.0, -3.0, 0.0, 2.0, 6.0, 4.0, 0.5])
     );
 
-    println!("test_f64x8_fmax: PASSED");
 }
 
 /// Test F32X16 minimum (VMINPS).
@@ -3062,7 +3025,6 @@ fn test_f32x16_fmin() {
         ])
     );
 
-    println!("test_f32x16_fmin: PASSED");
 }
 
 /// Test F32X16 maximum (VMAXPS).
@@ -3099,7 +3061,6 @@ fn test_f32x16_fmax() {
         ])
     );
 
-    println!("test_f32x16_fmax: PASSED");
 }
 
 // =============================================================================
@@ -3167,7 +3128,6 @@ fn test_i64x8_to_f64x8() {
     assert_eq!(result.0[6], -1.0);
     assert_eq!(result.0[7], 123456789012345.0);
 
-    println!("test_i64x8_to_f64x8: PASSED");
 }
 
 /// Test F64X8 -> I64X8 conversion with saturation (VCVTTPD2QQ).
@@ -3222,7 +3182,6 @@ fn test_f64x8_to_i64x8() {
     assert_eq!(result.0[6], -2);
     assert_eq!(result.0[7], -3);
 
-    println!("test_f64x8_to_i64x8: PASSED");
 }
 
 /// Test I32X16 -> F32X16 conversion (VCVTDQ2PS).
@@ -3276,7 +3235,6 @@ fn test_i32x16_to_f32x16() {
     assert_eq!(result.0[7], 10000.0);
     assert_eq!(result.0[15], 42.0);
 
-    println!("test_i32x16_to_f32x16: PASSED");
 }
 
 /// Test F32X16 -> I32X16 conversion with saturation (VCVTTPS2DQ).
@@ -3320,7 +3278,6 @@ fn test_f32x16_to_i32x16() {
     assert_eq!(result.0[10], -1); // -1.9 truncated toward zero
     assert_eq!(result.0[15], 42); // 42.7 truncated
 
-    println!("test_f32x16_to_i32x16: PASSED");
 }
 
 // =============================================================================
@@ -3361,7 +3318,6 @@ fn test_f64x8_fma() {
     assert_eq!(result.0[6], 7.0 * 8.0 + 70.0); // 126.0
     assert_eq!(result.0[7], 8.0 * 9.0 + 80.0); // 152.0
 
-    println!("test_f64x8_fma: PASSED");
 }
 
 /// Test F64X8 fused multiply-subtract fusion: fsub(fmul(x, y), z) = x * y - z (VFMSUB213PD).
@@ -3402,7 +3358,6 @@ fn test_f64x8_fmsub_fusion() {
     assert_eq!(result.0[6], 70.0 * 2.0 - 35.0); // 105.0
     assert_eq!(result.0[7], 80.0 * 2.0 - 40.0); // 120.0
 
-    println!("test_f64x8_fmsub_fusion: PASSED");
 }
 
 /// Test F64X8 fused negate-multiply-add fusion: fsub(z, fmul(x, y)) = z - x * y (VFNMADD213PD).
@@ -3443,7 +3398,6 @@ fn test_f64x8_fnmadd_fusion() {
     assert_eq!(result.0[6], 100.0 - 7.0 * 2.0); // 86.0
     assert_eq!(result.0[7], 100.0 - 8.0 * 2.0); // 84.0
 
-    println!("test_f64x8_fnmadd_fusion: PASSED");
 }
 
 // =============================================================================
@@ -3495,7 +3449,6 @@ fn test_i64x8_iabs() {
         ])
     );
 
-    println!("test_i64x8_iabs: PASSED");
 }
 
 /// Test I32X16 iabs - VPABSD instruction.
@@ -3559,7 +3512,6 @@ fn test_i32x16_iabs() {
         ])
     );
 
-    println!("test_i32x16_iabs: PASSED");
 }
 
 // =============================================================================
@@ -3605,7 +3557,6 @@ fn test_i64x8_splat() {
     }
     assert_eq!(result, I64x8::splat(0x123456789ABCDEF0));
 
-    println!("test_i64x8_splat: PASSED");
 }
 
 /// Test I32X16 splat - VPBROADCASTD instruction.
@@ -3647,7 +3598,6 @@ fn test_i32x16_splat() {
     }
     assert_eq!(result, I32x16::splat(0x12345678));
 
-    println!("test_i32x16_splat: PASSED");
 }
 
 // =============================================================================
@@ -3701,7 +3651,6 @@ fn test_i64x8_popcnt() {
     assert_eq!(result.0[6], 64); // popcnt(all 1s)
     assert_eq!(result.0[7], (0x1234_5678_9ABC_DEF0_u64).count_ones() as i64);
 
-    println!("test_i64x8_popcnt: PASSED");
 }
 
 /// Test I32X16 popcnt - VPOPCNTD instruction (AVX-512 VPOPCNTDQ).
@@ -3766,7 +3715,6 @@ fn test_i32x16_popcnt() {
     assert_eq!(result.0[14], 0xDEADBEEF_u32.count_ones() as i32);
     assert_eq!(result.0[15], 0xCAFEBABE_u32.count_ones() as i32);
 
-    println!("test_i32x16_popcnt: PASSED");
 }
 
 // =============================================================================
@@ -3885,7 +3833,6 @@ fn test_i32x16_masked_iadd() {
         ])
     );
 
-    println!("test_i32x16_masked_iadd: PASSED");
 }
 
 /// Test masked iadd fusion for I64X8: bitselect(mask, iadd(x, y), passthru)
@@ -3982,7 +3929,6 @@ fn test_i64x8_masked_iadd() {
         I64x8::new([11, -200, 33, -400, 55, -600, 77, -800,])
     );
 
-    println!("test_i64x8_masked_iadd: PASSED");
 }
 
 // =============================================================================
@@ -4090,7 +4036,6 @@ fn test_i32x16_masked_umin_fusion() {
         ])
     );
 
-    println!("test_i32x16_masked_umin_fusion: PASSED");
 }
 
 /// Test masked umax fusion for I32X16: bitselect(mask, umax(x, y), passthru)
@@ -4192,7 +4137,6 @@ fn test_i32x16_masked_umax_fusion() {
         ])
     );
 
-    println!("test_i32x16_masked_umax_fusion: PASSED");
 }
 
 /// Test masked umin fusion for I64X8: bitselect(mask, umin(x, y), passthru)
@@ -4282,7 +4226,6 @@ fn test_i64x8_masked_umin_fusion() {
         I64x8::new([100, -999, 150, -999, 150, -999, 150, -999,])
     );
 
-    println!("test_i64x8_masked_umin_fusion: PASSED");
 }
 
 // =============================================================================
@@ -4392,7 +4335,6 @@ fn test_f32x16_masked_fadd_fusion() {
         ])
     );
 
-    println!("test_f32x16_masked_fadd_fusion: PASSED");
 }
 
 /// Test masked fmul fusion for F32X16: bitselect(mask, fmul(x, y), passthru)
@@ -4493,7 +4435,6 @@ fn test_f32x16_masked_fmul_fusion() {
         ])
     );
 
-    println!("test_f32x16_masked_fmul_fusion: PASSED");
 }
 
 /// Test masked fmin fusion for F32X16: bitselect(mask, fmin(x, y), passthru)
@@ -4594,7 +4535,6 @@ fn test_f32x16_masked_fmin_fusion() {
         ])
     );
 
-    println!("test_f32x16_masked_fmin_fusion: PASSED");
 }
 
 // =============================================================================
@@ -4690,7 +4630,6 @@ fn test_f64x8_masked_fadd_fusion() {
         F64x8::new([1.5, -100.0, 3.5, -100.0, 5.5, -100.0, 7.5, -100.0,])
     );
 
-    println!("test_f64x8_masked_fadd_fusion: PASSED");
 }
 
 /// Test masked fmul fusion for F64X8: bitselect(mask, fmul(x, y), passthru)
@@ -4781,7 +4720,6 @@ fn test_f64x8_masked_fmul_fusion() {
         F64x8::new([2.0, -100.0, 6.0, -100.0, 10.0, -100.0, 14.0, -100.0,])
     );
 
-    println!("test_f64x8_masked_fmul_fusion: PASSED");
 }
 
 /// Test masked fmin fusion for F64X8: bitselect(mask, fmin(x, y), passthru)
@@ -4872,7 +4810,6 @@ fn test_f64x8_masked_fmin_fusion() {
         F64x8::new([1.0, -100.0, 3.0, -100.0, 5.0, -100.0, 5.0, -100.0,])
     );
 
-    println!("test_f64x8_masked_fmin_fusion: PASSED");
 }
 
 /// Test masked fsub fusion for F32X16: bitselect(mask, fsub(x, y), passthru)
@@ -4974,7 +4911,6 @@ fn test_f32x16_masked_fsub_fusion() {
         ])
     );
 
-    println!("test_f32x16_masked_fsub_fusion: PASSED");
 }
 
 /// Test masked fdiv fusion for F32X16: bitselect(mask, fdiv(x, y), passthru)
@@ -5076,7 +5012,6 @@ fn test_f32x16_masked_fdiv_fusion() {
         ])
     );
 
-    println!("test_f32x16_masked_fdiv_fusion: PASSED");
 }
 
 /// Test masked fmax fusion for F32X16: bitselect(mask, fmax(x, y), passthru)
@@ -5177,7 +5112,6 @@ fn test_f32x16_masked_fmax_fusion() {
         ])
     );
 
-    println!("test_f32x16_masked_fmax_fusion: PASSED");
 }
 
 /// Test masked fsub fusion for F64X8: bitselect(mask, fsub(x, y), passthru)
@@ -5268,7 +5202,6 @@ fn test_f64x8_masked_fsub_fusion() {
         F64x8::new([5.0, -100.0, 25.0, -100.0, 45.0, -100.0, 65.0, -100.0,])
     );
 
-    println!("test_f64x8_masked_fsub_fusion: PASSED");
 }
 
 /// Test masked fdiv fusion for F64X8: bitselect(mask, fdiv(x, y), passthru)
@@ -5359,7 +5292,6 @@ fn test_f64x8_masked_fdiv_fusion() {
         F64x8::new([5.0, -100.0, 15.0, -100.0, 25.0, -100.0, 35.0, -100.0,])
     );
 
-    println!("test_f64x8_masked_fdiv_fusion: PASSED");
 }
 
 /// Test masked fmax fusion for F64X8: bitselect(mask, fmax(x, y), passthru)
@@ -5450,7 +5382,6 @@ fn test_f64x8_masked_fmax_fusion() {
         F64x8::new([5.0, -100.0, 5.0, -100.0, 5.0, -100.0, 7.0, -100.0,])
     );
 
-    println!("test_f64x8_masked_fmax_fusion: PASSED");
 }
 // NOTE: Masked shift fusion patterns are not implemented because CLIF's ishl/ushr/sshr
 // instructions take a scalar shift amount, not a per-element vector. Implementing masked
@@ -5496,7 +5427,6 @@ fn test_i8x64_iadd() {
         expected[i] = (i + 1) as i8;
     }
     assert_eq!(result, I8x64::new(expected));
-    println!("test_i8x64_iadd: PASSED");
 }
 
 #[test]
@@ -5531,7 +5461,6 @@ fn test_i8x64_isub() {
         expected[i] = (i + 5) as i8;
     }
     assert_eq!(result, I8x64::new(expected));
-    println!("test_i8x64_isub: PASSED");
 }
 
 #[test]
@@ -5567,7 +5496,6 @@ fn test_i8x64_smin() {
         expected[i] = std::cmp::min(a_arr[i], 0);
     }
     assert_eq!(result, I8x64::new(expected));
-    println!("test_i8x64_smin: PASSED");
 }
 
 #[test]
@@ -5602,7 +5530,6 @@ fn test_i8x64_smax() {
         expected[i] = std::cmp::max(a_arr[i], 0);
     }
     assert_eq!(result, I8x64::new(expected));
-    println!("test_i8x64_smax: PASSED");
 }
 
 #[test]
@@ -5639,7 +5566,6 @@ fn test_i8x64_umin() {
         expected[i] = std::cmp::min(a_u, b_u) as i8;
     }
     assert_eq!(result, I8x64::new(expected));
-    println!("test_i8x64_umin: PASSED");
 }
 
 #[test]
@@ -5675,7 +5601,6 @@ fn test_i8x64_umax() {
         expected[i] = std::cmp::max(a_u, b_u) as i8;
     }
     assert_eq!(result, I8x64::new(expected));
-    println!("test_i8x64_umax: PASSED");
 }
 
 // =============================================================================
@@ -5714,7 +5639,6 @@ fn test_i16x32_iadd() {
         expected[i] = (i * 100 + 1) as i16;
     }
     assert_eq!(result, I16x32::new(expected));
-    println!("test_i16x32_iadd: PASSED");
 }
 
 #[test]
@@ -5748,7 +5672,6 @@ fn test_i16x32_isub() {
         expected[i] = (i * 100) as i16;
     }
     assert_eq!(result, I16x32::new(expected));
-    println!("test_i16x32_isub: PASSED");
 }
 
 #[test]
@@ -5782,7 +5705,6 @@ fn test_i16x32_smin() {
         expected[i] = std::cmp::min(a_arr[i], 0);
     }
     assert_eq!(result, I16x32::new(expected));
-    println!("test_i16x32_smin: PASSED");
 }
 
 #[test]
@@ -5816,7 +5738,6 @@ fn test_i16x32_smax() {
         expected[i] = std::cmp::max(a_arr[i], 0);
     }
     assert_eq!(result, I16x32::new(expected));
-    println!("test_i16x32_smax: PASSED");
 }
 
 #[test]
@@ -5852,7 +5773,6 @@ fn test_i16x32_umin() {
         expected[i] = std::cmp::min(a_u, b_u) as i16;
     }
     assert_eq!(result, I16x32::new(expected));
-    println!("test_i16x32_umin: PASSED");
 }
 
 #[test]
@@ -5888,7 +5808,6 @@ fn test_i16x32_umax() {
         expected[i] = std::cmp::max(a_u, b_u) as i16;
     }
     assert_eq!(result, I16x32::new(expected));
-    println!("test_i16x32_umax: PASSED");
 }
 
 // =============================================================================
@@ -5983,7 +5902,6 @@ fn test_i64x8_rotl() {
         expected[i] = (a.0[i] as u64).rotate_left(4) as i64;
     }
     assert_eq!(result, I64x8::new(expected));
-    println!("test_i64x8_rotl: PASSED");
 }
 
 #[test]
@@ -6078,7 +5996,6 @@ fn test_i32x16_rotl() {
         expected[i] = (a.0[i] as u32).rotate_left(8) as i32;
     }
     assert_eq!(result, I32x16::new(expected));
-    println!("test_i32x16_rotl: PASSED");
 }
 
 // =============================================================================
@@ -6133,7 +6050,6 @@ fn test_i64x8_band_not() {
         expected[i] = ((a.0[i] as u64) & !(b.0[i] as u64)) as i64;
     }
     assert_eq!(result, I64x8::new(expected));
-    println!("test_i64x8_band_not: PASSED");
 }
 
 #[test]
@@ -6200,7 +6116,6 @@ fn test_i32x16_band_not() {
         expected[i] = ((a.0[i] as u32) & !(b.0[i] as u32)) as i32;
     }
     assert_eq!(result, I32x16::new(expected));
-    println!("test_i32x16_band_not: PASSED");
 }
 
 // =============================================================================
@@ -6258,7 +6173,6 @@ fn test_f32x8_to_f64x8_fpromote() {
             result.0[i]
         );
     }
-    println!("test_f32x8_to_f64x8_fpromote: PASSED");
 }
 
 #[test]
@@ -6298,7 +6212,6 @@ fn test_f64x8_to_f32x8_fdemote() {
             result.0[i]
         );
     }
-    println!("test_f64x8_to_f32x8_fdemote: PASSED");
 }
 
 // =============================================================================
@@ -6409,7 +6322,6 @@ fn test_i32x16_compress() {
     assert_eq!(result.0[2], 107, "Third compressed element");
     assert_eq!(result.0[3], 110, "Fourth compressed element");
     assert_eq!(result.0[4], 115, "Fifth compressed element");
-    println!("test_i32x16_compress: PASSED");
 }
 
 #[test]
@@ -6496,7 +6408,6 @@ fn test_i64x8_compress() {
     assert_eq!(result.0[0], 1001, "First compressed element");
     assert_eq!(result.0[1], 1004, "Second compressed element");
     assert_eq!(result.0[2], 1007, "Third compressed element");
-    println!("test_i64x8_compress: PASSED");
 }
 
 // =============================================================================
@@ -6588,7 +6499,6 @@ fn test_i32x16_expand() {
     assert_eq!(result.0[3], 103, "Expanded to position 3");
     assert_eq!(result.0[7], 107, "Expanded to position 7");
     assert_eq!(result.0[1], 0, "Unset position should be 0");
-    println!("test_i32x16_expand: PASSED");
 }
 
 // =============================================================================
@@ -6672,7 +6582,6 @@ fn test_i32x8_load_store() {
     }
 
     assert_eq!(dst.0, [10, 20, 30, 40, 50, 60, 70, 80]);
-    println!("test_i32x8_load_store: PASSED");
 }
 
 // =============================================================================
@@ -6801,7 +6710,6 @@ fn test_i64x8_gather_dd() {
     assert_eq!(result.0[5], 1010, "Gathered element 10");
     assert_eq!(result.0[6], 1012, "Gathered element 12");
     assert_eq!(result.0[7], 1014, "Gathered element 14");
-    println!("test_i64x8_gather_dd: PASSED");
 }
 
 #[test]
@@ -6909,7 +6817,6 @@ fn test_i64x8_gather_qq() {
     assert_eq!(result.0[5], 1011, "Gathered element 11");
     assert_eq!(result.0[6], 1013, "Gathered element 13");
     assert_eq!(result.0[7], 1015, "Gathered element 15");
-    println!("test_i64x8_gather_qq: PASSED");
 }
 
 // =============================================================================
@@ -7021,7 +6928,6 @@ fn test_i64x8_scatter_qq() {
     assert_eq!(data.0[5], 2005, "Scattered to position 5");
     assert_eq!(data.0[6], 0, "Position 6 should be unchanged");
     assert_eq!(data.0[7], 2007, "Scattered to position 7");
-    println!("test_i64x8_scatter_qq: PASSED");
 }
 
 // =============================================================================
@@ -7071,7 +6977,6 @@ fn test_i32x16_icmp_gt_vector_mask() {
         0, 150, 0, 101, 200, 0, 0, 300, 0, 125, 0, 101, 0, 250, 0, 120,
     ]);
     assert_eq!(result, expected);
-    println!("test_i32x16_icmp_gt_vector_mask: PASSED");
 }
 
 #[test]
@@ -7105,7 +7010,6 @@ fn test_i64x8_icmp_eq_vector_mask() {
     // Where equal: -1, else 0
     let expected = I64x8::new([-1, 0, -1, 0, -1, 0, -1, 0]);
     assert_eq!(result, expected);
-    println!("test_i64x8_icmp_eq_vector_mask: PASSED");
 }
 
 // =============================================================================
@@ -7190,7 +7094,6 @@ fn test_i32x16_horizontal_sum() {
 
     // Sum of 1..16 = 136
     assert_eq!(result, 136, "Horizontal sum should be 136");
-    println!("test_i32x16_horizontal_sum: PASSED");
 }
 
 #[test]
@@ -7257,7 +7160,6 @@ fn test_i64x8_horizontal_sum() {
     let result = unsafe { func(&values) };
 
     assert_eq!(result, 3600, "Horizontal sum should be 3600");
-    println!("test_i64x8_horizontal_sum: PASSED");
 }
 
 // =============================================================================
@@ -7417,7 +7319,6 @@ fn test_filter_compress_pattern() {
     assert_eq!(output.0[5], 11, "Sixth survivor at index 11");
     assert_eq!(output.0[6], 13, "Seventh survivor at index 13");
     assert_eq!(output.0[7], 15, "Eighth survivor at index 15");
-    println!("test_filter_compress_pattern: PASSED");
 }
 
 // =============================================================================
@@ -7520,7 +7421,6 @@ fn test_i32x16_masked_accumulate() {
         101, 100, 103, 100, 105, 100, 107, 100, 109, 100, 111, 100, 113, 100, 115, 100,
     ]);
     assert_eq!(result, expected);
-    println!("test_i32x16_masked_accumulate: PASSED");
 }
 
 // =============================================================================
@@ -7670,7 +7570,6 @@ fn test_germanstring_gather_pattern() {
     assert_eq!(low64_result.0[2] as u64, 0x1004, "Row 4 low64");
     assert_eq!(high64_result.0[0] as u64, 0x2000, "Row 0 high64");
     assert_eq!(high64_result.0[1] as u64, 0x2002, "Row 2 high64");
-    println!("test_germanstring_gather_pattern: PASSED");
 }
 
 // =============================================================================
@@ -7700,7 +7599,6 @@ fn test_f64x8_fadd() {
 
     let expected = F64x8::new([1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5, 8.5]);
     assert_eq!(result, expected);
-    println!("test_f64x8_fadd: PASSED");
 }
 
 #[test]
@@ -7726,7 +7624,6 @@ fn test_f64x8_fmul() {
 
     let expected = F64x8::new([2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0]);
     assert_eq!(result, expected);
-    println!("test_f64x8_fmul: PASSED");
 }
 
 #[test]
@@ -7752,7 +7649,6 @@ fn test_f64x8_fdiv() {
 
     let expected = F64x8::new([5.0, 5.0, 6.0, 5.0, 5.0, 10.0, 10.0, 10.0]);
     assert_eq!(result, expected);
-    println!("test_f64x8_fdiv: PASSED");
 }
 
 // =============================================================================
@@ -7786,7 +7682,6 @@ fn test_f32x16_fadd() {
         1.5, 2.5, 3.5, 4.5, 5.5, 6.5, 7.5, 8.5, 9.5, 10.5, 11.5, 12.5, 13.5, 14.5, 15.5, 16.5,
     ]);
     assert_eq!(result, expected);
-    println!("test_f32x16_fadd: PASSED");
 }
 
 #[test]
@@ -7816,7 +7711,6 @@ fn test_f32x16_fmul() {
         2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0, 20.0, 22.0, 24.0, 26.0, 28.0, 30.0, 32.0,
     ]);
     assert_eq!(result, expected);
-    println!("test_f32x16_fmul: PASSED");
 }
 
 // =============================================================================
@@ -7891,7 +7785,6 @@ fn test_i32x16_blend_case_pattern() {
         0,
     ]);
     assert_eq!(result, expected);
-    println!("test_i32x16_blend_case_pattern: PASSED");
 }
 
 #[test]
@@ -7927,7 +7820,6 @@ fn test_i64x8_coalesce_pattern() {
     // Where a is non-null (!=0), use a; else use b
     let expected = I64x8::new([100, 2, 300, 4, 500, 6, 700, 8]);
     assert_eq!(result, expected);
-    println!("test_i64x8_coalesce_pattern: PASSED");
 }
 
 // =============================================================================
@@ -8006,5 +7898,4 @@ fn test_count_mask_bits() {
     let count = unsafe { func(&mask) };
 
     assert_eq!(count, 7, "Should count 7 set bits");
-    println!("test_count_mask_bits: PASSED");
 }

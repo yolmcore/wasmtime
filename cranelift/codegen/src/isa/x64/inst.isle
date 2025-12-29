@@ -4612,6 +4612,49 @@
 (rule (x64_512_vpcmpgtq src1 src2) (x64_512_vpcmpq (Avx512Cond.Gt) src1 src2))
 
 ;; =============================================================================
+;; Unsigned Integer Comparisons (VPCMPUD/VPCMPUQ)
+;; =============================================================================
+;;
+;; These use the same condition encoding as signed comparisons but with
+;; the unsigned comparison instructions (VPCMPUD for 32-bit, VPCMPUQ for 64-bit).
+
+;; Uses DSL-generated constructor for VPCMPUD
+(decl x64_512_vpcmpud (Avx512Cond Xmm XmmMem) Reg)
+(rule (x64_512_vpcmpud cond src1 src2)
+      (kmask_to_reg (x64_vpcmpud_zc src1 src2 (avx512_cond_to_u8 cond))))
+
+;; Uses DSL-generated constructor for VPCMPUQ
+(decl x64_512_vpcmpuq (Avx512Cond Xmm XmmMem) Reg)
+(rule (x64_512_vpcmpuq cond src1 src2)
+      (kmask_to_reg (x64_vpcmpuq_zc src1 src2 (avx512_cond_to_u8 cond))))
+
+;; Specific unsigned comparison helpers for I32X16
+(decl x64_512_vpcmpultd (Xmm XmmMem) Reg)
+(rule (x64_512_vpcmpultd src1 src2) (x64_512_vpcmpud (Avx512Cond.Lt) src1 src2))
+
+(decl x64_512_vpcmpuled (Xmm XmmMem) Reg)
+(rule (x64_512_vpcmpuled src1 src2) (x64_512_vpcmpud (Avx512Cond.Le) src1 src2))
+
+(decl x64_512_vpcmpugtd (Xmm XmmMem) Reg)
+(rule (x64_512_vpcmpugtd src1 src2) (x64_512_vpcmpud (Avx512Cond.Gt) src1 src2))
+
+(decl x64_512_vpcmpuged (Xmm XmmMem) Reg)
+(rule (x64_512_vpcmpuged src1 src2) (x64_512_vpcmpud (Avx512Cond.Ge) src1 src2))
+
+;; Specific unsigned comparison helpers for I64X8
+(decl x64_512_vpcmpultq (Xmm XmmMem) Reg)
+(rule (x64_512_vpcmpultq src1 src2) (x64_512_vpcmpuq (Avx512Cond.Lt) src1 src2))
+
+(decl x64_512_vpcmpuleq (Xmm XmmMem) Reg)
+(rule (x64_512_vpcmpuleq src1 src2) (x64_512_vpcmpuq (Avx512Cond.Le) src1 src2))
+
+(decl x64_512_vpcmpugtq (Xmm XmmMem) Reg)
+(rule (x64_512_vpcmpugtq src1 src2) (x64_512_vpcmpuq (Avx512Cond.Gt) src1 src2))
+
+(decl x64_512_vpcmpugeq (Xmm XmmMem) Reg)
+(rule (x64_512_vpcmpugeq src1 src2) (x64_512_vpcmpuq (Avx512Cond.Ge) src1 src2))
+
+;; =============================================================================
 ;; Avx512 AVX-512 Compress/Expand Operations
 ;; =============================================================================
 ;;

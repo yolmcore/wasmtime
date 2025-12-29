@@ -20,11 +20,11 @@ Last Updated: 2025-12-28
 
 | # | Issue | Status | Notes |
 |---|-------|--------|-------|
-| H1 | Missing unsigned comparisons | DEFER | Future work - not needed for initial merge |
+| H1 | Missing unsigned comparisons | DONE | Added VPCMPUD/VPCMPUQ support for I32X16/I64X8 |
 | H2 | Missing AVX-512DQ guard | DONE | Added has_avx512dq to vextracti64x2/vinserti64x2 rules |
 | H3 | Rule formatting | DONE | Fixed 246 rules (rule 17/18 spacing) |
 | H4 | VCVTPS2PD tuple type | DONE | Fixed to Half, also fixed VCVTDQ2PD |
-| H5 | Move benchmarks | DEFER | Organizational - not blocking |
+| H5 | Move benchmarks | DONE | Already in correct location (cranelift/jit/tests/) |
 | H6 | Missing edge case tests | DEFER | Future work - tests cover happy paths |
 
 ## Medium Priority Issues
@@ -35,8 +35,8 @@ Last Updated: 2025-12-28
 | M2 | Add #[must_use] | DONE | Added to Kmask new/enc/to_string |
 | M3 | Document priority scheme | DONE | Already in avx512.isle header |
 | M4 | K-register allocation | DEFER | Complex - future work |
-| M5 | Missing instructions | DEFER | VMOVAPS/VMOVAPD - future work |
-| M6 | Remove println in tests | DEFER | Benchmarks need output |
+| M5 | Missing instructions | DONE | Added VMOVAPS/VMOVAPD/VMOVUPS/VMOVUPD (512-bit) |
+| M6 | Remove println in tests | DONE | Removed redundant PASS/PASSED messages |
 
 ## Low Priority Issues
 
@@ -86,3 +86,18 @@ Last Updated: 2025-12-28
 - C3: Added CLIF filetests at cranelift/filetests/filetests/isa/x64/avx512.clif
   - 17 functions testing: iadd, isub, imul, band, bor, bxor, fadd, fsub, fmul, fdiv, sqrt, ineg
   - Covers i64x8, i32x16, f64x8, f32x16 types
+
+### 2025-12-29
+- H1: Added unsigned integer comparisons (VPCMPUD/VPCMPUQ)
+  - Added x64_512_vpcmpud/vpcmpuq wrappers in inst.isle
+  - Added specific helpers: vpcmpultd, vpcmpuled, vpcmpugtd, vpcmpuged (32-bit)
+  - Added specific helpers: vpcmpultq, vpcmpuleq, vpcmpugtq, vpcmpugeq (64-bit)
+  - Added lowering rules for UnsignedGreaterThan, UnsignedLessThan, etc.
+- H5: Confirmed benchmarks already in correct location (cranelift/jit/tests/)
+- M5: Added floating-point move instructions
+  - VMOVAPS/VMOVAPD (aligned, 512-bit)
+  - VMOVUPS/VMOVUPD (unaligned, 512-bit)
+- M6: Cleaned up test output
+  - Removed 109 redundant "PASSED" println statements from avx512_e2e.rs
+  - Removed "PASS" statements from avx512_sql_ops.rs
+  - Kept informational "Skipping" and benchmark output messages

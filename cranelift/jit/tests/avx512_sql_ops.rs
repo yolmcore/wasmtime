@@ -269,7 +269,6 @@ fn test_enum_in_bitmask_scalar() {
     assert_eq!(func(3, bitmask), 1, "3 in set");
     assert_eq!(func(5, bitmask), 1, "5 in set");
     assert_eq!(func(6, bitmask), 0, "6 not in set");
-    println!("Enum IN bitmask scalar: PASS");
 
     // Benchmark
     let test_data: Vec<i32> = (0..BENCH_ROWS as i32).map(|i| i % 10).collect();
@@ -313,7 +312,6 @@ fn test_enum_in_bitmask_vectorized() {
             i, results[i], expected
         );
     }
-    println!("Enum IN bitmask vectorized: PASS");
 
     // Benchmark
     let test_data: Vec<i32> = (0..BENCH_ROWS as i32).map(|i| i % 10).collect();
@@ -417,7 +415,6 @@ fn test_filter_compare_i32x16() {
         let expected = if i > 7 { -1 } else { 0 };
         assert_eq!(mask[i as usize], expected, "Mask lane {i} incorrect");
     }
-    println!("Filter compare I32X16: PASS");
 
     // Benchmark
     let test_data: Vec<i32> = (0..BENCH_ROWS as i32).map(|i| i % 100).collect();
@@ -518,7 +515,6 @@ fn test_masked_sum() {
         sum, 160,
         "Masked sum should be 160 (10+30+50+70), got {sum}"
     );
-    println!("Masked SUM I64X8: PASS");
 
     // Benchmark
     let values: Vec<i64> = (0..BENCH_ROWS as i64).collect();
@@ -620,7 +616,6 @@ fn test_blend_operation() {
 
     let expected: [i64; 8] = [100, 0, 100, 0, 100, 0, 100, 0];
     assert_eq!(result, expected, "Blend result incorrect");
-    println!("Blend I64X8: PASS");
 
     // Benchmark
     let a: Vec<i64> = vec![100; BENCH_ROWS];
@@ -729,7 +724,6 @@ fn test_range_filter() {
     let count = func(values.as_ptr(), 5, 10, mask.as_mut_ptr());
 
     assert_eq!(count, 6, "Range [5,10] should have 6 matches, got {count}");
-    println!("Range filter I32X16: PASS");
 
     // Benchmark
     let test_data: Vec<i32> = (0..BENCH_ROWS as i32).map(|i| i % 100).collect();
@@ -815,7 +809,6 @@ fn test_horizontal_sum() {
     let vec: [i64; 8] = [1, 2, 3, 4, 5, 6, 7, 8];
     let sum = func(vec.as_ptr());
     assert_eq!(sum, 36, "Horizontal sum should be 36");
-    println!("Horizontal sum: PASS");
 }
 
 // =============================================================================
@@ -1105,7 +1098,6 @@ fn test_gstring_prefix_match() {
         count, 5,
         "Should find 5 strings starting with ABCD, got {count}"
     );
-    println!("GermanString prefix match: PASS");
 
     // Benchmark
     let test_gstrings: Vec<i128> = (0..BENCH_ROWS)
@@ -1162,7 +1154,6 @@ fn test_gstring_length_filter() {
         count, 4,
         "Should find 4 strings with length 3-10, got {count}"
     );
-    println!("GermanString length filter: PASS");
 }
 
 #[test]
@@ -1202,7 +1193,6 @@ fn test_gstring_equality() {
         count, 3,
         "Should find 3 exact matches for 'Hello', got {count}"
     );
-    println!("GermanString equality: PASS");
 
     // Benchmark
     let test_gstrings: Vec<i128> = (0..BENCH_ROWS)
@@ -1650,7 +1640,6 @@ fn test_f64x8_arithmetic() {
 
     assert_eq!(add_result[0], 1.5);
     assert_eq!(mul_result[4], 10.0);
-    println!("F64X8 arithmetic (VADDPD, VMULPD): PASS");
 }
 
 #[test]
@@ -1676,7 +1665,6 @@ fn test_fma_f64x8() {
 
     assert_eq!(result[0], 3.0); // 1*2+1
     assert_eq!(result[7], 17.0); // 8*2+1
-    println!("FMA F64X8 (VFMADD): PASS");
 }
 
 #[test]
@@ -1704,7 +1692,6 @@ fn test_f64x8_compare() {
     // Values > 0.0: 1.0, 2.0, 3.0, 4.0, 5.0, 6.0 = 6
     assert_eq!(count2, 6);
 
-    println!("F64X8 compare (VCMPPD): PASS");
 }
 
 #[test]
@@ -1727,7 +1714,6 @@ fn test_i64_to_f64_conversion() {
 
     assert_eq!(floats[0], 1.0);
     assert_eq!(floats[6], -50.0);
-    println!("I64 to F64 (VCVTQQ2PD): PASS");
 }
 
 #[test]
@@ -1751,7 +1737,6 @@ fn test_fnv_hash() {
     for i in 0..7 {
         assert_ne!(hashes[i], hashes[i + 1]);
     }
-    println!("FNV hash (XOR + VPMULLQ): PASS");
 
     // Benchmark
     let test_keys: Vec<i64> = (0..BENCH_ROWS as i64).collect();
@@ -1795,7 +1780,6 @@ fn test_rotl_i64x8() {
     func(values.as_ptr(), 1, result.as_mut_ptr());
     assert_eq!(result[0], 2);
     assert_eq!(result[4], 1); // high bit rotates to low
-    println!("Rotate left I64X8 (VPROLQ): PASS");
 }
 
 #[test]
@@ -1820,7 +1804,6 @@ fn test_popcnt_i64x8() {
     assert_eq!(result[1], 2);
     assert_eq!(result[4], 8);
     assert_eq!(result[7], 64);
-    println!("Population count I64X8 (VPOPCNTQ): PASS");
 
     // Benchmark
     let bitmap: Vec<i64> = (0..BENCH_ROWS as i64).map(|i| i * 0x5555).collect();
@@ -1864,7 +1847,6 @@ fn test_ternlog_select() {
 
     assert_eq!(result[0], 1);
     assert_eq!(result[1], 2);
-    println!("Ternary logic (VPTERNLOGQ): PASS");
 }
 
 #[test]
@@ -1898,7 +1880,6 @@ fn test_clz_i64x8() {
     assert_eq!(result[1], 62);
     assert_eq!(result[2], 0);
     assert_eq!(result[5], 64);
-    println!("Leading zeros I64X8 (VPLZCNTQ): PASS");
 }
 
 // =============================================================================
@@ -2255,7 +2236,6 @@ fn test_kmask_and() {
     // idx 15: 4>5? No
     // Result: indices 0,2,4,7,9,10,13,14 = 8 matches
     assert_eq!(count2, 8, "Expected 8 matches for AND with threshold 5");
-    println!("K-mask AND (band on vector masks): PASS");
 }
 
 #[test]
@@ -2281,7 +2261,6 @@ fn test_kmask_or() {
     // Count: 4, 5, 7, 8, 9, 10, 11, 12, 13, 15 = 10 elements
     let count = func(data1.as_ptr(), data2.as_ptr(), 15, 15);
     assert_eq!(count, 10, "Expected 10 matches for OR with threshold 15");
-    println!("K-mask OR (bor on vector masks): PASS");
 }
 
 #[test]
@@ -2303,7 +2282,6 @@ fn test_kmask_not() {
     // NOT (data > 10): 16 - 6 = 10 elements
     let count = func(data.as_ptr(), 10);
     assert_eq!(count, 10, "Expected 10 non-matches (NOT of > 10)");
-    println!("K-mask NOT (bnot on vector mask): PASS");
 }
 
 #[test]
@@ -2346,7 +2324,6 @@ fn test_complex_predicate() {
 
     let count = func(a.as_ptr(), b.as_ptr(), c.as_ptr(), 5, 10, 10);
     assert_eq!(count, 8, "Expected 8 matches for complex predicate");
-    println!("Complex predicate (a>5 AND (b>10 OR c>10)): PASS");
 }
 
 #[test]
@@ -2380,7 +2357,6 @@ fn test_bitselect_case_when() {
     assert_eq!(result[3], 100);
     assert_eq!(result[9], 100); // 25 > 10
     assert_eq!(result[13], 100); // 30 > 10
-    println!("CASE WHEN (bitselect): PASS");
 }
 
 // =============================================================================
@@ -2532,7 +2508,6 @@ fn test_i32x16_arithmetic_register_pressure() {
     for i in 0..16 {
         assert_eq!(result[i], 28, "I32X16 arithmetic failed at index {i}");
     }
-    println!("I32X16 arithmetic with register pressure: PASS");
 }
 
 /// Test I64X8 integer arithmetic with complex expression
@@ -2602,7 +2577,6 @@ fn test_i64x8_arithmetic_complex() {
         let expected = a[i] + 2 * b[i];
         assert_eq!(result[i], expected, "I64X8 arithmetic failed at index {i}");
     }
-    println!("I64X8 arithmetic: PASS");
 }
 
 /// Test F32X16 floating point arithmetic
@@ -2682,7 +2656,6 @@ fn test_f32x16_arithmetic() {
             expected
         );
     }
-    println!("F32X16 arithmetic: PASS");
 }
 
 /// Test min/max operations for I32X16 (smin, smax, umin, umax)
@@ -2765,7 +2738,6 @@ fn test_i32x16_minmax() {
         assert_eq!(smin_result[i], expected_min, "smin failed at index {i}");
         assert_eq!(smax_result[i], expected_max, "smax failed at index {i}");
     }
-    println!("I32X16 smin/smax: PASS");
 }
 
 /// Test F64X8 min/max operations
@@ -2848,7 +2820,6 @@ fn test_f64x8_minmax() {
             "fmax failed at index {i}"
         );
     }
-    println!("F64X8 fmin/fmax: PASS");
 }
 
 /// Test bitwise operations with complex expressions
@@ -2925,7 +2896,6 @@ fn test_bitwise_complex() {
         let expected = (a[i] & b[i]) | (c_arr[i] ^ !a[i]);
         assert_eq!(result[i], expected, "Bitwise complex failed at index {i}");
     }
-    println!("Bitwise complex operations: PASS");
 }
 
 // NOTE: Shift tests (ishl, ushr, sshr) for I32X16 with scalar shift amounts
@@ -3054,7 +3024,6 @@ fn test_aggregation_multiple() {
     assert_eq!(results[2], expected_min_c, "MIN(c) failed");
     assert_eq!(results[3], expected_max_d, "MAX(d) failed");
 
-    println!("Multi-accumulator aggregation (SUM, MIN, MAX): PASS");
     println!(
         "  SUM(a) = {}, SUM(b) = {}, MIN(c) = {}, MAX(d) = {}",
         results[0], results[1], results[2], results[3]
@@ -3133,7 +3102,6 @@ fn test_between_filter() {
     let count = func(data.as_ptr(), 10, 50);
     assert_eq!(count, 9, "BETWEEN filter failed");
 
-    println!("BETWEEN filter (icmp + band): PASS (count = {count})");
 }
 
 /// Test COALESCE pattern: COALESCE(a, b) = if a is not null then a else b
@@ -3218,7 +3186,6 @@ fn test_coalesce() {
         assert_eq!(result[i], expected, "COALESCE failed at index {i}");
     }
 
-    println!("COALESCE (bnot + bitselect): PASS");
 }
 
 /// Test conversion: i64 -> f64 -> i64 round-trip
@@ -3291,7 +3258,6 @@ fn test_conversion_roundtrip() {
         );
     }
 
-    println!("i64 <-> f64 conversion round-trip: PASS");
 }
 
 /// Test FMA: fma (a*b+c) for F64X8
@@ -3361,7 +3327,6 @@ fn test_fma_f64x8_basic() {
         assert!((fma_out[i] - 7.0).abs() < 0.001, "fma failed at {i}");
     }
 
-    println!("FMA F64X8 (a*b+c): PASS");
 }
 
 /// Test integer comparison with all IntCC variants
@@ -3455,7 +3420,6 @@ fn test_icmp_all_conditions() {
         assert_eq!(sgt_out[i], exp_sgt, "SGT failed at {i}");
     }
 
-    println!("icmp all conditions (EQ, NE, SLT, SGT): PASS");
 }
 
 /// Test floating point comparison with FloatCC variants
@@ -3538,7 +3502,6 @@ fn test_fcmp_all_conditions() {
         assert_eq!(le_out[i], exp_le, "fcmp LE failed at {i}");
     }
 
-    println!("fcmp all conditions (EQ, LT, LE) F64X8: PASS");
 }
 
 // =============================================================================

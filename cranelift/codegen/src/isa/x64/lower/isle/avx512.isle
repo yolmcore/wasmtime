@@ -475,6 +475,62 @@
         (x64_512_kreg_to_vec_mask_64 kreg)))
 
 ;; =============================================================================
+;; 512-bit Unsigned Integer Comparison (icmp unsigned)
+;; =============================================================================
+;;
+;; AVX-512 unsigned comparisons use VPCMPUD/VPCMPUQ which produce a k-register mask.
+;; We then convert the k-register to a vector mask (0/-1 per element) using
+;; VPMOVM2D/VPMOVM2Q to match the expected IR semantics.
+
+;; I32X16 Unsigned Greater Than
+(rule 17 (lower (icmp (IntCC.UnsignedGreaterThan) x @ (value_type (multi_lane 32 16)) y))
+      (if-let true (has_avx512f))
+      (let ((kreg Reg (x64_512_vpcmpugtd (put_in_xmm x) (put_in_xmm_mem y))))
+        (x64_512_kreg_to_vec_mask_32 kreg)))
+
+;; I32X16 Unsigned Less Than
+(rule 17 (lower (icmp (IntCC.UnsignedLessThan) x @ (value_type (multi_lane 32 16)) y))
+      (if-let true (has_avx512f))
+      (let ((kreg Reg (x64_512_vpcmpultd (put_in_xmm x) (put_in_xmm_mem y))))
+        (x64_512_kreg_to_vec_mask_32 kreg)))
+
+;; I32X16 Unsigned Greater Than Or Equal
+(rule 17 (lower (icmp (IntCC.UnsignedGreaterThanOrEqual) x @ (value_type (multi_lane 32 16)) y))
+      (if-let true (has_avx512f))
+      (let ((kreg Reg (x64_512_vpcmpuged (put_in_xmm x) (put_in_xmm_mem y))))
+        (x64_512_kreg_to_vec_mask_32 kreg)))
+
+;; I32X16 Unsigned Less Than Or Equal
+(rule 17 (lower (icmp (IntCC.UnsignedLessThanOrEqual) x @ (value_type (multi_lane 32 16)) y))
+      (if-let true (has_avx512f))
+      (let ((kreg Reg (x64_512_vpcmpuled (put_in_xmm x) (put_in_xmm_mem y))))
+        (x64_512_kreg_to_vec_mask_32 kreg)))
+
+;; I64X8 Unsigned Greater Than
+(rule 17 (lower (icmp (IntCC.UnsignedGreaterThan) x @ (value_type (multi_lane 64 8)) y))
+      (if-let true (has_avx512f))
+      (let ((kreg Reg (x64_512_vpcmpugtq (put_in_xmm x) (put_in_xmm_mem y))))
+        (x64_512_kreg_to_vec_mask_64 kreg)))
+
+;; I64X8 Unsigned Less Than
+(rule 17 (lower (icmp (IntCC.UnsignedLessThan) x @ (value_type (multi_lane 64 8)) y))
+      (if-let true (has_avx512f))
+      (let ((kreg Reg (x64_512_vpcmpultq (put_in_xmm x) (put_in_xmm_mem y))))
+        (x64_512_kreg_to_vec_mask_64 kreg)))
+
+;; I64X8 Unsigned Greater Than Or Equal
+(rule 17 (lower (icmp (IntCC.UnsignedGreaterThanOrEqual) x @ (value_type (multi_lane 64 8)) y))
+      (if-let true (has_avx512f))
+      (let ((kreg Reg (x64_512_vpcmpugeq (put_in_xmm x) (put_in_xmm_mem y))))
+        (x64_512_kreg_to_vec_mask_64 kreg)))
+
+;; I64X8 Unsigned Less Than Or Equal
+(rule 17 (lower (icmp (IntCC.UnsignedLessThanOrEqual) x @ (value_type (multi_lane 64 8)) y))
+      (if-let true (has_avx512f))
+      (let ((kreg Reg (x64_512_vpcmpuleq (put_in_xmm x) (put_in_xmm_mem y))))
+        (x64_512_kreg_to_vec_mask_64 kreg)))
+
+;; =============================================================================
 ;; 512-bit Floating-Point Comparison (fcmp)
 ;; =============================================================================
 ;;

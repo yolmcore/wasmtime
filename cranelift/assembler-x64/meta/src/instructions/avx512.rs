@@ -957,6 +957,38 @@ pub fn list() -> Vec<Inst> {
         // EVEX.512.66.0F.W1 7F /r
         inst("vmovdqa64", fmt("Zs", [w(zmm_m512), r(zmm1)]), evex(L512, Full)._66()._0f().w1().op(0x7F).r(), (_64b | compat) & avx512f),
 
+        // VMOVAPS - Move aligned packed single-precision (load)
+        // EVEX.512.0F.W0 28 /r
+        inst("vmovaps", fmt("Zl", [w(zmm1), r(zmm_m512)]), evex(L512, Full)._0f().w0().op(0x28).r(), (_64b | compat) & avx512f),
+
+        // VMOVAPS - Move aligned packed single-precision (store)
+        // EVEX.512.0F.W0 29 /r
+        inst("vmovaps", fmt("Zs", [w(zmm_m512), r(zmm1)]), evex(L512, Full)._0f().w0().op(0x29).r(), (_64b | compat) & avx512f),
+
+        // VMOVAPD - Move aligned packed double-precision (load)
+        // EVEX.512.66.0F.W1 28 /r
+        inst("vmovapd", fmt("Zl", [w(zmm1), r(zmm_m512)]), evex(L512, Full)._66()._0f().w1().op(0x28).r(), (_64b | compat) & avx512f),
+
+        // VMOVAPD - Move aligned packed double-precision (store)
+        // EVEX.512.66.0F.W1 29 /r
+        inst("vmovapd", fmt("Zs", [w(zmm_m512), r(zmm1)]), evex(L512, Full)._66()._0f().w1().op(0x29).r(), (_64b | compat) & avx512f),
+
+        // VMOVUPS - Move unaligned packed single-precision (load)
+        // EVEX.512.0F.W0 10 /r
+        inst("vmovups", fmt("Zl", [w(zmm1), r(zmm_m512)]), evex(L512, Full)._0f().w0().op(0x10).r(), (_64b | compat) & avx512f),
+
+        // VMOVUPS - Move unaligned packed single-precision (store)
+        // EVEX.512.0F.W0 11 /r
+        inst("vmovups", fmt("Zs", [w(zmm_m512), r(zmm1)]), evex(L512, Full)._0f().w0().op(0x11).r(), (_64b | compat) & avx512f),
+
+        // VMOVUPD - Move unaligned packed double-precision (load)
+        // EVEX.512.66.0F.W1 10 /r
+        inst("vmovupd", fmt("Zl", [w(zmm1), r(zmm_m512)]), evex(L512, Full)._66()._0f().w1().op(0x10).r(), (_64b | compat) & avx512f),
+
+        // VMOVUPD - Move unaligned packed double-precision (store)
+        // EVEX.512.66.0F.W1 11 /r
+        inst("vmovupd", fmt("Zs", [w(zmm_m512), r(zmm1)]), evex(L512, Full)._66()._0f().w1().op(0x11).r(), (_64b | compat) & avx512f),
+
         // =========================================
         // Type Conversion Operations
         // =========================================
