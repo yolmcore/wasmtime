@@ -3304,3 +3304,998 @@ fn print_comprehensive_avx512_summary() {
     println!("╚═══════════════════════╧═══════════════════════════════╧══════════╝");
     println!("\nAll AVX-512 operations for SQL HTAP workloads are fully functional!");
 }
+
+// =============================================================================
+// THROUGHPUT BENCHMARKS - Complex & Weird Query Patterns
+// =============================================================================
+// Run with: cargo test -p cranelift-jit --test avx512_sql_ops --release -- --nocapture bench_
+
+/// Benchmark: Filter with complex predicate - 16 i32 lanes per iteration
+/// Pattern: WHERE (a > 10 AND b < 100) OR (c == 42 AND d != 0)
+/// Expected: ~50-60 GB/s on modern AVX-512 capable CPUs
+#[test]
+fn bench_complex_filter_i32x16() {
+    let mut c = match SqlCompiler::new() {
+        Some(c) => c,
+        None => { println!("AVX-512 not available, skipping benchmark"); return; }
+    };
+
+    let ptr = c.ptr();
+    let mut sig = c.module.make_signature();
+    sig.params.push(AbiParam::new(ptr)); // col_a
+    sig.params.push(AbiParam::new(ptr)); // col_b
+    sig.params.push(AbiParam::new(ptr)); // col_c
+    sig.params.push(AbiParam::new(ptr)); // col_d
+    sig.params.push(AbiParam::new(I64));  // num_vectors
+    sig.returns.push(AbiParam::new(I64)); // count of matching rows
+    sig.call_conv = CallConv::SystemV;
+
+    let func_id = c.module.declare_function("complex_filter_bench", Linkage::Local, &sig).unwrap();
+    c.ctx.func = Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), sig);
+
+    {
+        let mut builder = FunctionBuilder::new(&mut c.ctx.func, &mut c.func_ctx);
+        let entry = builder.create_block();
+        let loop_block = builder.create_block();
+        let exit = builder.create_block();
+
+        builder.append_block_params_for_function_params(entry);
+        builder.switch_to_block(entry);
+
+        let params = builder.block_params(entry).to_vec();
+        let col_a_base = params[0];
+        let col_b_base = params[1];
+        let col_c_base = params[2];
+        let col_d_base = params[3];
+        let num_vectors = params[4];
+
+        // Constants for comparison
+        let c10 = builder.ins().iconst(I32, 10);
+        let const_10 = builder.ins().splat(I32X16, c10);
+        let c100 = builder.ins().iconst(I32, 100);
+        let const_100 = builder.ins().splat(I32X16, c100);
+        let c42 = builder.ins().iconst(I32, 42);
+        let const_42 = builder.ins().splat(I32X16, c42);
+        let c0 = builder.ins().iconst(I32, 0);
+        let zero_vec = builder.ins().splat(I32X16, c0);
+
+        let init_count = builder.ins().iconst(I64, 0);
+        let init_idx = builder.ins().iconst(I64, 0);
+
+        builder.ins().jump(loop_block, &[init_idx.into(), init_count.into()]);
+
+        // Loop block
+        builder.switch_to_block(loop_block);
+        builder.append_block_param(loop_block, I64); // idx
+        builder.append_block_param(loop_block, I64); // count accumulator
+
+        let loop_params = builder.block_params(loop_block).to_vec();
+        let idx = loop_params[0];
+        let count = loop_params[1];
+
+        // Calculate offset: idx * 64 (each vector is 64 bytes)
+        let offset = builder.ins().imul_imm(idx, 64);
+
+        // Load 4 columns with dynamic offset
+        let a_addr = builder.ins().iadd(col_a_base, offset);
+        let b_addr = builder.ins().iadd(col_b_base, offset);
+        let c_addr = builder.ins().iadd(col_c_base, offset);
+        let d_addr = builder.ins().iadd(col_d_base, offset);
+
+        let a = builder.ins().load(I32X16, MemFlags::trusted(), a_addr, 0);
+        let b = builder.ins().load(I32X16, MemFlags::trusted(), b_addr, 0);
+        let c_col = builder.ins().load(I32X16, MemFlags::trusted(), c_addr, 0);
+        let d = builder.ins().load(I32X16, MemFlags::trusted(), d_addr, 0);
+
+        // Complex predicate: (a > 10 AND b < 100) OR (c == 42 AND d != 0)
+        let a_gt_10 = builder.ins().icmp(IntCC::SignedGreaterThan, a, const_10);
+        let b_lt_100 = builder.ins().icmp(IntCC::SignedLessThan, b, const_100);
+        let c_eq_42 = builder.ins().icmp(IntCC::Equal, c_col, const_42);
+        let d_ne_0 = builder.ins().icmp(IntCC::NotEqual, d, zero_vec);
+
+        let cond1 = builder.ins().band(a_gt_10, b_lt_100);
+        let cond2 = builder.ins().band(c_eq_42, d_ne_0);
+        let final_mask = builder.ins().bor(cond1, cond2);
+
+        // Count matching lanes by summing -1s (treating mask as i32)
+        let mut lane_sum = builder.ins().iconst(I64, 0);
+        for i in 0..16u8 {
+            let lane = builder.ins().extractlane(final_mask, i);
+            let neg = builder.ins().ineg(lane);  // -1 becomes 1, 0 stays 0
+            let ext = builder.ins().uextend(I64, neg);
+            lane_sum = builder.ins().iadd(lane_sum, ext);
+        }
+        let new_count = builder.ins().iadd(count, lane_sum);
+
+        // Increment and check loop
+        let next_idx = builder.ins().iadd_imm(idx, 1);
+        let done = builder.ins().icmp(IntCC::Equal, next_idx, num_vectors);
+        builder.ins().brif(done, exit, &[new_count.into()], loop_block, &[next_idx.into(), new_count.into()]);
+
+        // Exit
+        builder.switch_to_block(exit);
+        builder.append_block_param(exit, I64);
+        let final_count = builder.block_params(exit)[0];
+        builder.ins().return_(&[final_count]);
+
+        builder.seal_all_blocks();
+        builder.finalize();
+    }
+
+    c.module.define_function(func_id, &mut c.ctx).unwrap();
+    c.module.clear_context(&mut c.ctx);
+    c.module.finalize_definitions().unwrap();
+    let code = c.module.get_finalized_function(func_id);
+
+    let func: fn(*const i32, *const i32, *const i32, *const i32, i64) -> i64 =
+        unsafe { mem::transmute(code) };
+
+    // Allocate 1M rows = 1M / 16 = 62500 vectors per column
+    const NUM_ROWS: usize = 1_000_000;
+    const VECTORS_PER_COL: usize = NUM_ROWS / 16;
+
+    // Create test data with known distribution
+    let mut col_a = vec![0i32; NUM_ROWS];
+    let mut col_b = vec![0i32; NUM_ROWS];
+    let mut col_c = vec![0i32; NUM_ROWS];
+    let mut col_d = vec![0i32; NUM_ROWS];
+
+    for i in 0..NUM_ROWS {
+        col_a[i] = (i % 50) as i32;      // 0-49, ~80% > 10
+        col_b[i] = (i % 200) as i32;     // 0-199, ~50% < 100
+        col_c[i] = if i % 100 == 0 { 42 } else { 0 };  // 1% = 42
+        col_d[i] = (i % 3) as i32;       // 0, 1, 2 cyclically
+    }
+
+    // Warmup
+    for _ in 0..3 {
+        func(col_a.as_ptr(), col_b.as_ptr(), col_c.as_ptr(), col_d.as_ptr(), VECTORS_PER_COL as i64);
+    }
+
+    // Benchmark
+    let mut times = Vec::with_capacity(10);
+    for _ in 0..10 {
+        let start = Instant::now();
+        let _result = func(col_a.as_ptr(), col_b.as_ptr(), col_c.as_ptr(), col_d.as_ptr(), VECTORS_PER_COL as i64);
+        times.push(start.elapsed().as_nanos() as u64);
+    }
+
+    let min = *times.iter().min().unwrap();
+    let avg = times.iter().sum::<u64>() / times.len() as u64;
+    let bytes = NUM_ROWS * 4 * 4; // 4 columns * 4 bytes each
+    let gb_per_sec = bytes as f64 / 1e9 / (min as f64 / 1e9);
+    let rows_per_sec = NUM_ROWS as f64 / (min as f64 / 1e9);
+
+    println!("\n╔══════════════════════════════════════════════════════════════════╗");
+    println!("║      BENCHMARK: Complex 4-Column Filter (I32X16)                 ║");
+    println!("╠══════════════════════════════════════════════════════════════════╣");
+    println!("║ Pattern: (a > 10 AND b < 100) OR (c == 42 AND d != 0)            ║");
+    println!("╠══════════════════════════════════════════════════════════════════╣");
+    println!("║ Rows:        {:>12}                                        ║", NUM_ROWS);
+    println!("║ Min time:    {:>12.3} ms                                      ║", min as f64 / 1e6);
+    println!("║ Avg time:    {:>12.3} ms                                      ║", avg as f64 / 1e6);
+    println!("║ Throughput:  {:>12.2} M rows/sec                               ║", rows_per_sec / 1e6);
+    println!("║ Bandwidth:   {:>12.2} GB/sec                                   ║", gb_per_sec);
+    println!("╚══════════════════════════════════════════════════════════════════╝");
+}
+
+/// Benchmark: TPC-H style aggregation with multiple accumulators
+/// Pattern: SELECT SUM(a), SUM(b), MIN(c), MAX(d) FROM table WHERE x > threshold
+/// Expected: ~40-50 GB/s (memory bound with reduction overhead)
+#[test]
+fn bench_tpch_aggregation_i64x8() {
+    let mut c = match SqlCompiler::new() {
+        Some(c) => c,
+        None => { println!("AVX-512 not available, skipping benchmark"); return; }
+    };
+
+    let ptr = c.ptr();
+    let mut sig = c.module.make_signature();
+    sig.params.push(AbiParam::new(ptr)); // col_a (for SUM)
+    sig.params.push(AbiParam::new(ptr)); // col_b (for SUM)
+    sig.params.push(AbiParam::new(ptr)); // col_c (for MIN)
+    sig.params.push(AbiParam::new(ptr)); // col_d (for MAX)
+    sig.params.push(AbiParam::new(ptr)); // col_filter
+    sig.params.push(AbiParam::new(I64));  // num_vectors
+    sig.params.push(AbiParam::new(ptr)); // results[4]
+    sig.call_conv = CallConv::SystemV;
+
+    let func_id = c.module.declare_function("tpch_agg_bench", Linkage::Local, &sig).unwrap();
+    c.ctx.func = Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), sig);
+
+    {
+        let mut builder = FunctionBuilder::new(&mut c.ctx.func, &mut c.func_ctx);
+        let entry = builder.create_block();
+        let loop_block = builder.create_block();
+        let exit = builder.create_block();
+
+        builder.append_block_params_for_function_params(entry);
+        builder.switch_to_block(entry);
+
+        let params = builder.block_params(entry).to_vec();
+        let col_a_base = params[0];
+        let col_b_base = params[1];
+        let col_c_base = params[2];
+        let col_d_base = params[3];
+        let col_filter_base = params[4];
+        let num_vectors = params[5];
+        let results_ptr = params[6];
+
+        // Initialize accumulators
+        let z = builder.ins().iconst(I64, 0);
+        let sum_a_init = builder.ins().splat(I64X8, z);
+        let z2 = builder.ins().iconst(I64, 0);
+        let sum_b_init = builder.ins().splat(I64X8, z2);
+        let mx = builder.ins().iconst(I64, i64::MAX);
+        let min_c_init = builder.ins().splat(I64X8, mx);
+        let mn = builder.ins().iconst(I64, i64::MIN);
+        let max_d_init = builder.ins().splat(I64X8, mn);
+        let t50 = builder.ins().iconst(I64, 50);
+        let threshold = builder.ins().splat(I64X8, t50);
+        let init_idx = builder.ins().iconst(I64, 0);
+
+        builder.ins().jump(loop_block, &[init_idx.into(), sum_a_init.into(), sum_b_init.into(), min_c_init.into(), max_d_init.into()]);
+
+        // Loop block with 5 accumulators
+        builder.switch_to_block(loop_block);
+        builder.append_block_param(loop_block, I64);   // idx
+        builder.append_block_param(loop_block, I64X8); // sum_a
+        builder.append_block_param(loop_block, I64X8); // sum_b
+        builder.append_block_param(loop_block, I64X8); // min_c
+        builder.append_block_param(loop_block, I64X8); // max_d
+
+        let loop_params = builder.block_params(loop_block).to_vec();
+        let idx = loop_params[0];
+        let sum_a = loop_params[1];
+        let sum_b = loop_params[2];
+        let min_c = loop_params[3];
+        let max_d = loop_params[4];
+
+        let offset = builder.ins().imul_imm(idx, 64);
+
+        // Load vectors with offset
+        let a_addr = builder.ins().iadd(col_a_base, offset);
+        let b_addr = builder.ins().iadd(col_b_base, offset);
+        let c_addr = builder.ins().iadd(col_c_base, offset);
+        let d_addr = builder.ins().iadd(col_d_base, offset);
+        let f_addr = builder.ins().iadd(col_filter_base, offset);
+
+        let a = builder.ins().load(I64X8, MemFlags::trusted(), a_addr, 0);
+        let b = builder.ins().load(I64X8, MemFlags::trusted(), b_addr, 0);
+        let c_col = builder.ins().load(I64X8, MemFlags::trusted(), c_addr, 0);
+        let d = builder.ins().load(I64X8, MemFlags::trusted(), d_addr, 0);
+        let filter = builder.ins().load(I64X8, MemFlags::trusted(), f_addr, 0);
+
+        // WHERE filter > 50
+        let mask = builder.ins().icmp(IntCC::SignedGreaterThan, filter, threshold);
+
+        // Masked accumulation using bitselect
+        let z3 = builder.ins().iconst(I64, 0);
+        let zero = builder.ins().splat(I64X8, z3);
+        let mx2 = builder.ins().iconst(I64, i64::MAX);
+        let imax = builder.ins().splat(I64X8, mx2);
+        let mn2 = builder.ins().iconst(I64, i64::MIN);
+        let imin = builder.ins().splat(I64X8, mn2);
+
+        // For SUM: add masked values (0 where mask is false)
+        let a_masked = builder.ins().bitselect(mask, a, zero);
+        let b_masked = builder.ins().bitselect(mask, b, zero);
+        let new_sum_a = builder.ins().iadd(sum_a, a_masked);
+        let new_sum_b = builder.ins().iadd(sum_b, b_masked);
+
+        // For MIN: use MAX_VALUE where mask is false
+        let c_masked = builder.ins().bitselect(mask, c_col, imax);
+        let new_min_c = builder.ins().smin(min_c, c_masked);
+
+        // For MAX: use MIN_VALUE where mask is false
+        let d_masked = builder.ins().bitselect(mask, d, imin);
+        let new_max_d = builder.ins().smax(max_d, d_masked);
+
+        // Increment and check
+        let next_idx = builder.ins().iadd_imm(idx, 1);
+        let done = builder.ins().icmp(IntCC::Equal, next_idx, num_vectors);
+        builder.ins().brif(done, exit, &[new_sum_a.into(), new_sum_b.into(), new_min_c.into(), new_max_d.into()],
+                          loop_block, &[next_idx.into(), new_sum_a.into(), new_sum_b.into(), new_min_c.into(), new_max_d.into()]);
+
+        // Exit - horizontal reduce and store results
+        builder.switch_to_block(exit);
+        builder.append_block_param(exit, I64X8);
+        builder.append_block_param(exit, I64X8);
+        builder.append_block_param(exit, I64X8);
+        builder.append_block_param(exit, I64X8);
+
+        let final_params = builder.block_params(exit).to_vec();
+        let final_sum_a = final_params[0];
+        let final_sum_b = final_params[1];
+        let final_min_c = final_params[2];
+        let final_max_d = final_params[3];
+
+        // Horizontal reduction for SUM(a)
+        let mut ha = builder.ins().iconst(I64, 0);
+        for i in 0..8u8 {
+            let lane = builder.ins().extractlane(final_sum_a, i);
+            ha = builder.ins().iadd(ha, lane);
+        }
+        builder.ins().store(MemFlags::trusted(), ha, results_ptr, 0);
+
+        // Horizontal reduction for SUM(b)
+        let mut hb = builder.ins().iconst(I64, 0);
+        for i in 0..8u8 {
+            let lane = builder.ins().extractlane(final_sum_b, i);
+            hb = builder.ins().iadd(hb, lane);
+        }
+        builder.ins().store(MemFlags::trusted(), hb, results_ptr, 8);
+
+        // Horizontal reduction for MIN(c)
+        let mut hc = builder.ins().iconst(I64, i64::MAX);
+        for i in 0..8u8 {
+            let lane = builder.ins().extractlane(final_min_c, i);
+            let is_less = builder.ins().icmp(IntCC::SignedLessThan, lane, hc);
+            hc = builder.ins().select(is_less, lane, hc);
+        }
+        builder.ins().store(MemFlags::trusted(), hc, results_ptr, 16);
+
+        // Horizontal reduction for MAX(d)
+        let mut hd = builder.ins().iconst(I64, i64::MIN);
+        for i in 0..8u8 {
+            let lane = builder.ins().extractlane(final_max_d, i);
+            let is_greater = builder.ins().icmp(IntCC::SignedGreaterThan, lane, hd);
+            hd = builder.ins().select(is_greater, lane, hd);
+        }
+        builder.ins().store(MemFlags::trusted(), hd, results_ptr, 24);
+
+        builder.ins().return_(&[]);
+        builder.seal_all_blocks();
+        builder.finalize();
+    }
+
+    c.module.define_function(func_id, &mut c.ctx).unwrap();
+    c.module.clear_context(&mut c.ctx);
+    c.module.finalize_definitions().unwrap();
+    let code = c.module.get_finalized_function(func_id);
+
+    let func: fn(*const i64, *const i64, *const i64, *const i64, *const i64, i64, *mut i64) =
+        unsafe { mem::transmute(code) };
+
+    const NUM_ROWS: usize = 1_000_000;
+    const VECTORS: usize = NUM_ROWS / 8;
+
+    let col_a: Vec<i64> = (0..NUM_ROWS).map(|i| (i % 1000) as i64).collect();
+    let col_b: Vec<i64> = (0..NUM_ROWS).map(|i| (i % 500) as i64).collect();
+    let col_c: Vec<i64> = (0..NUM_ROWS).map(|i| (i as i64) * 2).collect();
+    let col_d: Vec<i64> = (0..NUM_ROWS).map(|i| 1000000 - i as i64).collect();
+    let col_filter: Vec<i64> = (0..NUM_ROWS).map(|i| (i % 100) as i64).collect();
+    let mut results = [0i64; 4];
+
+    // Warmup
+    for _ in 0..3 {
+        func(col_a.as_ptr(), col_b.as_ptr(), col_c.as_ptr(), col_d.as_ptr(),
+             col_filter.as_ptr(), VECTORS as i64, results.as_mut_ptr());
+    }
+
+    // Benchmark
+    let mut times = Vec::with_capacity(10);
+    for _ in 0..10 {
+        let start = Instant::now();
+        func(col_a.as_ptr(), col_b.as_ptr(), col_c.as_ptr(), col_d.as_ptr(),
+             col_filter.as_ptr(), VECTORS as i64, results.as_mut_ptr());
+        times.push(start.elapsed().as_nanos() as u64);
+    }
+
+    let min = *times.iter().min().unwrap();
+    let avg = times.iter().sum::<u64>() / times.len() as u64;
+    let bytes = NUM_ROWS * 8 * 5; // 5 columns * 8 bytes each
+    let gb_per_sec = bytes as f64 / 1e9 / (min as f64 / 1e9);
+    let rows_per_sec = NUM_ROWS as f64 / (min as f64 / 1e9);
+
+    println!("\n╔══════════════════════════════════════════════════════════════════╗");
+    println!("║      BENCHMARK: TPC-H Style 4-Way Aggregation (I64X8)            ║");
+    println!("╠══════════════════════════════════════════════════════════════════╣");
+    println!("║ Pattern: SUM(a), SUM(b), MIN(c), MAX(d) WHERE filter > 50        ║");
+    println!("╠══════════════════════════════════════════════════════════════════╣");
+    println!("║ Rows:        {:>12}                                        ║", NUM_ROWS);
+    println!("║ Min time:    {:>12.3} ms                                      ║", min as f64 / 1e6);
+    println!("║ Avg time:    {:>12.3} ms                                      ║", avg as f64 / 1e6);
+    println!("║ Throughput:  {:>12.2} M rows/sec                               ║", rows_per_sec / 1e6);
+    println!("║ Bandwidth:   {:>12.2} GB/sec                                   ║", gb_per_sec);
+    println!("║ Results: SUM_A={:<12} SUM_B={:<12}                  ║", results[0], results[1]);
+    println!("╚══════════════════════════════════════════════════════════════════╝");
+}
+
+/// Benchmark: FP-heavy workload with FMA chains
+/// Pattern: result = a * b + c * d - e * f (chained FMA operations)
+/// Expected: ~30-40 GB/s (compute-bound FMA throughput)
+#[test]
+fn bench_fma_chain_f64x8() {
+    let mut c = match SqlCompiler::new() {
+        Some(c) => c,
+        None => { println!("AVX-512 not available, skipping benchmark"); return; }
+    };
+
+    let ptr = c.ptr();
+    let mut sig = c.module.make_signature();
+    sig.params.push(AbiParam::new(ptr)); // a
+    sig.params.push(AbiParam::new(ptr)); // b
+    sig.params.push(AbiParam::new(ptr)); // c
+    sig.params.push(AbiParam::new(ptr)); // d
+    sig.params.push(AbiParam::new(ptr)); // e
+    sig.params.push(AbiParam::new(ptr)); // f
+    sig.params.push(AbiParam::new(I64));  // num_vectors
+    sig.params.push(AbiParam::new(ptr)); // result
+    sig.call_conv = CallConv::SystemV;
+
+    let func_id = c.module.declare_function("fma_chain_bench", Linkage::Local, &sig).unwrap();
+    c.ctx.func = Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), sig);
+
+    {
+        let mut builder = FunctionBuilder::new(&mut c.ctx.func, &mut c.func_ctx);
+        let entry = builder.create_block();
+        let loop_block = builder.create_block();
+        let exit = builder.create_block();
+
+        builder.append_block_params_for_function_params(entry);
+        builder.switch_to_block(entry);
+
+        let params = builder.block_params(entry).to_vec();
+        let col_a = params[0];
+        let col_b = params[1];
+        let col_c = params[2];
+        let col_d = params[3];
+        let col_e = params[4];
+        let col_f = params[5];
+        let num_vectors = params[6];
+        let result_base = params[7];
+
+        let init_idx = builder.ins().iconst(I64, 0);
+        builder.ins().jump(loop_block, &[init_idx.into()]);
+
+        builder.switch_to_block(loop_block);
+        builder.append_block_param(loop_block, I64);
+        let idx = builder.block_params(loop_block)[0];
+
+        let offset = builder.ins().imul_imm(idx, 64);
+
+        // Load 6 vectors with offset
+        let a_addr = builder.ins().iadd(col_a, offset);
+        let b_addr = builder.ins().iadd(col_b, offset);
+        let c_addr = builder.ins().iadd(col_c, offset);
+        let d_addr = builder.ins().iadd(col_d, offset);
+        let e_addr = builder.ins().iadd(col_e, offset);
+        let f_addr = builder.ins().iadd(col_f, offset);
+        let r_addr = builder.ins().iadd(result_base, offset);
+
+        let a = builder.ins().load(F64X8, MemFlags::trusted(), a_addr, 0);
+        let b = builder.ins().load(F64X8, MemFlags::trusted(), b_addr, 0);
+        let c_vec = builder.ins().load(F64X8, MemFlags::trusted(), c_addr, 0);
+        let d = builder.ins().load(F64X8, MemFlags::trusted(), d_addr, 0);
+        let e = builder.ins().load(F64X8, MemFlags::trusted(), e_addr, 0);
+        let f = builder.ins().load(F64X8, MemFlags::trusted(), f_addr, 0);
+
+        // Chained FMA: a*b + c*d - e*f
+        // = fma(a, b, fma(c, d, -(e*f)))
+        // Since fneg isn't supported, use: a*b + c*d + (-e)*f
+        let neg_one = builder.ins().f64const(-1.0);
+        let neg_one_vec = builder.ins().splat(F64X8, neg_one);
+        let neg_e = builder.ins().fmul(e, neg_one_vec);
+
+        // t1 = c * d
+        let t1 = builder.ins().fmul(c_vec, d);
+        // t2 = neg_e * f + t1 = -e*f + c*d
+        let t2 = builder.ins().fma(neg_e, f, t1);
+        // result = a * b + t2 = a*b + c*d - e*f
+        let result = builder.ins().fma(a, b, t2);
+
+        builder.ins().store(MemFlags::trusted(), result, r_addr, 0);
+
+        let next_idx = builder.ins().iadd_imm(idx, 1);
+        let done = builder.ins().icmp(IntCC::Equal, next_idx, num_vectors);
+        builder.ins().brif(done, exit, &[], loop_block, &[next_idx.into()]);
+
+        builder.switch_to_block(exit);
+        builder.ins().return_(&[]);
+        builder.seal_all_blocks();
+        builder.finalize();
+    }
+
+    c.module.define_function(func_id, &mut c.ctx).unwrap();
+    c.module.clear_context(&mut c.ctx);
+    c.module.finalize_definitions().unwrap();
+    let code = c.module.get_finalized_function(func_id);
+
+    let func: fn(*const f64, *const f64, *const f64, *const f64, *const f64, *const f64, i64, *mut f64) =
+        unsafe { mem::transmute(code) };
+
+    const NUM_ROWS: usize = 1_000_000;
+    const VECTORS: usize = NUM_ROWS / 8;
+
+    let col_a: Vec<f64> = (0..NUM_ROWS).map(|i| (i as f64) * 0.001).collect();
+    let col_b: Vec<f64> = (0..NUM_ROWS).map(|i| (i as f64) * 0.002).collect();
+    let col_c: Vec<f64> = (0..NUM_ROWS).map(|i| (i as f64) * 0.003).collect();
+    let col_d: Vec<f64> = (0..NUM_ROWS).map(|i| (i as f64) * 0.004).collect();
+    let col_e: Vec<f64> = (0..NUM_ROWS).map(|i| (i as f64) * 0.005).collect();
+    let col_f: Vec<f64> = (0..NUM_ROWS).map(|i| (i as f64) * 0.006).collect();
+    let mut result = vec![0.0f64; NUM_ROWS];
+
+    // Warmup
+    for _ in 0..3 {
+        func(col_a.as_ptr(), col_b.as_ptr(), col_c.as_ptr(), col_d.as_ptr(),
+             col_e.as_ptr(), col_f.as_ptr(), VECTORS as i64, result.as_mut_ptr());
+    }
+
+    // Benchmark
+    let mut times = Vec::with_capacity(10);
+    for _ in 0..10 {
+        let start = Instant::now();
+        func(col_a.as_ptr(), col_b.as_ptr(), col_c.as_ptr(), col_d.as_ptr(),
+             col_e.as_ptr(), col_f.as_ptr(), VECTORS as i64, result.as_mut_ptr());
+        times.push(start.elapsed().as_nanos() as u64);
+    }
+
+    let min = *times.iter().min().unwrap();
+    let avg = times.iter().sum::<u64>() / times.len() as u64;
+    let bytes = NUM_ROWS * 8 * 7; // 6 input + 1 output columns
+    let gb_per_sec = bytes as f64 / 1e9 / (min as f64 / 1e9);
+    let rows_per_sec = NUM_ROWS as f64 / (min as f64 / 1e9);
+
+    println!("\n╔══════════════════════════════════════════════════════════════════╗");
+    println!("║      BENCHMARK: Chained FMA Operations (F64X8)                   ║");
+    println!("╠══════════════════════════════════════════════════════════════════╣");
+    println!("║ Pattern: a*b + c*d - e*f (2 FMAs + 1 fmul per vector)            ║");
+    println!("╠══════════════════════════════════════════════════════════════════╣");
+    println!("║ Rows:        {:>12}                                        ║", NUM_ROWS);
+    println!("║ Min time:    {:>12.3} ms                                      ║", min as f64 / 1e6);
+    println!("║ Avg time:    {:>12.3} ms                                      ║", avg as f64 / 1e6);
+    println!("║ Throughput:  {:>12.2} M rows/sec                               ║", rows_per_sec / 1e6);
+    println!("║ Bandwidth:   {:>12.2} GB/sec                                   ║", gb_per_sec);
+    println!("╚══════════════════════════════════════════════════════════════════╝");
+}
+
+/// Benchmark: Weird edge case - high selectivity filter (1% pass rate)
+/// This stresses branch prediction and sparse result handling
+#[test]
+fn bench_high_selectivity_filter() {
+    let mut c = match SqlCompiler::new() {
+        Some(c) => c,
+        None => { println!("AVX-512 not available, skipping benchmark"); return; }
+    };
+
+    let ptr = c.ptr();
+    let mut sig = c.module.make_signature();
+    sig.params.push(AbiParam::new(ptr)); // data
+    sig.params.push(AbiParam::new(I64));  // num_vectors
+    sig.returns.push(AbiParam::new(I64)); // count
+    sig.call_conv = CallConv::SystemV;
+
+    let func_id = c.module.declare_function("high_sel_bench", Linkage::Local, &sig).unwrap();
+    c.ctx.func = Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), sig);
+
+    {
+        let mut builder = FunctionBuilder::new(&mut c.ctx.func, &mut c.func_ctx);
+        let entry = builder.create_block();
+        let loop_block = builder.create_block();
+        let exit = builder.create_block();
+
+        builder.append_block_params_for_function_params(entry);
+        builder.switch_to_block(entry);
+
+        let params = builder.block_params(entry).to_vec();
+        let data_ptr = params[0];
+        let num_vectors = params[1];
+
+        // Very narrow range filter: WHERE x == 42 (about 1% in range 0-99)
+        let c42 = builder.ins().iconst(I32, 42);
+        let target = builder.ins().splat(I32X16, c42);
+        let init_count = builder.ins().iconst(I64, 0);
+        let init_idx = builder.ins().iconst(I64, 0);
+
+        builder.ins().jump(loop_block, &[init_idx.into(), init_count.into()]);
+
+        builder.switch_to_block(loop_block);
+        builder.append_block_param(loop_block, I64);
+        builder.append_block_param(loop_block, I64);
+        let loop_params = builder.block_params(loop_block).to_vec();
+        let idx = loop_params[0];
+        let count = loop_params[1];
+
+        let offset = builder.ins().imul_imm(idx, 64);
+        let addr = builder.ins().iadd(data_ptr, offset);
+        let data = builder.ins().load(I32X16, MemFlags::trusted(), addr, 0);
+        let mask = builder.ins().icmp(IntCC::Equal, data, target);
+
+        // Count matching lanes
+        let mut lane_sum = builder.ins().iconst(I64, 0);
+        for i in 0..16u8 {
+            let lane = builder.ins().extractlane(mask, i);
+            let neg = builder.ins().ineg(lane);
+            let ext = builder.ins().uextend(I64, neg);
+            lane_sum = builder.ins().iadd(lane_sum, ext);
+        }
+        let new_count = builder.ins().iadd(count, lane_sum);
+
+        let next_idx = builder.ins().iadd_imm(idx, 1);
+        let done = builder.ins().icmp(IntCC::Equal, next_idx, num_vectors);
+        builder.ins().brif(done, exit, &[new_count.into()], loop_block, &[next_idx.into(), new_count.into()]);
+
+        builder.switch_to_block(exit);
+        builder.append_block_param(exit, I64);
+        let final_count = builder.block_params(exit)[0];
+        builder.ins().return_(&[final_count]);
+
+        builder.seal_all_blocks();
+        builder.finalize();
+    }
+
+    c.module.define_function(func_id, &mut c.ctx).unwrap();
+    c.module.clear_context(&mut c.ctx);
+    c.module.finalize_definitions().unwrap();
+    let code = c.module.get_finalized_function(func_id);
+
+    let func: fn(*const i32, i64) -> i64 = unsafe { mem::transmute(code) };
+
+    const NUM_ROWS: usize = 10_000_000;
+    const VECTORS: usize = NUM_ROWS / 16;
+
+    // Only ~1% match (value 42 in range 0-99)
+    let data: Vec<i32> = (0..NUM_ROWS).map(|i| (i % 100) as i32).collect();
+
+    // Warmup
+    for _ in 0..3 {
+        func(data.as_ptr(), VECTORS as i64);
+    }
+
+    // Benchmark
+    let mut times = Vec::with_capacity(10);
+    let mut result = 0i64;
+    for _ in 0..10 {
+        let start = Instant::now();
+        result = func(data.as_ptr(), VECTORS as i64);
+        times.push(start.elapsed().as_nanos() as u64);
+    }
+
+    let min = *times.iter().min().unwrap();
+    let avg = times.iter().sum::<u64>() / times.len() as u64;
+    let bytes = NUM_ROWS * 4;
+    let gb_per_sec = bytes as f64 / 1e9 / (min as f64 / 1e9);
+    let rows_per_sec = NUM_ROWS as f64 / (min as f64 / 1e9);
+    let selectivity = result as f64 / NUM_ROWS as f64 * 100.0;
+
+    println!("\n╔══════════════════════════════════════════════════════════════════╗");
+    println!("║      BENCHMARK: High Selectivity Filter (1% pass rate)           ║");
+    println!("╠══════════════════════════════════════════════════════════════════╣");
+    println!("║ Pattern: WHERE x == 42 (sparse result set)                       ║");
+    println!("╠══════════════════════════════════════════════════════════════════╣");
+    println!("║ Rows:        {:>12}                                       ║", NUM_ROWS);
+    println!("║ Matches:     {:>12} ({:.2}% selectivity)                    ║", result, selectivity);
+    println!("║ Min time:    {:>12.3} ms                                      ║", min as f64 / 1e6);
+    println!("║ Avg time:    {:>12.3} ms                                      ║", avg as f64 / 1e6);
+    println!("║ Throughput:  {:>12.2} M rows/sec                               ║", rows_per_sec / 1e6);
+    println!("║ Bandwidth:   {:>12.2} GB/sec                                   ║", gb_per_sec);
+    println!("╚══════════════════════════════════════════════════════════════════╝");
+}
+
+/// Benchmark: Weird pattern - multiple dependent comparisons with weird thresholds
+/// Pattern: WHERE (a BETWEEN 17 AND 89) AND (b NOT BETWEEN 23 AND 67) AND (c == 3)
+#[test]
+fn bench_weird_predicate_chain() {
+    let mut c = match SqlCompiler::new() {
+        Some(c) => c,
+        None => { println!("AVX-512 not available, skipping benchmark"); return; }
+    };
+
+    let ptr = c.ptr();
+    let mut sig = c.module.make_signature();
+    sig.params.push(AbiParam::new(ptr)); // col_a
+    sig.params.push(AbiParam::new(ptr)); // col_b
+    sig.params.push(AbiParam::new(ptr)); // col_c
+    sig.params.push(AbiParam::new(I64));  // num_vectors
+    sig.returns.push(AbiParam::new(I64)); // count
+    sig.call_conv = CallConv::SystemV;
+
+    let func_id = c.module.declare_function("weird_pred_bench", Linkage::Local, &sig).unwrap();
+    c.ctx.func = Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), sig);
+
+    {
+        let mut builder = FunctionBuilder::new(&mut c.ctx.func, &mut c.func_ctx);
+        let entry = builder.create_block();
+        let loop_block = builder.create_block();
+        let exit = builder.create_block();
+
+        builder.append_block_params_for_function_params(entry);
+        builder.switch_to_block(entry);
+
+        let params = builder.block_params(entry).to_vec();
+        let col_a_ptr = params[0];
+        let col_b_ptr = params[1];
+        let col_c_ptr = params[2];
+        let num_vectors = params[3];
+
+        // Weird constants
+        let c17 = builder.ins().iconst(I32, 17);
+        let const_17 = builder.ins().splat(I32X16, c17);
+        let c89 = builder.ins().iconst(I32, 89);
+        let const_89 = builder.ins().splat(I32X16, c89);
+        let c23 = builder.ins().iconst(I32, 23);
+        let const_23 = builder.ins().splat(I32X16, c23);
+        let c67 = builder.ins().iconst(I32, 67);
+        let const_67 = builder.ins().splat(I32X16, c67);
+        let c3 = builder.ins().iconst(I32, 3);
+        let const_3 = builder.ins().splat(I32X16, c3);
+
+        let init_count = builder.ins().iconst(I64, 0);
+        let init_idx = builder.ins().iconst(I64, 0);
+
+        builder.ins().jump(loop_block, &[init_idx.into(), init_count.into()]);
+
+        builder.switch_to_block(loop_block);
+        builder.append_block_param(loop_block, I64);
+        builder.append_block_param(loop_block, I64);
+        let loop_params = builder.block_params(loop_block).to_vec();
+        let idx = loop_params[0];
+        let count = loop_params[1];
+
+        let offset = builder.ins().imul_imm(idx, 64);
+        let a_addr = builder.ins().iadd(col_a_ptr, offset);
+        let b_addr = builder.ins().iadd(col_b_ptr, offset);
+        let c_addr = builder.ins().iadd(col_c_ptr, offset);
+
+        let a = builder.ins().load(I32X16, MemFlags::trusted(), a_addr, 0);
+        let b = builder.ins().load(I32X16, MemFlags::trusted(), b_addr, 0);
+        let c_col = builder.ins().load(I32X16, MemFlags::trusted(), c_addr, 0);
+
+        // a BETWEEN 17 AND 89
+        let a_ge_17 = builder.ins().icmp(IntCC::SignedGreaterThanOrEqual, a, const_17);
+        let a_le_89 = builder.ins().icmp(IntCC::SignedLessThanOrEqual, a, const_89);
+        let a_between = builder.ins().band(a_ge_17, a_le_89);
+
+        // b NOT BETWEEN 23 AND 67
+        let b_lt_23 = builder.ins().icmp(IntCC::SignedLessThan, b, const_23);
+        let b_gt_67 = builder.ins().icmp(IntCC::SignedGreaterThan, b, const_67);
+        let b_not_between = builder.ins().bor(b_lt_23, b_gt_67);
+
+        // c == 3
+        let c_eq_3 = builder.ins().icmp(IntCC::Equal, c_col, const_3);
+
+        // Combine: a_between AND b_not_between AND c_eq_3
+        let cond1 = builder.ins().band(a_between, b_not_between);
+        let final_mask = builder.ins().band(cond1, c_eq_3);
+
+        // Count
+        let mut lane_sum = builder.ins().iconst(I64, 0);
+        for i in 0..16u8 {
+            let lane = builder.ins().extractlane(final_mask, i);
+            let neg = builder.ins().ineg(lane);
+            let ext = builder.ins().uextend(I64, neg);
+            lane_sum = builder.ins().iadd(lane_sum, ext);
+        }
+        let new_count = builder.ins().iadd(count, lane_sum);
+
+        let next_idx = builder.ins().iadd_imm(idx, 1);
+        let done = builder.ins().icmp(IntCC::Equal, next_idx, num_vectors);
+        builder.ins().brif(done, exit, &[new_count.into()], loop_block, &[next_idx.into(), new_count.into()]);
+
+        builder.switch_to_block(exit);
+        builder.append_block_param(exit, I64);
+        let final_count = builder.block_params(exit)[0];
+        builder.ins().return_(&[final_count]);
+
+        builder.seal_all_blocks();
+        builder.finalize();
+    }
+
+    c.module.define_function(func_id, &mut c.ctx).unwrap();
+    c.module.clear_context(&mut c.ctx);
+    c.module.finalize_definitions().unwrap();
+    let code = c.module.get_finalized_function(func_id);
+
+    let func: fn(*const i32, *const i32, *const i32, i64) -> i64 = unsafe { mem::transmute(code) };
+
+    const NUM_ROWS: usize = 10_000_000;
+    const VECTORS: usize = NUM_ROWS / 16;
+
+    let col_a: Vec<i32> = (0..NUM_ROWS).map(|i| (i % 100) as i32).collect();
+    let col_b: Vec<i32> = (0..NUM_ROWS).map(|i| ((i * 7) % 100) as i32).collect();
+    let col_c: Vec<i32> = (0..NUM_ROWS).map(|i| (i % 10) as i32).collect();
+
+    // Warmup
+    for _ in 0..3 {
+        func(col_a.as_ptr(), col_b.as_ptr(), col_c.as_ptr(), VECTORS as i64);
+    }
+
+    // Benchmark
+    let mut times = Vec::with_capacity(10);
+    let mut result = 0i64;
+    for _ in 0..10 {
+        let start = Instant::now();
+        result = func(col_a.as_ptr(), col_b.as_ptr(), col_c.as_ptr(), VECTORS as i64);
+        times.push(start.elapsed().as_nanos() as u64);
+    }
+
+    let min = *times.iter().min().unwrap();
+    let avg = times.iter().sum::<u64>() / times.len() as u64;
+    let bytes = NUM_ROWS * 4 * 3;
+    let gb_per_sec = bytes as f64 / 1e9 / (min as f64 / 1e9);
+    let rows_per_sec = NUM_ROWS as f64 / (min as f64 / 1e9);
+    let selectivity = result as f64 / NUM_ROWS as f64 * 100.0;
+
+    println!("\n╔══════════════════════════════════════════════════════════════════╗");
+    println!("║      BENCHMARK: Weird 3-Way Predicate Chain (I32X16)             ║");
+    println!("╠══════════════════════════════════════════════════════════════════╣");
+    println!("║ Pattern: (a BETWEEN 17,89) AND (b NOT BETWEEN 23,67) AND c==3    ║");
+    println!("╠══════════════════════════════════════════════════════════════════╣");
+    println!("║ Rows:        {:>12}                                       ║", NUM_ROWS);
+    println!("║ Matches:     {:>12} ({:.2}% selectivity)                    ║", result, selectivity);
+    println!("║ Min time:    {:>12.3} ms                                      ║", min as f64 / 1e6);
+    println!("║ Avg time:    {:>12.3} ms                                      ║", avg as f64 / 1e6);
+    println!("║ Throughput:  {:>12.2} M rows/sec                               ║", rows_per_sec / 1e6);
+    println!("║ Bandwidth:   {:>12.2} GB/sec                                   ║", gb_per_sec);
+    println!("╚══════════════════════════════════════════════════════════════════╝");
+}
+
+/// Benchmark: Register pressure stress test - 8 columns with complex expression
+/// Pattern: result = ((a+b)*(c-d)) + ((e*f)-(g/h))
+/// This tests register allocation under pressure
+#[test]
+fn bench_register_pressure_8col() {
+    let mut c = match SqlCompiler::new() {
+        Some(c) => c,
+        None => { println!("AVX-512 not available, skipping benchmark"); return; }
+    };
+
+    let ptr = c.ptr();
+    let mut sig = c.module.make_signature();
+    for _ in 0..8 {
+        sig.params.push(AbiParam::new(ptr)); // 8 input columns
+    }
+    sig.params.push(AbiParam::new(I64));  // num_vectors
+    sig.params.push(AbiParam::new(ptr)); // result
+    sig.call_conv = CallConv::SystemV;
+
+    let func_id = c.module.declare_function("reg_pressure_bench", Linkage::Local, &sig).unwrap();
+    c.ctx.func = Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), sig);
+
+    {
+        let mut builder = FunctionBuilder::new(&mut c.ctx.func, &mut c.func_ctx);
+        let entry = builder.create_block();
+        let loop_block = builder.create_block();
+        let exit = builder.create_block();
+
+        builder.append_block_params_for_function_params(entry);
+        builder.switch_to_block(entry);
+
+        let params = builder.block_params(entry).to_vec();
+        let cols: Vec<_> = params[0..8].to_vec();
+        let num_vectors = params[8];
+        let result_base = params[9];
+
+        let init_idx = builder.ins().iconst(I64, 0);
+        builder.ins().jump(loop_block, &[init_idx.into()]);
+
+        builder.switch_to_block(loop_block);
+        builder.append_block_param(loop_block, I64);
+        let idx = builder.block_params(loop_block)[0];
+
+        let offset = builder.ins().imul_imm(idx, 64);
+
+        // Load all 8 columns with offset
+        let a_addr = builder.ins().iadd(cols[0], offset);
+        let b_addr = builder.ins().iadd(cols[1], offset);
+        let c_addr = builder.ins().iadd(cols[2], offset);
+        let d_addr = builder.ins().iadd(cols[3], offset);
+        let e_addr = builder.ins().iadd(cols[4], offset);
+        let f_addr = builder.ins().iadd(cols[5], offset);
+        let g_addr = builder.ins().iadd(cols[6], offset);
+        let h_addr = builder.ins().iadd(cols[7], offset);
+        let r_addr = builder.ins().iadd(result_base, offset);
+
+        let a = builder.ins().load(F64X8, MemFlags::trusted(), a_addr, 0);
+        let b = builder.ins().load(F64X8, MemFlags::trusted(), b_addr, 0);
+        let c_col = builder.ins().load(F64X8, MemFlags::trusted(), c_addr, 0);
+        let d = builder.ins().load(F64X8, MemFlags::trusted(), d_addr, 0);
+        let e = builder.ins().load(F64X8, MemFlags::trusted(), e_addr, 0);
+        let f = builder.ins().load(F64X8, MemFlags::trusted(), f_addr, 0);
+        let g = builder.ins().load(F64X8, MemFlags::trusted(), g_addr, 0);
+        let h = builder.ins().load(F64X8, MemFlags::trusted(), h_addr, 0);
+
+        // Complex expression: ((a+b)*(c-d)) + ((e*f)-(g/h))
+        let a_plus_b = builder.ins().fadd(a, b);
+        let c_minus_d = builder.ins().fsub(c_col, d);
+        let e_times_f = builder.ins().fmul(e, f);
+        let g_div_h = builder.ins().fdiv(g, h);
+
+        let left = builder.ins().fmul(a_plus_b, c_minus_d);
+        let right = builder.ins().fsub(e_times_f, g_div_h);
+        let result = builder.ins().fadd(left, right);
+
+        builder.ins().store(MemFlags::trusted(), result, r_addr, 0);
+
+        let next_idx = builder.ins().iadd_imm(idx, 1);
+        let done = builder.ins().icmp(IntCC::Equal, next_idx, num_vectors);
+        builder.ins().brif(done, exit, &[], loop_block, &[next_idx.into()]);
+
+        builder.switch_to_block(exit);
+        builder.ins().return_(&[]);
+        builder.seal_all_blocks();
+        builder.finalize();
+    }
+
+    c.module.define_function(func_id, &mut c.ctx).unwrap();
+    c.module.clear_context(&mut c.ctx);
+    c.module.finalize_definitions().unwrap();
+    let code = c.module.get_finalized_function(func_id);
+
+    let func: fn(*const f64, *const f64, *const f64, *const f64,
+                 *const f64, *const f64, *const f64, *const f64,
+                 i64, *mut f64) = unsafe { mem::transmute(code) };
+
+    const NUM_ROWS: usize = 1_000_000;
+    const VECTORS: usize = NUM_ROWS / 8;
+
+    let cols: Vec<Vec<f64>> = (0..8)
+        .map(|c| (0..NUM_ROWS).map(|i| ((i + c * 1000) as f64) * 0.001 + 1.0).collect())
+        .collect();
+    let mut result = vec![0.0f64; NUM_ROWS];
+
+    // Warmup
+    for _ in 0..3 {
+        func(cols[0].as_ptr(), cols[1].as_ptr(), cols[2].as_ptr(), cols[3].as_ptr(),
+             cols[4].as_ptr(), cols[5].as_ptr(), cols[6].as_ptr(), cols[7].as_ptr(),
+             VECTORS as i64, result.as_mut_ptr());
+    }
+
+    // Benchmark
+    let mut times = Vec::with_capacity(10);
+    for _ in 0..10 {
+        let start = Instant::now();
+        func(cols[0].as_ptr(), cols[1].as_ptr(), cols[2].as_ptr(), cols[3].as_ptr(),
+             cols[4].as_ptr(), cols[5].as_ptr(), cols[6].as_ptr(), cols[7].as_ptr(),
+             VECTORS as i64, result.as_mut_ptr());
+        times.push(start.elapsed().as_nanos() as u64);
+    }
+
+    let min = *times.iter().min().unwrap();
+    let avg = times.iter().sum::<u64>() / times.len() as u64;
+    let bytes = NUM_ROWS * 8 * 9; // 8 input + 1 output
+    let gb_per_sec = bytes as f64 / 1e9 / (min as f64 / 1e9);
+    let rows_per_sec = NUM_ROWS as f64 / (min as f64 / 1e9);
+
+    println!("\n╔══════════════════════════════════════════════════════════════════╗");
+    println!("║      BENCHMARK: Register Pressure 8-Column Expression (F64X8)    ║");
+    println!("╠══════════════════════════════════════════════════════════════════╣");
+    println!("║ Pattern: ((a+b)*(c-d)) + ((e*f)-(g/h))                            ║");
+    println!("╠══════════════════════════════════════════════════════════════════╣");
+    println!("║ Rows:        {:>12}                                        ║", NUM_ROWS);
+    println!("║ Min time:    {:>12.3} ms                                      ║", min as f64 / 1e6);
+    println!("║ Avg time:    {:>12.3} ms                                      ║", avg as f64 / 1e6);
+    println!("║ Throughput:  {:>12.2} M rows/sec                               ║", rows_per_sec / 1e6);
+    println!("║ Bandwidth:   {:>12.2} GB/sec                                   ║", gb_per_sec);
+    println!("╚══════════════════════════════════════════════════════════════════╝");
+}
+
+/// Print combined benchmark summary
+#[test]
+fn bench_summary() {
+    if !has_avx512() {
+        println!("AVX-512 not available");
+        return;
+    }
+
+    println!("\n");
+    println!("╔══════════════════════════════════════════════════════════════════╗");
+    println!("║                    AVX-512 BENCHMARK SUMMARY                     ║");
+    println!("╠══════════════════════════════════════════════════════════════════╣");
+    println!("║ Run individual benchmarks for detailed results:                  ║");
+    println!("║   cargo test -p cranelift-jit --test avx512_sql_ops --release \\  ║");
+    println!("║       -- --nocapture bench_                                      ║");
+    println!("╠══════════════════════════════════════════════════════════════════╣");
+    println!("║ BENCHMARK                          │ TYPE     │ EXPECTED GB/s    ║");
+    println!("╠════════════════════════════════════╪══════════╪══════════════════╣");
+    println!("║ Complex 4-column filter (I32X16)   │ Compute  │ 50-60 GB/s       ║");
+    println!("║ TPC-H 4-way aggregation (I64X8)    │ Mixed    │ 40-50 GB/s       ║");
+    println!("║ Chained FMA operations (F64X8)     │ Compute  │ 30-40 GB/s       ║");
+    println!("║ High selectivity filter (1%)       │ Memory   │ 60-80 GB/s       ║");
+    println!("║ Weird 3-way predicate chain        │ Compute  │ 45-55 GB/s       ║");
+    println!("║ Register pressure 8-column         │ Mixed    │ 35-45 GB/s       ║");
+    println!("╚════════════════════════════════════╧══════════╧══════════════════╝");
+    println!("\nExpected throughput varies by CPU model and memory bandwidth.");
+    println!("Modern Xeon/EPYC with DDR5 should hit upper bounds.");
+}
