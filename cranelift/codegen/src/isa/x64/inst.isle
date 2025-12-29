@@ -1114,6 +1114,9 @@
 (decl pure has_avx512bw () bool)
 (extern constructor has_avx512bw has_avx512bw)
 
+(decl pure has_avx512cd () bool)
+(extern constructor has_avx512cd has_avx512cd)
+
 (decl pure has_lzcnt () bool)
 (extern constructor has_lzcnt has_lzcnt)
 
@@ -4370,13 +4373,15 @@
 (decl x64_512_vpmaxub (Xmm XmmMem) Xmm)
 (rule (x64_512_vpmaxub src1 src2) (x64_vpmaxub_z src1 src2))
 
-;; Note: These output to a vector register (Xmm), not a k-register.
+;; Note: AVX-512 comparison outputs to k-register, then we expand to vector.
 ;; Each element becomes all-1s if comparison is true, all-0s otherwise.
 (decl x64_512_vpcmpeqb (Xmm XmmMem) Xmm)
-(rule (x64_512_vpcmpeqb src1 src2) (x64_vpcmpeqb_z src1 src2))
+(rule (x64_512_vpcmpeqb src1 src2)
+      (x64_vpmovm2b_zk (x64_vpcmpeqb_kzz src1 src2)))
 
 (decl x64_512_vpcmpgtb (Xmm XmmMem) Xmm)
-(rule (x64_512_vpcmpgtb src1 src2) (x64_vpcmpgtb_z src1 src2))
+(rule (x64_512_vpcmpgtb src1 src2)
+      (x64_vpmovm2b_zk (x64_vpcmpgtb_kzz src1 src2)))
 
 ;; Word arithmetic (I16X32)
 (decl x64_512_vpaddw (Xmm XmmMem) Xmm)
@@ -4397,13 +4402,15 @@
 (decl x64_512_vpmaxuw (Xmm XmmMem) Xmm)
 (rule (x64_512_vpmaxuw src1 src2) (x64_vpmaxuw_z src1 src2))
 
-;; Note: These output to a vector register (Xmm), not a k-register.
+;; Note: AVX-512 comparison outputs to k-register, then we expand to vector.
 ;; Each element becomes all-1s if comparison is true, all-0s otherwise.
 (decl x64_512_vpcmpeqw (Xmm XmmMem) Xmm)
-(rule (x64_512_vpcmpeqw src1 src2) (x64_vpcmpeqw_z src1 src2))
+(rule (x64_512_vpcmpeqw src1 src2)
+      (x64_vpmovm2w_zk (x64_vpcmpeqw_kzz src1 src2)))
 
 (decl x64_512_vpcmpgtw (Xmm XmmMem) Xmm)
-(rule (x64_512_vpcmpgtw src1 src2) (x64_vpcmpgtw_z src1 src2))
+(rule (x64_512_vpcmpgtw src1 src2)
+      (x64_vpmovm2w_zk (x64_vpcmpgtw_kzz src1 src2)))
 
 ;; =============================================================================
 ;; AVX-512 Masked Operations
@@ -4942,16 +4949,15 @@
 
 ;; KMOVW - Move 16-bit mask from k-register to GPR (zero-extended to 32/64 bits)
 ;; Returns a GPR containing the mask bits.
-;; Uses DSL-generated kmovw_gpr_rk constructor
 (decl x64_512_kmovw_gpr (Kmask) Gpr)
 (rule (x64_512_kmovw_gpr kmask)
-      (x64_kmovw_gpr_rk kmask))
+      (x64_kmovw_rk kmask))
 
 ;; KMOVD - Move 32-bit mask from k-register to GPR
 ;; For I8X64 comparisons (requires AVX-512BW)
 (decl x64_512_kmovd_gpr (Kmask) Gpr)
 (rule (x64_512_kmovd_gpr kmask)
-      (x64_kmovd_gpr_rk kmask))
+      (x64_kmovd_rk kmask))
 
 ;; Helper: Extract k-register mask bits to GPR for popcnt
 ;; Takes a k-register Reg, returns a GPR Reg ready for scalar popcnt
@@ -5345,19 +5351,17 @@
 ;; VPCOMPRESSD register form - compress 32-bit elements based on mask
 ;; Input mask is a vector of 0/-1, needs conversion to k-register
 ;; Uses DSL-generated constructor with vpmovd2m for mask conversion
-;; Note: Constructor signature is (src kmask) to match Intel encoding (src in ModRM.reg)
 (decl x64_512_vpcompressd_reg (Reg Xmm) Xmm)
 (rule (x64_512_vpcompressd_reg vec_mask src)
       (let ((kmask Kmask (x64_vpmovd2m_kz (xmm_new vec_mask))))
-        (x64_vpcompressd_z_km_c src kmask)))
+        (x64_vpcompressd_z_km_c kmask src)))
 
 ;; VPCOMPRESSQ register form - compress 64-bit elements based on mask
 ;; Input mask is a vector of 0/-1, needs conversion to k-register
-;; Note: Constructor signature is (src kmask) to match Intel encoding (src in ModRM.reg)
 (decl x64_512_vpcompressq_reg (Reg Xmm) Xmm)
 (rule (x64_512_vpcompressq_reg vec_mask src)
       (let ((kmask Kmask (x64_vpmovq2m_kz (xmm_new vec_mask))))
-        (x64_vpcompressq_z_km_c src kmask)))
+        (x64_vpcompressq_z_km_c kmask src)))
 
 ;; VPEXPANDD register form - expand 32-bit elements based on mask
 ;; Input mask is a vector of 0/-1, needs conversion to k-register

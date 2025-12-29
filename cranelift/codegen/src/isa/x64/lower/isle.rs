@@ -291,6 +291,11 @@ impl Context for IsleContext<'_, '_, MInst, X64Backend> {
         self.backend.x64_flags.has_avx512bw()
     }
 
+    #[inline]
+    fn has_avx512cd(&mut self) -> bool {
+        self.backend.x64_flags.has_avx512cd()
+    }
+
     // =========================================================================
     // AVX-512 Helpers
     // =========================================================================

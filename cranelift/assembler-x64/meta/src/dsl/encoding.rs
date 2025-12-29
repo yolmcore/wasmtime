@@ -114,6 +114,16 @@ pub enum ModRmKind {
     /// From the reference manual: "indicates that the ModR/M byte of the
     /// instruction contains a register operand and an r/m operand."
     Reg,
+
+    /// Models `/r` with swapped operand assignment.
+    ///
+    /// Some instructions (like VPMOV* truncation) use Op/En A where:
+    /// - ModRM:r/m (w) = destination (first operand)
+    /// - ModRM:reg (r) = source (second operand)
+    ///
+    /// This is the opposite of the normal `/r` encoding where the first
+    /// operand goes in reg and the second in r/m.
+    RegSwapped,
 }
 
 impl ModRmKind {
@@ -141,6 +151,7 @@ impl fmt::Display for ModRmKind {
         match self {
             ModRmKind::Digit(digit) => write!(f, "/{digit}"),
             ModRmKind::Reg => write!(f, "/r"),
+            ModRmKind::RegSwapped => write!(f, "/r (swapped)"),
         }
     }
 }
@@ -1375,6 +1386,21 @@ impl Evex {
         }
     }
 
+    /// Set the ModR/M byte with swapped operand assignment.
+    ///
+    /// Use this for instructions like VPMOV* truncation where Intel specifies:
+    /// - ModRM:r/m = destination (first operand)
+    /// - ModRM:reg = source (second operand)
+    ///
+    /// This is the opposite of the normal `.r()` encoding.
+    pub fn mr(self) -> Self {
+        assert!(self.modrm.is_none());
+        Self {
+            modrm: Some(ModRmKind::RegSwapped),
+            ..self
+        }
+    }
+
     fn validate(&self, _operands: &[Operand]) {
         assert!(self.opcode != u8::MAX);
         assert!(self.mmm.is_some());
@@ -1451,6 +1477,11 @@ impl Evex {
     /// Returns true if this instruction uses zero-masking.
     pub fn uses_zeroing(&self) -> bool {
         self.masking == EvexMasking::Zeroing
+    }
+
+    /// Returns true if this instruction has swapped reg/rm operand assignment.
+    pub fn is_swapped(&self) -> bool {
+        self.modrm == Some(ModRmKind::RegSwapped)
     }
 }
 

@@ -130,6 +130,52 @@ impl dsl::Format {
         ordered_ops.join(", ")
     }
 
+    /// Generate AT&T-style operand string, excluding the mask operand.
+    ///
+    /// The mask operand is handled separately to allow conditional display
+    /// (k0 means "no masking" and should not be displayed).
+    #[must_use]
+    pub(crate) fn generate_att_style_operands_without_mask(&self, has_masking: bool) -> String {
+        // Find the mask operand location if masking is enabled
+        let mask_operand = if has_masking {
+            self.operands
+                .iter()
+                .find(|o| {
+                    !o.implicit
+                        && matches!(o.location.reg_class(), Some(dsl::RegClass::Kmask))
+                        && o.mutability.is_read()
+                        && !o.mutability.is_write()
+                })
+                .map(|o| o.location)
+        } else {
+            None
+        };
+
+        // Filter out mask and implicit operands, then reverse for AT&T order
+        let ordered_ops: Vec<_> = self
+            .operands
+            .iter()
+            .filter(|o| {
+                if o.implicit {
+                    return false;
+                }
+                // Filter out the mask operand - it's handled separately
+                if mask_operand.is_some() {
+                    let is_kmask = matches!(o.location.reg_class(), Some(dsl::RegClass::Kmask));
+                    let is_read_only = o.mutability.is_read() && !o.mutability.is_write();
+                    if is_kmask && is_read_only {
+                        return false;
+                    }
+                }
+                true
+            })
+            .rev()
+            .map(|o| format!("{{{}}}", o.location))
+            .collect();
+
+        ordered_ops.join(", ")
+    }
+
     #[must_use]
     pub(crate) fn generate_implicit_operands(&self) -> String {
         let ops: Vec<_> = self
@@ -500,13 +546,14 @@ impl dsl::Format {
                     }
                 }
             },
-            [Reg(reg_or_vvvv), Reg(rm)] | [Reg(reg_or_vvvv), Reg(rm), Imm(_)] => {
+            [Reg(first), Reg(second)] | [Reg(first), Reg(second), Imm(_)] => {
                 match evex.unwrap_digit() {
                     Some(digit) => {
-                        let vvvv = reg_or_vvvv;
+                        let vvvv = first;
+                        let rm_op = second;
                         fmtln!(f, "let reg = {digit:#x};");
                         fmtln!(f, "let vvvv = self.{vvvv}.enc();");
-                        fmtln!(f, "let rm = self.{rm}.encode_bx_regs();");
+                        fmtln!(f, "let rm = self.{rm_op}.encode_bx_regs();");
                         if mask_operand.is_some() {
                             fmtln!(
                                 f,
@@ -520,13 +567,20 @@ impl dsl::Format {
                         }
                         ModRmStyle::Reg {
                             reg: ModRmReg::Digit(digit),
-                            rm: *rm,
+                            rm: *rm_op,
                         }
                     }
                     None => {
-                        let reg = reg_or_vvvv;
-                        fmtln!(f, "let reg = self.{reg}.enc();");
-                        fmtln!(f, "let rm = self.{rm}.encode_bx_regs();");
+                        // For swapped encoding (like VPMOV* truncation), first operand
+                        // goes in r/m and second in reg. For normal encoding, first
+                        // goes in reg and second in r/m.
+                        let (reg_op, rm_op) = if evex.is_swapped() {
+                            (second, first)
+                        } else {
+                            (first, second)
+                        };
+                        fmtln!(f, "let reg = self.{reg_op}.enc();");
+                        fmtln!(f, "let rm = self.{rm_op}.encode_bx_regs();");
                         if mask_operand.is_some() {
                             fmtln!(
                                 f,
@@ -536,8 +590,8 @@ impl dsl::Format {
                             fmtln!(f, "let prefix = EvexPrefix::two_op(reg, rm, {bits});");
                         }
                         ModRmStyle::Reg {
-                            reg: ModRmReg::Reg(*reg),
-                            rm: *rm,
+                            reg: ModRmReg::Reg(*reg_op),
+                            rm: *rm_op,
                         }
                     }
                 }

@@ -580,7 +580,7 @@ fn bench_memory_bandwidth_scan() {
     println!("========================================");
 
     // Pure memory bandwidth test using std (baseline)
-    for &size_mb in &[1, 10, 100, 500] {
+    for &size_mb in &[1usize, 10, 100, 500] {
         let size = size_mb * 1024 * 1024 / 8; // i64 elements
         let data: Vec<i64> = (0..size as i64).collect();
 

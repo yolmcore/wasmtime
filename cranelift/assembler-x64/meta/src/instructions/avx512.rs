@@ -368,21 +368,21 @@ pub fn list() -> Vec<Inst> {
         // EVEX.512.66.0F38.WIG 1D /r
         inst("vpabsw", fmt("Z_unary", [w(zmm1), r(zmm_m512)]), evex(L512, FullMem)._66()._0f38().w0().op(0x1D).r(), (_64b | compat) & avx512bw),
 
-        // VPCMPEQB - Packed compare equal (8-bit), outputs all-1s or all-0s to vector register
-        // EVEX.512.66.0F.WIG 74 /r
-        inst("vpcmpeqb", fmt("Z", [w(zmm1), r(zmm2), r(zmm_m512)]), evex(L512, FullMem)._66()._0f().w0().op(0x74).r(), (_64b | compat) & avx512bw),
+        // VPCMPEQB - Packed compare equal (8-bit), outputs to k-mask register
+        // EVEX.512.66.0F.WIG 74 /r: k1 {k2}, zmm2, zmm3/m512
+        inst("vpcmpeqb", fmt("kZZ", [w(k1), r(zmm2), r(zmm_m512)]), evex(L512, FullMem)._66()._0f().w0().op(0x74).r(), (_64b | compat) & avx512bw),
 
-        // VPCMPEQW - Packed compare equal (16-bit), outputs all-1s or all-0s to vector register
-        // EVEX.512.66.0F.WIG 75 /r
-        inst("vpcmpeqw", fmt("Z", [w(zmm1), r(zmm2), r(zmm_m512)]), evex(L512, FullMem)._66()._0f().w0().op(0x75).r(), (_64b | compat) & avx512bw),
+        // VPCMPEQW - Packed compare equal (16-bit), outputs to k-mask register
+        // EVEX.512.66.0F.WIG 75 /r: k1 {k2}, zmm2, zmm3/m512
+        inst("vpcmpeqw", fmt("kZZ", [w(k1), r(zmm2), r(zmm_m512)]), evex(L512, FullMem)._66()._0f().w0().op(0x75).r(), (_64b | compat) & avx512bw),
 
-        // VPCMPGTB - Packed compare greater than (8-bit signed), outputs all-1s or all-0s to vector register
-        // EVEX.512.66.0F.WIG 64 /r
-        inst("vpcmpgtb", fmt("Z", [w(zmm1), r(zmm2), r(zmm_m512)]), evex(L512, FullMem)._66()._0f().w0().op(0x64).r(), (_64b | compat) & avx512bw),
+        // VPCMPGTB - Packed compare greater than (8-bit signed), outputs to k-mask register
+        // EVEX.512.66.0F.WIG 64 /r: k1 {k2}, zmm2, zmm3/m512
+        inst("vpcmpgtb", fmt("kZZ", [w(k1), r(zmm2), r(zmm_m512)]), evex(L512, FullMem)._66()._0f().w0().op(0x64).r(), (_64b | compat) & avx512bw),
 
-        // VPCMPGTW - Packed compare greater than (16-bit signed), outputs all-1s or all-0s to vector register
-        // EVEX.512.66.0F.WIG 65 /r
-        inst("vpcmpgtw", fmt("Z", [w(zmm1), r(zmm2), r(zmm_m512)]), evex(L512, FullMem)._66()._0f().w0().op(0x65).r(), (_64b | compat) & avx512bw),
+        // VPCMPGTW - Packed compare greater than (16-bit signed), outputs to k-mask register
+        // EVEX.512.66.0F.WIG 65 /r: k1 {k2}, zmm2, zmm3/m512
+        inst("vpcmpgtw", fmt("kZZ", [w(k1), r(zmm2), r(zmm_m512)]), evex(L512, FullMem)._66()._0f().w0().op(0x65).r(), (_64b | compat) & avx512bw),
 
         // =========================================
         // Widening Multiply Operations
@@ -1060,11 +1060,13 @@ pub fn list() -> Vec<Inst> {
 
         // VPCOMPRESSD - Store sparse packed dwords
         // EVEX.512.66.0F38.W0 8B /r
-        inst("vpcompressd", fmt("Zs", [w(zmm_m512), r(zmm1)]), evex(L512, Full)._66()._0f38().w0().op(0x8B).r(), (_64b | compat) & avx512f),
+        // Op/En A: ModRM:r/m (w) = dest, ModRM:reg (r) = src - uses .mr() for swapped encoding
+        inst("vpcompressd", fmt("Zs", [w(zmm_m512), r(zmm1)]), evex(L512, Full)._66()._0f38().w0().op(0x8B).mr(), (_64b | compat) & avx512f),
 
         // VPCOMPRESSQ - Store sparse packed qwords
         // EVEX.512.66.0F38.W1 8B /r
-        inst("vpcompressq", fmt("Zs", [w(zmm_m512), r(zmm1)]), evex(L512, Full)._66()._0f38().w1().op(0x8B).r(), (_64b | compat) & avx512f),
+        // Op/En A: ModRM:r/m (w) = dest, ModRM:reg (r) = src - uses .mr() for swapped encoding
+        inst("vpcompressq", fmt("Zs", [w(zmm_m512), r(zmm1)]), evex(L512, Full)._66()._0f38().w1().op(0x8B).mr(), (_64b | compat) & avx512f),
 
         // VPEXPANDD - Load sparse packed dwords
         // EVEX.512.66.0F38.W0 89 /r
@@ -1076,11 +1078,13 @@ pub fn list() -> Vec<Inst> {
 
         // VCOMPRESSPS - Store sparse packed single-precision floats
         // EVEX.512.66.0F38.W0 8A /r
-        inst("vcompressps", fmt("Zs", [w(zmm_m512), r(zmm1)]), evex(L512, Full)._66()._0f38().w0().op(0x8A).r(), (_64b | compat) & avx512f),
+        // Op/En A: ModRM:r/m (w) = dest, ModRM:reg (r) = src - uses .mr() for swapped encoding
+        inst("vcompressps", fmt("Zs", [w(zmm_m512), r(zmm1)]), evex(L512, Full)._66()._0f38().w0().op(0x8A).mr(), (_64b | compat) & avx512f),
 
         // VCOMPRESSPD - Store sparse packed double-precision floats
         // EVEX.512.66.0F38.W1 8A /r
-        inst("vcompresspd", fmt("Zs", [w(zmm_m512), r(zmm1)]), evex(L512, Full)._66()._0f38().w1().op(0x8A).r(), (_64b | compat) & avx512f),
+        // Op/En A: ModRM:r/m (w) = dest, ModRM:reg (r) = src - uses .mr() for swapped encoding
+        inst("vcompresspd", fmt("Zs", [w(zmm_m512), r(zmm1)]), evex(L512, Full)._66()._0f38().w1().op(0x8A).mr(), (_64b | compat) & avx512f),
 
         // VEXPANDPS - Load sparse packed single-precision floats
         // EVEX.512.66.0F38.W0 88 /r
@@ -1095,14 +1099,13 @@ pub fn list() -> Vec<Inst> {
 
         // VPCOMPRESSD register form with mask - compress src elements where mask=1 to consecutive dst positions
         // EVEX.512.66.0F38.W0 8B /r  (same opcode, but reg-to-reg form)
-        // Note: Intel encoding is Op/En A: ModRM:r/m (w), ModRM:reg (r) - dst in rm, src in reg
-        // We put src first so it goes into ModRM.reg (pattern matching puts first operand in reg)
-        inst("vpcompressd", fmt("Z_km_c", [r(zmm2), r(k1), w(zmm1)]), evex(L512, Full)._66()._0f38().w0().op(0x8B).r().zero_mask(), (_64b | compat) & avx512f),
+        // Op/En A: ModRM:r/m (w) = dest, ModRM:reg (r) = src - uses .mr() for swapped encoding
+        inst("vpcompressd", fmt("Z_km_c", [w(zmm1), r(k1), r(zmm2)]), evex(L512, Full)._66()._0f38().w0().op(0x8B).mr().zero_mask(), (_64b | compat) & avx512f),
         // VPCOMPRESSQ register form with mask
-        inst("vpcompressq", fmt("Z_km_c", [r(zmm2), r(k1), w(zmm1)]), evex(L512, Full)._66()._0f38().w1().op(0x8B).r().zero_mask(), (_64b | compat) & avx512f),
+        inst("vpcompressq", fmt("Z_km_c", [w(zmm1), r(k1), r(zmm2)]), evex(L512, Full)._66()._0f38().w1().op(0x8B).mr().zero_mask(), (_64b | compat) & avx512f),
 
         // VPEXPANDD register form with mask - expand consecutive src elements to dst positions where mask=1
-        // EVEX.512.66.0F38.W0 89 /r  (same opcode, but reg-to-reg form)
+        // EVEX.512.66.0F38.W0 89 /r - uses normal .r() encoding (dst in reg, src in r/m)
         inst("vpexpandd", fmt("Z_km_e", [w(zmm1), r(k1), r(zmm2)]), evex(L512, Full)._66()._0f38().w0().op(0x89).r().zero_mask(), (_64b | compat) & avx512f),
         // VPEXPANDQ register form with mask
         inst("vpexpandq", fmt("Z_km_e", [w(zmm1), r(k1), r(zmm2)]), evex(L512, Full)._66()._0f38().w1().op(0x89).r().zero_mask(), (_64b | compat) & avx512f),
@@ -1150,19 +1153,19 @@ pub fn list() -> Vec<Inst> {
 
         // KMOVW r32, k - Move 16-bit mask to GPR (zero-extended)
         // VEX.L0.0F.W0 93 /r
-        inst("kmovw_gpr", fmt("Rk", [w(r32), r(k1)]), vex(LZ)._0f().w0().op(0x93).r(), (_64b | compat) & avx512f),
+        inst("kmovw", fmt("Rk", [w(r32), r(k1)]), vex(LZ)._0f().w0().op(0x93).r(), (_64b | compat) & avx512f),
 
         // KMOVB r32, k - Move 8-bit mask to GPR (zero-extended)
         // VEX.L0.66.0F.W0 93 /r
-        inst("kmovb_gpr", fmt("Rk", [w(r32), r(k1)]), vex(LZ)._66()._0f().w0().op(0x93).r(), (_64b | compat) & avx512dq),
+        inst("kmovb", fmt("Rk", [w(r32), r(k1)]), vex(LZ)._66()._0f().w0().op(0x93).r(), (_64b | compat) & avx512dq),
 
         // KMOVD r32, k - Move 32-bit mask to GPR
         // VEX.L0.F2.0F.W0 93 /r
-        inst("kmovd_gpr", fmt("Rk", [w(r32), r(k1)]), vex(LZ)._f2()._0f().w0().op(0x93).r(), (_64b | compat) & avx512bw),
+        inst("kmovd", fmt("Rk", [w(r32), r(k1)]), vex(LZ)._f2()._0f().w0().op(0x93).r(), (_64b | compat) & avx512bw),
 
         // KMOVQ r64, k - Move 64-bit mask to GPR
         // VEX.L0.F2.0F.W1 93 /r
-        inst("kmovq_gpr", fmt("Rk64", [w(r64), r(k1)]), vex(LZ)._f2()._0f().w1().op(0x93).r(), (_64b | compat) & avx512bw),
+        inst("kmovq", fmt("Rk64", [w(r64), r(k1)]), vex(LZ)._f2()._0f().w1().op(0x93).r(), (_64b | compat) & avx512bw),
 
         // =========================================
         // Mask Shift Operations
@@ -1545,32 +1548,39 @@ pub fn list() -> Vec<Inst> {
         // VPMOVDB - Truncate dwords (32-bit) to bytes (8-bit)
         // zmm source → xmm destination (16 dwords → 16 bytes)
         // EVEX.512.F3.0F38.W0 31 /r
-        inst("vpmovdb", fmt("xZ", [w(xmm1), r(zmm1)]), evex(L512, QuarterMem)._f3()._0f38().w0().op(0x31).r(), (_64b | compat) & avx512f),
+        // Op/En A: ModRM:r/m (w) = dest, ModRM:reg (r) = src
+        // Uses .mr() because destination goes in r/m, source in reg (opposite of normal)
+        inst("vpmovdb", fmt("xZ", [w(xmm1), r(zmm1)]), evex(L512, QuarterMem)._f3()._0f38().w0().op(0x31).mr(), (_64b | compat) & avx512f),
 
         // VPMOVDW - Truncate dwords (32-bit) to words (16-bit)
         // zmm source → ymm destination (16 dwords → 16 words)
         // EVEX.512.F3.0F38.W0 33 /r
-        inst("vpmovdw", fmt("yZ", [w(ymm1), r(zmm1)]), evex(L512, HalfMem)._f3()._0f38().w0().op(0x33).r(), (_64b | compat) & avx512f),
+        // Op/En A: ModRM:r/m (w) = dest, ModRM:reg (r) = src
+        inst("vpmovdw", fmt("yZ", [w(ymm1), r(zmm1)]), evex(L512, HalfMem)._f3()._0f38().w0().op(0x33).mr(), (_64b | compat) & avx512f),
 
         // VPMOVQB - Truncate qwords (64-bit) to bytes (8-bit)
         // zmm source → xmm destination (8 qwords → 8 bytes, only low 64 bits used)
         // EVEX.512.F3.0F38.W0 32 /r
-        inst("vpmovqb", fmt("xZ", [w(xmm1), r(zmm1)]), evex(L512, EigthMem)._f3()._0f38().w0().op(0x32).r(), (_64b | compat) & avx512f),
+        // Op/En A: ModRM:r/m (w) = dest, ModRM:reg (r) = src
+        inst("vpmovqb", fmt("xZ", [w(xmm1), r(zmm1)]), evex(L512, EigthMem)._f3()._0f38().w0().op(0x32).mr(), (_64b | compat) & avx512f),
 
         // VPMOVQD - Truncate qwords (64-bit) to dwords (32-bit)
         // zmm source → ymm destination (8 qwords → 8 dwords)
         // EVEX.512.F3.0F38.W0 35 /r
-        inst("vpmovqd", fmt("yZ", [w(ymm1), r(zmm1)]), evex(L512, HalfMem)._f3()._0f38().w0().op(0x35).r(), (_64b | compat) & avx512f),
+        // Op/En A: ModRM:r/m (w) = dest, ModRM:reg (r) = src
+        inst("vpmovqd", fmt("yZ", [w(ymm1), r(zmm1)]), evex(L512, HalfMem)._f3()._0f38().w0().op(0x35).mr(), (_64b | compat) & avx512f),
 
         // VPMOVQW - Truncate qwords (64-bit) to words (16-bit)
         // zmm source → xmm destination (8 qwords → 8 words, only low 128 bits used)
         // EVEX.512.F3.0F38.W0 34 /r
-        inst("vpmovqw", fmt("xZ", [w(xmm1), r(zmm1)]), evex(L512, QuarterMem)._f3()._0f38().w0().op(0x34).r(), (_64b | compat) & avx512f),
+        // Op/En A: ModRM:r/m (w) = dest, ModRM:reg (r) = src
+        inst("vpmovqw", fmt("xZ", [w(xmm1), r(zmm1)]), evex(L512, QuarterMem)._f3()._0f38().w0().op(0x34).mr(), (_64b | compat) & avx512f),
 
         // VPMOVWB - Truncate words (16-bit) to bytes (8-bit)
         // zmm source → ymm destination (32 words → 32 bytes)
         // EVEX.512.F3.0F38.W0 30 /r
-        inst("vpmovwb", fmt("yZ", [w(ymm1), r(zmm1)]), evex(L512, HalfMem)._f3()._0f38().w0().op(0x30).r(), (_64b | compat) & avx512bw),
+        // Op/En A: ModRM:r/m (w) = dest, ModRM:reg (r) = src
+        inst("vpmovwb", fmt("yZ", [w(ymm1), r(zmm1)]), evex(L512, HalfMem)._f3()._0f38().w0().op(0x30).mr(), (_64b | compat) & avx512bw),
 
         // =========================================
         // Truncation with Signed Saturation
@@ -1578,11 +1588,13 @@ pub fn list() -> Vec<Inst> {
 
         // VPMOVSDB - Truncate dwords to bytes with signed saturation
         // EVEX.512.F3.0F38.W0 21 /r
-        inst("vpmovsdb", fmt("xZ", [w(xmm1), r(zmm1)]), evex(L512, QuarterMem)._f3()._0f38().w0().op(0x21).r(), (_64b | compat) & avx512f),
+        // Op/En A: ModRM:r/m (w) = dest, ModRM:reg (r) = src
+        inst("vpmovsdb", fmt("xZ", [w(xmm1), r(zmm1)]), evex(L512, QuarterMem)._f3()._0f38().w0().op(0x21).mr(), (_64b | compat) & avx512f),
 
         // VPMOVSQD - Truncate qwords to dwords with signed saturation
         // EVEX.512.F3.0F38.W0 25 /r
-        inst("vpmovsqd", fmt("yZ", [w(ymm1), r(zmm1)]), evex(L512, HalfMem)._f3()._0f38().w0().op(0x25).r(), (_64b | compat) & avx512f),
+        // Op/En A: ModRM:r/m (w) = dest, ModRM:reg (r) = src
+        inst("vpmovsqd", fmt("yZ", [w(ymm1), r(zmm1)]), evex(L512, HalfMem)._f3()._0f38().w0().op(0x25).mr(), (_64b | compat) & avx512f),
 
         // =========================================
         // Truncation with Unsigned Saturation
@@ -1590,10 +1602,12 @@ pub fn list() -> Vec<Inst> {
 
         // VPMOVUSDB - Truncate dwords to bytes with unsigned saturation
         // EVEX.512.F3.0F38.W0 11 /r
-        inst("vpmovusdb", fmt("xZ", [w(xmm1), r(zmm1)]), evex(L512, QuarterMem)._f3()._0f38().w0().op(0x11).r(), (_64b | compat) & avx512f),
+        // Op/En A: ModRM:r/m (w) = dest, ModRM:reg (r) = src
+        inst("vpmovusdb", fmt("xZ", [w(xmm1), r(zmm1)]), evex(L512, QuarterMem)._f3()._0f38().w0().op(0x11).mr(), (_64b | compat) & avx512f),
 
         // VPMOVUSQD - Truncate qwords to dwords with unsigned saturation
         // EVEX.512.F3.0F38.W0 15 /r
-        inst("vpmovusqd", fmt("yZ", [w(ymm1), r(zmm1)]), evex(L512, HalfMem)._f3()._0f38().w0().op(0x15).r(), (_64b | compat) & avx512f),
+        // Op/En A: ModRM:r/m (w) = dest, ModRM:reg (r) = src
+        inst("vpmovusqd", fmt("yZ", [w(ymm1), r(zmm1)]), evex(L512, HalfMem)._f3()._0f38().w0().op(0x15).mr(), (_64b | compat) & avx512f),
     ]
 }
