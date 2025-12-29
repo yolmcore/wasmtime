@@ -7037,6 +7037,257 @@ fn test_i64x8_scatter_qq() {
 }
 
 // =============================================================================
+// Tests: AVX-512 Gather/Scatter for I32X16 (VPGATHERDD/VPSCATTERDD)
+// =============================================================================
+//
+// These test the 32-bit element variants with 32-bit indices.
+
+#[test]
+fn test_i32x16_gather_dd() {
+    let Some(mut compiler) = TestCompiler::new() else {
+        println!("Skipping: AVX-512 not available");
+        return;
+    };
+
+    // Build function: gather 16 i32 values using 32-bit indices
+    // This is VPGATHERDD (32-bit indices → 32-bit elements)
+    let mut sig = compiler.module.make_signature();
+    let ptr_type = compiler.module.target_config().pointer_type();
+    sig.params.push(AbiParam::new(ptr_type)); // base ptr
+    sig.params.push(AbiParam::new(ptr_type)); // indices ptr (I32X16 with byte offsets)
+    sig.params.push(AbiParam::new(ptr_type)); // output ptr
+    sig.call_conv = CallConv::SystemV;
+
+    let func_id = compiler
+        .module
+        .declare_function("i32x16_gather_dd", Linkage::Local, &sig)
+        .unwrap();
+
+    compiler.ctx.func = Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), sig);
+
+    {
+        let mut builder = FunctionBuilder::new(&mut compiler.ctx.func, &mut compiler.func_ctx);
+        let block = builder.create_block();
+        builder.append_block_params_for_function_params(block);
+        builder.switch_to_block(block);
+
+        let params = builder.block_params(block).to_vec();
+        let base_ptr = params[0];
+        let indices_ptr = params[1];
+        let out_ptr = params[2];
+
+        // Load 16 x i32 indices
+        let indices = builder
+            .ins()
+            .load(I32X16, MemFlags::trusted(), indices_ptr, 0);
+
+        // Gather: base[indices[i]] for each lane, with scale=1 (indices are byte offsets)
+        let gathered = builder.ins().x86_simd_gather(
+            I32X16, // result type
+            MemFlags::trusted(),
+            base_ptr,
+            indices,
+            1u8,  // scale
+            0i32, // offset
+        );
+
+        builder
+            .ins()
+            .store(MemFlags::trusted(), gathered, out_ptr, 0);
+        builder.ins().return_(&[]);
+
+        builder.seal_all_blocks();
+        builder.finalize();
+    }
+
+    compiler.ctx.set_disasm(true);
+    compiler
+        .module
+        .define_function(func_id, &mut compiler.ctx)
+        .expect("Failed to define function");
+
+    if let Some(compiled) = compiler.ctx.compiled_code() {
+        if let Some(disasm) = &compiled.vcode {
+            println!("=== VCode for i32x16_gather_dd ===\n{}", disasm);
+            assert!(
+                disasm.contains("vpgatherdd"),
+                "Expected VPGATHERDD instruction"
+            );
+        }
+    }
+
+    compiler.module.clear_context(&mut compiler.ctx);
+    compiler.module.finalize_definitions().unwrap();
+
+    let code = compiler.module.get_finalized_function(func_id);
+
+    // Create a data array to gather from
+    #[repr(C, align(64))]
+    struct DataArray([i32; 64]);
+    let data = DataArray([
+        100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115,
+        116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131,
+        132, 133, 134, 135, 136, 137, 138, 139, 140, 141, 142, 143, 144, 145, 146, 147,
+        148, 149, 150, 151, 152, 153, 154, 155, 156, 157, 158, 159, 160, 161, 162, 163,
+    ]);
+
+    // Indices are byte offsets: element 0, 2, 4, 6, ... (even elements)
+    // Each i32 is 4 bytes, so byte offsets are 0, 8, 16, 24, 32, 40, 48, 56, 64, 72, 80, 88, 96, 104, 112, 120
+    #[repr(C, align(64))]
+    struct Indices([i32; 16]);
+    let indices = Indices([
+        0, 8, 16, 24, 32, 40, 48, 56, 64, 72, 80, 88, 96, 104, 112, 120,
+    ]);
+
+    #[repr(C, align(64))]
+    struct I32x16([i32; 16]);
+    let mut result = I32x16([0; 16]);
+
+    type GatherDDFn = unsafe extern "C" fn(*const i32, *const i32, *mut I32x16);
+    let func: GatherDDFn = unsafe { mem::transmute(code) };
+
+    unsafe {
+        func(data.0.as_ptr(), indices.0.as_ptr(), &mut result);
+    }
+
+    // Should gather elements 0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30
+    assert_eq!(result.0[0], 100, "Gathered element 0");
+    assert_eq!(result.0[1], 102, "Gathered element 2");
+    assert_eq!(result.0[2], 104, "Gathered element 4");
+    assert_eq!(result.0[3], 106, "Gathered element 6");
+    assert_eq!(result.0[4], 108, "Gathered element 8");
+    assert_eq!(result.0[5], 110, "Gathered element 10");
+    assert_eq!(result.0[6], 112, "Gathered element 12");
+    assert_eq!(result.0[7], 114, "Gathered element 14");
+    assert_eq!(result.0[8], 116, "Gathered element 16");
+    assert_eq!(result.0[9], 118, "Gathered element 18");
+    assert_eq!(result.0[10], 120, "Gathered element 20");
+    assert_eq!(result.0[11], 122, "Gathered element 22");
+    assert_eq!(result.0[12], 124, "Gathered element 24");
+    assert_eq!(result.0[13], 126, "Gathered element 26");
+    assert_eq!(result.0[14], 128, "Gathered element 28");
+    assert_eq!(result.0[15], 130, "Gathered element 30");
+}
+
+#[test]
+fn test_i32x16_scatter_dd() {
+    let Some(mut compiler) = TestCompiler::new() else {
+        println!("Skipping: AVX-512 not available");
+        return;
+    };
+
+    let mut sig = compiler.module.make_signature();
+    let ptr_type = compiler.module.target_config().pointer_type();
+    sig.params.push(AbiParam::new(ptr_type)); // base ptr
+    sig.params.push(AbiParam::new(ptr_type)); // indices ptr (I32X16)
+    sig.params.push(AbiParam::new(ptr_type)); // values ptr (I32X16)
+    sig.params.push(AbiParam::new(ptr_type)); // mask ptr (I32X16)
+    sig.call_conv = CallConv::SystemV;
+
+    let func_id = compiler
+        .module
+        .declare_function("i32x16_scatter_dd", Linkage::Local, &sig)
+        .unwrap();
+
+    compiler.ctx.func = Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), sig);
+
+    {
+        let mut builder = FunctionBuilder::new(&mut compiler.ctx.func, &mut compiler.func_ctx);
+        let block = builder.create_block();
+        builder.append_block_params_for_function_params(block);
+        builder.switch_to_block(block);
+
+        let params = builder.block_params(block).to_vec();
+        let base_ptr = params[0];
+        let indices_ptr = params[1];
+        let values_ptr = params[2];
+        let mask_ptr = params[3];
+
+        let indices = builder
+            .ins()
+            .load(I32X16, MemFlags::trusted(), indices_ptr, 0);
+        let values = builder
+            .ins()
+            .load(I32X16, MemFlags::trusted(), values_ptr, 0);
+        let mask = builder.ins().load(I32X16, MemFlags::trusted(), mask_ptr, 0);
+
+        builder.ins().x86_simd_scatter(
+            MemFlags::trusted(),
+            mask,
+            values,
+            base_ptr,
+            indices,
+            1u8,  // scale
+            0i32, // offset
+        );
+
+        builder.ins().return_(&[]);
+
+        builder.seal_all_blocks();
+        builder.finalize();
+    }
+
+    compiler.ctx.set_disasm(true);
+    compiler
+        .module
+        .define_function(func_id, &mut compiler.ctx)
+        .expect("Failed to define function");
+
+    if let Some(compiled) = compiler.ctx.compiled_code() {
+        if let Some(disasm) = &compiled.vcode {
+            println!("=== VCode for i32x16_scatter_dd ===\n{}", disasm);
+            assert!(
+                disasm.contains("vpscatterdd"),
+                "Expected VPSCATTERDD instruction"
+            );
+        }
+    }
+
+    compiler.module.clear_context(&mut compiler.ctx);
+    compiler.module.finalize_definitions().unwrap();
+
+    let code = compiler.module.get_finalized_function(func_id);
+
+    #[repr(C, align(64))]
+    struct DataArray([i32; 32]);
+    let mut data = DataArray([0; 32]);
+
+    // Scatter to positions 1, 3, 5, 7 (odd positions) in first 8 elements, skip rest
+    #[repr(C, align(64))]
+    struct I32x16([i32; 16]);
+    let indices = I32x16([4, 12, 20, 28, 36, 44, 52, 60, 0, 0, 0, 0, 0, 0, 0, 0]); // byte offsets
+    let values = I32x16([
+        201, 203, 205, 207, 209, 211, 213, 215, 9999, 9999, 9999, 9999, 9999, 9999, 9999, 9999,
+    ]);
+    // Mask: only first 8 lanes active
+    let mask = I32x16([-1, -1, -1, -1, -1, -1, -1, -1, 0, 0, 0, 0, 0, 0, 0, 0]);
+
+    type ScatterDDFn = unsafe extern "C" fn(*mut i32, *const I32x16, *const I32x16, *const I32x16);
+    let func: ScatterDDFn = unsafe { mem::transmute(code) };
+
+    unsafe {
+        func(data.0.as_mut_ptr(), &indices, &values, &mask);
+    }
+
+    assert_eq!(data.0[0], 0, "Position 0 should be unchanged");
+    assert_eq!(data.0[1], 201, "Scattered to position 1");
+    assert_eq!(data.0[2], 0, "Position 2 should be unchanged");
+    assert_eq!(data.0[3], 203, "Scattered to position 3");
+    assert_eq!(data.0[4], 0, "Position 4 should be unchanged");
+    assert_eq!(data.0[5], 205, "Scattered to position 5");
+    assert_eq!(data.0[6], 0, "Position 6 should be unchanged");
+    assert_eq!(data.0[7], 207, "Scattered to position 7");
+    assert_eq!(data.0[8], 0, "Position 8 should be unchanged");
+    assert_eq!(data.0[9], 209, "Scattered to position 9");
+    assert_eq!(data.0[10], 0, "Position 10 should be unchanged");
+    assert_eq!(data.0[11], 211, "Scattered to position 11");
+    assert_eq!(data.0[12], 0, "Position 12 should be unchanged");
+    assert_eq!(data.0[13], 213, "Scattered to position 13");
+    assert_eq!(data.0[14], 0, "Position 14 should be unchanged");
+    assert_eq!(data.0[15], 215, "Scattered to position 15");
+}
+
+// =============================================================================
 // Tests: Vector Comparison producing vector mask (icmp → I32X16/I64X8)
 // =============================================================================
 //
