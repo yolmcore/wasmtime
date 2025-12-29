@@ -110,6 +110,20 @@
       (x64_512_vpxord x y))
 
 ;; =============================================================================
+;; 512-bit Bitwise NOT (bnot) - XOR with all-ones
+;; =============================================================================
+
+;; I64X8 -> VPXORQ with all-ones
+(rule 20 (lower (has_type (multi_lane 64 8) (bnot x)))
+      (if-let true (has_avx512f))
+      (x64_512_vpxorq x (x64_512_all_ones_64)))
+
+;; I32X16 -> VPXORD with all-ones
+(rule 20 (lower (has_type (multi_lane 32 16) (bnot x)))
+      (if-let true (has_avx512f))
+      (x64_512_vpxord x (x64_512_all_ones_32)))
+
+;; =============================================================================
 ;; 512-bit Signed Minimum (smin)
 ;; =============================================================================
 

@@ -4267,6 +4267,20 @@
       (let ((tmp Xmm (xmm_uninit_value)))
         (x64_512_vpxord tmp tmp)))
 
+;; Create an all-ones 512-bit vector (for I32X16 bnot)
+;; Uses VPTERNLOGD with imm8=0xFF which always outputs 1 for all bits
+(decl x64_512_all_ones_32 () Xmm)
+(rule (x64_512_all_ones_32)
+      (let ((tmp Xmm (xmm_uninit_value)))
+        (x64_512_vpternlogd tmp tmp tmp 0xFF)))
+
+;; Create an all-ones 512-bit vector (for I64X8 bnot)
+;; Uses VPTERNLOGQ with imm8=0xFF which always outputs 1 for all bits
+(decl x64_512_all_ones_64 () Xmm)
+(rule (x64_512_all_ones_64)
+      (let ((tmp Xmm (xmm_uninit_value)))
+        (x64_512_vpternlogq tmp tmp tmp 0xFF)))
+
 (decl x64_512_vpandnd (Xmm XmmMem) Xmm)
 (rule (x64_512_vpandnd src1 src2) (x64_vpandnd_z src1 src2))
 
@@ -4866,6 +4880,59 @@
 (decl x64_512_kreg_to_vec_mask_16 (Reg) Xmm)
 (rule (x64_512_kreg_to_vec_mask_16 kreg)
       (x64_vpmovm2w_zk (reg_to_kmask kreg)))
+
+;; =============================================================================
+;; K-mask ALU operations (KANDW, KORW, KXORW, KNOTW, KORTESTW)
+;; =============================================================================
+;;
+;; These operations work directly on k-register masks, allowing efficient
+;; predicate combination without going through vector masks.
+;;
+;; All operations use 16-bit word masks (for I32X16 comparisons).
+;; For I64X8, only the lower 8 bits are meaningful.
+
+;; KANDW - AND two k-masks
+;; Uses DSL-generated kandw_k constructor
+(decl x64_512_kand (Reg Reg) Reg)
+(rule (x64_512_kand a b)
+      (kmask_to_reg (x64_kandw_k (reg_to_kmask a) (reg_to_kmask b))))
+
+;; KORW - OR two k-masks
+;; Uses DSL-generated korw_k constructor
+(decl x64_512_kor (Reg Reg) Reg)
+(rule (x64_512_kor a b)
+      (kmask_to_reg (x64_korw_k (reg_to_kmask a) (reg_to_kmask b))))
+
+;; KXORW - XOR two k-masks
+;; Uses DSL-generated kxorw_k constructor
+(decl x64_512_kxor (Reg Reg) Reg)
+(rule (x64_512_kxor a b)
+      (kmask_to_reg (x64_kxorw_k (reg_to_kmask a) (reg_to_kmask b))))
+
+;; KNOTW - NOT a k-mask
+;; Uses DSL-generated knotw_ku constructor
+(decl x64_512_knot (Reg) Reg)
+(rule (x64_512_knot a)
+      (kmask_to_reg (x64_knotw_ku (reg_to_kmask a))))
+
+;; KANDNW - AND NOT (a AND NOT b) two k-masks
+;; Uses DSL-generated kandnw_k constructor
+(decl x64_512_kandn (Reg Reg) Reg)
+(rule (x64_512_kandn a b)
+      (kmask_to_reg (x64_kandnw_k (reg_to_kmask a) (reg_to_kmask b))))
+
+;; KORTESTW - Test k-mask and set flags (ZF=1 if all zeros, CF=1 if all ones)
+;; This is a side-effect instruction that only sets flags.
+;; Returns a SideEffectNoResult that can be emitted for its flag-setting effect.
+;; Uses DSL-generated kortestw_kt constructor
+;;
+;; Usage for early exit when mask is all zeros:
+;;   emit_side_effect (x64_512_kortest mask)
+;;   Then use a separate jmp_if for ZF=1 (equal to zero)
+(decl x64_512_kortest (Reg) SideEffectNoResult)
+(rule (x64_512_kortest mask)
+      (let ((kmask Kmask (reg_to_kmask mask)))
+        (x64_kortestw_kt kmask kmask)))
 
 ;; =============================================================================
 ;; Broadcast helpers (VPBROADCASTD/Q)
