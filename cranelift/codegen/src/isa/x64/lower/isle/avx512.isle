@@ -2101,3 +2101,21 @@
 (rule 17 (lower (has_type (multi_lane 32 8) (fdemote x @ (value_type (multi_lane 64 8)))))
       (if-let true (has_avx512f))
       (x64_512_vcvtpd2ps (put_in_xmm x)))
+
+;; =============================================================================
+;; 512-bit Vector Widening/Narrowing (swiden_low, swiden_high, snarrow)
+;; =============================================================================
+
+;; I32X16 -> I64X8: swiden_low takes lower 8 I32 lanes and sign-extends to I64X8
+;; Uses VEXTRACTI32X8 to get lower 256-bits, then VPMOVSXDQ to sign-extend
+(rule 17 (lower (has_type (multi_lane 64 8) (swiden_low val @ (value_type (multi_lane 32 16)))))
+      (if-let true (has_avx512f))
+      (let ((lo Xmm (x64_512_vextracti32x8 (put_in_xmm val) 0)))
+        (x64_512_vpmovsxdq (RegMem.Reg lo))))
+
+;; I32X16 -> I64X8: swiden_high takes upper 8 I32 lanes and sign-extends to I64X8
+;; Uses VEXTRACTI32X8 to get upper 256-bits, then VPMOVSXDQ to sign-extend
+(rule 17 (lower (has_type (multi_lane 64 8) (swiden_high val @ (value_type (multi_lane 32 16)))))
+      (if-let true (has_avx512f))
+      (let ((hi Xmm (x64_512_vextracti32x8 (put_in_xmm val) 1)))
+        (x64_512_vpmovsxdq (RegMem.Reg hi))))
