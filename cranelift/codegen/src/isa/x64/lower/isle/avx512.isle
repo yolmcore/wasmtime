@@ -1746,6 +1746,129 @@
       (x64_pextrq (x64_512_vextracti64x2 (put_in_xmm vec) 3) 1))
 
 ;; -----------------------------------------------------------------------------
+;; I32X16 store(extractlane) - Optimized store of extracted i32 from 512-bit vector
+;; These override the generic store(extractlane) rules in lower.isle which don't
+;; handle lane indices > 3 correctly for I32X16.
+;; -----------------------------------------------------------------------------
+
+;; I32X16 store extractlane lanes 0-3 (chunk 0)
+;; Priority 18 to override the generic store(extractlane) rules in lower.isle
+(rule 18 (lower (store (little_or_native_endian flags)
+                      (has_type $I32 (extractlane vec @ (value_type (multi_lane 32 16)) (u8_from_uimm8 0)))
+                      address offset))
+      (if-let true (has_avx512f))
+      (if-let true (has_sse41))
+      (side_effect (x64_pextrd_store (to_amode flags address offset) (x64_512_vextracti32x4 (put_in_xmm vec) 0) 0)))
+
+(rule 18 (lower (store (little_or_native_endian flags)
+                      (has_type $I32 (extractlane vec @ (value_type (multi_lane 32 16)) (u8_from_uimm8 1)))
+                      address offset))
+      (if-let true (has_avx512f))
+      (if-let true (has_sse41))
+      (side_effect (x64_pextrd_store (to_amode flags address offset) (x64_512_vextracti32x4 (put_in_xmm vec) 0) 1)))
+
+(rule 18 (lower (store (little_or_native_endian flags)
+                      (has_type $I32 (extractlane vec @ (value_type (multi_lane 32 16)) (u8_from_uimm8 2)))
+                      address offset))
+      (if-let true (has_avx512f))
+      (if-let true (has_sse41))
+      (side_effect (x64_pextrd_store (to_amode flags address offset) (x64_512_vextracti32x4 (put_in_xmm vec) 0) 2)))
+
+(rule 18 (lower (store (little_or_native_endian flags)
+                      (has_type $I32 (extractlane vec @ (value_type (multi_lane 32 16)) (u8_from_uimm8 3)))
+                      address offset))
+      (if-let true (has_avx512f))
+      (if-let true (has_sse41))
+      (side_effect (x64_pextrd_store (to_amode flags address offset) (x64_512_vextracti32x4 (put_in_xmm vec) 0) 3)))
+
+;; I32X16 store extractlane lanes 4-7 (chunk 1)
+(rule 18 (lower (store (little_or_native_endian flags)
+                      (has_type $I32 (extractlane vec @ (value_type (multi_lane 32 16)) (u8_from_uimm8 4)))
+                      address offset))
+      (if-let true (has_avx512f))
+      (if-let true (has_sse41))
+      (side_effect (x64_pextrd_store (to_amode flags address offset) (x64_512_vextracti32x4 (put_in_xmm vec) 1) 0)))
+
+(rule 18 (lower (store (little_or_native_endian flags)
+                      (has_type $I32 (extractlane vec @ (value_type (multi_lane 32 16)) (u8_from_uimm8 5)))
+                      address offset))
+      (if-let true (has_avx512f))
+      (if-let true (has_sse41))
+      (side_effect (x64_pextrd_store (to_amode flags address offset) (x64_512_vextracti32x4 (put_in_xmm vec) 1) 1)))
+
+(rule 18 (lower (store (little_or_native_endian flags)
+                      (has_type $I32 (extractlane vec @ (value_type (multi_lane 32 16)) (u8_from_uimm8 6)))
+                      address offset))
+      (if-let true (has_avx512f))
+      (if-let true (has_sse41))
+      (side_effect (x64_pextrd_store (to_amode flags address offset) (x64_512_vextracti32x4 (put_in_xmm vec) 1) 2)))
+
+(rule 18 (lower (store (little_or_native_endian flags)
+                      (has_type $I32 (extractlane vec @ (value_type (multi_lane 32 16)) (u8_from_uimm8 7)))
+                      address offset))
+      (if-let true (has_avx512f))
+      (if-let true (has_sse41))
+      (side_effect (x64_pextrd_store (to_amode flags address offset) (x64_512_vextracti32x4 (put_in_xmm vec) 1) 3)))
+
+;; I32X16 store extractlane lanes 8-11 (chunk 2)
+(rule 18 (lower (store (little_or_native_endian flags)
+                      (has_type $I32 (extractlane vec @ (value_type (multi_lane 32 16)) (u8_from_uimm8 8)))
+                      address offset))
+      (if-let true (has_avx512f))
+      (if-let true (has_sse41))
+      (side_effect (x64_pextrd_store (to_amode flags address offset) (x64_512_vextracti32x4 (put_in_xmm vec) 2) 0)))
+
+(rule 18 (lower (store (little_or_native_endian flags)
+                      (has_type $I32 (extractlane vec @ (value_type (multi_lane 32 16)) (u8_from_uimm8 9)))
+                      address offset))
+      (if-let true (has_avx512f))
+      (if-let true (has_sse41))
+      (side_effect (x64_pextrd_store (to_amode flags address offset) (x64_512_vextracti32x4 (put_in_xmm vec) 2) 1)))
+
+(rule 18 (lower (store (little_or_native_endian flags)
+                      (has_type $I32 (extractlane vec @ (value_type (multi_lane 32 16)) (u8_from_uimm8 10)))
+                      address offset))
+      (if-let true (has_avx512f))
+      (if-let true (has_sse41))
+      (side_effect (x64_pextrd_store (to_amode flags address offset) (x64_512_vextracti32x4 (put_in_xmm vec) 2) 2)))
+
+(rule 18 (lower (store (little_or_native_endian flags)
+                      (has_type $I32 (extractlane vec @ (value_type (multi_lane 32 16)) (u8_from_uimm8 11)))
+                      address offset))
+      (if-let true (has_avx512f))
+      (if-let true (has_sse41))
+      (side_effect (x64_pextrd_store (to_amode flags address offset) (x64_512_vextracti32x4 (put_in_xmm vec) 2) 3)))
+
+;; I32X16 store extractlane lanes 12-15 (chunk 3)
+(rule 18 (lower (store (little_or_native_endian flags)
+                      (has_type $I32 (extractlane vec @ (value_type (multi_lane 32 16)) (u8_from_uimm8 12)))
+                      address offset))
+      (if-let true (has_avx512f))
+      (if-let true (has_sse41))
+      (side_effect (x64_pextrd_store (to_amode flags address offset) (x64_512_vextracti32x4 (put_in_xmm vec) 3) 0)))
+
+(rule 18 (lower (store (little_or_native_endian flags)
+                      (has_type $I32 (extractlane vec @ (value_type (multi_lane 32 16)) (u8_from_uimm8 13)))
+                      address offset))
+      (if-let true (has_avx512f))
+      (if-let true (has_sse41))
+      (side_effect (x64_pextrd_store (to_amode flags address offset) (x64_512_vextracti32x4 (put_in_xmm vec) 3) 1)))
+
+(rule 18 (lower (store (little_or_native_endian flags)
+                      (has_type $I32 (extractlane vec @ (value_type (multi_lane 32 16)) (u8_from_uimm8 14)))
+                      address offset))
+      (if-let true (has_avx512f))
+      (if-let true (has_sse41))
+      (side_effect (x64_pextrd_store (to_amode flags address offset) (x64_512_vextracti32x4 (put_in_xmm vec) 3) 2)))
+
+(rule 18 (lower (store (little_or_native_endian flags)
+                      (has_type $I32 (extractlane vec @ (value_type (multi_lane 32 16)) (u8_from_uimm8 15)))
+                      address offset))
+      (if-let true (has_avx512f))
+      (if-let true (has_sse41))
+      (side_effect (x64_pextrd_store (to_amode flags address offset) (x64_512_vextracti32x4 (put_in_xmm vec) 3) 3)))
+
+;; -----------------------------------------------------------------------------
 ;; I32X16 insertlane - Insert single i32 into 512-bit vector
 ;; 1. Extract the 128-bit chunk, 2. Insert scalar, 3. Reinsert chunk
 ;; -----------------------------------------------------------------------------

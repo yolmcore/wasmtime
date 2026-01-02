@@ -8904,6 +8904,57 @@ fn test_i32x16_icmp_signed_boundary() {
     assert_eq!(result, I32x16::splat(-1));
 }
 
+/// Test SignedGreaterThanOrEqual with the exact pattern that platform-vec uses
+#[test]
+fn test_i32x16_icmp_signed_ge_platform_vec_pattern() {
+    let Some(mut compiler) = TestCompiler::new() else {
+        println!("Skipping: AVX-512 not available");
+        return;
+    };
+
+    // Test signed greater than or equal
+    let code = compiler
+        .compile_comparison_i32x16("i32x16_sge", IntCC::SignedGreaterThanOrEqual)
+        .expect("Failed to compile");
+
+    let func: BinaryI32x16Fn = unsafe { mem::transmute(code) };
+
+    // Test with the exact data pattern from platform-vec: [10,20,30,...,160] >= 100
+    let data = I32x16::new([10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160]);
+    let constant = I32x16::splat(100);
+    let mut result = I32x16::splat(0);
+
+    unsafe { func(&data, &constant, &mut result) };
+
+    // Expected: lanes 9-15 should be -1 (TRUE), lanes 0-8 should be 0 (FALSE)
+    let expected = I32x16::new([0, 0, 0, 0, 0, 0, 0, 0, 0, -1, -1, -1, -1, -1, -1, -1]);
+
+    // Check individual lanes for better error messages
+    for i in 0..16 {
+        let actual_lane = result.0[i];
+        let expected_lane = expected.0[i];
+        assert_eq!(
+            actual_lane, expected_lane,
+            "Lane {} mismatch: data[{}]={} >= 100 should be {}, got {}",
+            i, i, data.0[i],
+            if expected_lane == -1 { "TRUE (-1)" } else { "FALSE (0)" },
+            if actual_lane == -1 { "TRUE (-1)" } else { "FALSE (0)" }
+        );
+    }
+
+    // 100 >= 100 should be true
+    let a = I32x16::splat(100);
+    let b = I32x16::splat(100);
+    unsafe { func(&a, &b, &mut result) };
+    assert_eq!(result, I32x16::splat(-1), "100 >= 100 should be TRUE");
+
+    // 99 >= 100 should be false
+    let a = I32x16::splat(99);
+    let b = I32x16::splat(100);
+    unsafe { func(&a, &b, &mut result) };
+    assert_eq!(result, I32x16::splat(0), "99 >= 100 should be FALSE");
+}
+
 /// Test that icmp followed by extractlane works for ALL lanes (including 4+)
 /// This specifically tests that VPMOVM2D correctly expands to full 512 bits
 #[test]
