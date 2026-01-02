@@ -1506,6 +1506,30 @@
 (rule 2 (x64_load $F64X2 addr _ext_kind)
       (x64_movupd_load addr))
 
+;; AVX-512: 512-bit vector loads (64 bytes)
+;; These rules have higher priority (3) to match before the generic multi_lane rule (0)
+;; Note: These match both integer and float 512-bit types (I64X8/F64X8, I32X16/F32X16, etc.)
+
+;; 64-bit x 8 lanes (I64X8, F64X8 = 512-bit) -> VMOVDQU64
+(rule 3 (x64_load (multi_lane 64 8) addr _ext_kind)
+      (if-let true (has_avx512f))
+      (x64_vmovdqu64_zl addr))
+
+;; 32-bit x 16 lanes (I32X16, F32X16 = 512-bit) -> VMOVDQU32
+(rule 3 (x64_load (multi_lane 32 16) addr _ext_kind)
+      (if-let true (has_avx512f))
+      (x64_vmovdqu32_zl addr))
+
+;; 16-bit x 32 lanes (I16X32 = 512-bit) -> VMOVDQU16 (requires AVX-512BW)
+(rule 3 (x64_load (multi_lane 16 32) addr _ext_kind)
+      (if-let true (has_avx512bw))
+      (x64_vmovdqu16_zl addr))
+
+;; 8-bit x 64 lanes (I8X64 = 512-bit) -> VMOVDQU8 (requires AVX-512BW)
+(rule 3 (x64_load (multi_lane 8 64) addr _ext_kind)
+      (if-let true (has_avx512bw))
+      (x64_vmovdqu8_zl addr))
+
 (rule 0 (x64_load (multi_lane _bits _lanes) addr _ext_kind)
       (x64_movdqu_load addr))
 
@@ -4633,6 +4657,97 @@
 (rule (x64_512_vpcmpgtq src1 src2) (x64_512_vpcmpq (Avx512Cond.Gt) src1 src2))
 
 ;; =============================================================================
+;; Vector-returning I32X16 comparisons (for icmp lowering)
+;; =============================================================================
+;; These convert k-mask comparison results to vectors (-1/0 per element).
+
+(decl x64_512_vpcmpeqd_vec (Xmm XmmMem) Xmm)
+(rule (x64_512_vpcmpeqd_vec src1 src2)
+      (x64_512_kreg_to_vec_mask_32 (x64_512_vpcmpeqd src1 src2)))
+
+(decl x64_512_vpcmpneqd_vec (Xmm XmmMem) Xmm)
+(rule (x64_512_vpcmpneqd_vec src1 src2)
+      (x64_512_kreg_to_vec_mask_32 (x64_512_vpcmpneqd src1 src2)))
+
+(decl x64_512_vpcmpltd_vec (Xmm XmmMem) Xmm)
+(rule (x64_512_vpcmpltd_vec src1 src2)
+      (x64_512_kreg_to_vec_mask_32 (x64_512_vpcmpltd src1 src2)))
+
+(decl x64_512_vpcmpled_vec (Xmm XmmMem) Xmm)
+(rule (x64_512_vpcmpled_vec src1 src2)
+      (x64_512_kreg_to_vec_mask_32 (x64_512_vpcmpled src1 src2)))
+
+(decl x64_512_vpcmpgtd_vec (Xmm XmmMem) Xmm)
+(rule (x64_512_vpcmpgtd_vec src1 src2)
+      (x64_512_kreg_to_vec_mask_32 (x64_512_vpcmpgtd src1 src2)))
+
+(decl x64_512_vpcmpged_vec (Xmm XmmMem) Xmm)
+(rule (x64_512_vpcmpged_vec src1 src2)
+      (x64_512_kreg_to_vec_mask_32 (x64_512_vpcmpged src1 src2)))
+
+;; Unsigned I32X16 comparisons (vector-returning)
+(decl x64_512_vpcmpultd_vec (Xmm XmmMem) Xmm)
+(rule (x64_512_vpcmpultd_vec src1 src2)
+      (x64_512_kreg_to_vec_mask_32 (x64_512_vpcmpultd src1 src2)))
+
+(decl x64_512_vpcmpuled_vec (Xmm XmmMem) Xmm)
+(rule (x64_512_vpcmpuled_vec src1 src2)
+      (x64_512_kreg_to_vec_mask_32 (x64_512_vpcmpuled src1 src2)))
+
+(decl x64_512_vpcmpugtd_vec (Xmm XmmMem) Xmm)
+(rule (x64_512_vpcmpugtd_vec src1 src2)
+      (x64_512_kreg_to_vec_mask_32 (x64_512_vpcmpugtd src1 src2)))
+
+(decl x64_512_vpcmpuged_vec (Xmm XmmMem) Xmm)
+(rule (x64_512_vpcmpuged_vec src1 src2)
+      (x64_512_kreg_to_vec_mask_32 (x64_512_vpcmpuged src1 src2)))
+
+;; =============================================================================
+;; Vector-returning I64X8 comparisons (for icmp lowering)
+;; =============================================================================
+
+(decl x64_512_vpcmpeqq_vec (Xmm XmmMem) Xmm)
+(rule (x64_512_vpcmpeqq_vec src1 src2)
+      (x64_512_kreg_to_vec_mask_64 (x64_512_vpcmpeqq src1 src2)))
+
+(decl x64_512_vpcmpneqq_vec (Xmm XmmMem) Xmm)
+(rule (x64_512_vpcmpneqq_vec src1 src2)
+      (x64_512_kreg_to_vec_mask_64 (x64_512_vpcmpneqq src1 src2)))
+
+(decl x64_512_vpcmpltq_vec (Xmm XmmMem) Xmm)
+(rule (x64_512_vpcmpltq_vec src1 src2)
+      (x64_512_kreg_to_vec_mask_64 (x64_512_vpcmpltq src1 src2)))
+
+(decl x64_512_vpcmpleq_vec (Xmm XmmMem) Xmm)
+(rule (x64_512_vpcmpleq_vec src1 src2)
+      (x64_512_kreg_to_vec_mask_64 (x64_512_vpcmpleq src1 src2)))
+
+(decl x64_512_vpcmpgtq_vec (Xmm XmmMem) Xmm)
+(rule (x64_512_vpcmpgtq_vec src1 src2)
+      (x64_512_kreg_to_vec_mask_64 (x64_512_vpcmpgtq src1 src2)))
+
+(decl x64_512_vpcmpgeq_vec (Xmm XmmMem) Xmm)
+(rule (x64_512_vpcmpgeq_vec src1 src2)
+      (x64_512_kreg_to_vec_mask_64 (x64_512_vpcmpgeq src1 src2)))
+
+;; Unsigned I64X8 comparisons (vector-returning)
+(decl x64_512_vpcmpultq_vec (Xmm XmmMem) Xmm)
+(rule (x64_512_vpcmpultq_vec src1 src2)
+      (x64_512_kreg_to_vec_mask_64 (x64_512_vpcmpultq src1 src2)))
+
+(decl x64_512_vpcmpuleq_vec (Xmm XmmMem) Xmm)
+(rule (x64_512_vpcmpuleq_vec src1 src2)
+      (x64_512_kreg_to_vec_mask_64 (x64_512_vpcmpuleq src1 src2)))
+
+(decl x64_512_vpcmpugtq_vec (Xmm XmmMem) Xmm)
+(rule (x64_512_vpcmpugtq_vec src1 src2)
+      (x64_512_kreg_to_vec_mask_64 (x64_512_vpcmpugtq src1 src2)))
+
+(decl x64_512_vpcmpugeq_vec (Xmm XmmMem) Xmm)
+(rule (x64_512_vpcmpugeq_vec src1 src2)
+      (x64_512_kreg_to_vec_mask_64 (x64_512_vpcmpugeq src1 src2)))
+
+;; =============================================================================
 ;; Unsigned Integer Comparisons (VPCMPUD/VPCMPUQ)
 ;; =============================================================================
 ;;
@@ -5023,6 +5138,12 @@
 (rule (x64_512_kmovd_gpr kmask)
       (x64_kmovd_rk kmask))
 
+;; KMOVQ - Move 64-bit mask from k-register to GPR
+;; For I8X64 vhigh_bits (requires AVX-512BW)
+(decl x64_512_kmovq_gpr (Kmask) Gpr)
+(rule (x64_512_kmovq_gpr kmask)
+      (x64_kmovq_rk64 kmask))
+
 ;; Helper: Extract k-register mask bits to GPR for popcnt
 ;; Takes a k-register Reg, returns a GPR Reg ready for scalar popcnt
 (decl x64_512_kmask_to_gpr (Reg) Gpr)
@@ -5030,8 +5151,16 @@
       (x64_512_kmovw_gpr (reg_to_kmask kreg)))
 
 ;; =============================================================================
-;; Broadcast helpers (VPBROADCASTD/Q)
+;; Broadcast helpers (VPBROADCASTB/W/D/Q)
 ;; =============================================================================
+
+;; VPBROADCASTB - broadcast 8-bit element to all 64 lanes (AVX-512BW)
+(decl x64_512_vpbroadcastb (RegMem) Xmm)
+(rule (x64_512_vpbroadcastb src) (x64_vpbroadcastb_z_unary src))
+
+;; VPBROADCASTW - broadcast 16-bit element to all 32 lanes (AVX-512BW)
+(decl x64_512_vpbroadcastw (RegMem) Xmm)
+(rule (x64_512_vpbroadcastw src) (x64_vpbroadcastw_z_unary src))
 
 ;; VPBROADCASTD - broadcast 32-bit element to all 16 lanes
 (decl x64_512_vpbroadcastd (RegMem) Xmm)

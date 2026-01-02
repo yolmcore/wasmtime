@@ -2276,8 +2276,18 @@ pub(crate) fn define(
         .operands_out(vec![Operand::new("a", I16or32)]),
     );
 
-    // Integer division and remainder are scalar-only; most
-    // hardware does not directly support vector integer division.
+    // Integer division and remainder operations.
+    // Now supports both scalar and vector types. Vector division is implemented
+    // via lane-by-lane scalar operations or float conversion on supported hardware.
+    let iBxN = &TypeVar::new(
+        "iBxN",
+        "A scalar or SIMD vector integer type",
+        TypeSetBuilder::new()
+            .ints(Interval::All)
+            .simd_lanes(Interval::All)
+            .includes_scalars(true)
+            .build(),
+    );
 
     ig.push(
         Inst::new(
@@ -2286,11 +2296,12 @@ pub(crate) fn define(
         Unsigned integer division: `a := \lfloor {x \over y} \rfloor`.
 
         This operation traps if the divisor is zero.
+        For vector types, division is performed lane-by-lane.
         "#,
             &formats.binary,
         )
-        .operands_in(vec![Operand::new("x", iB), Operand::new("y", iB)])
-        .operands_out(vec![Operand::new("a", iB)])
+        .operands_in(vec![Operand::new("x", iBxN), Operand::new("y", iBxN)])
+        .operands_out(vec![Operand::new("a", iBxN)])
         .can_trap()
         .side_effects_idempotent(),
     );
@@ -2305,11 +2316,12 @@ pub(crate) fn define(
         This operation traps if the divisor is zero, or if the result is not
         representable in `B` bits two's complement. This only happens
         when `x = -2^{B-1}, y = -1`.
+        For vector types, division is performed lane-by-lane.
         "#,
             &formats.binary,
         )
-        .operands_in(vec![Operand::new("x", iB), Operand::new("y", iB)])
-        .operands_out(vec![Operand::new("a", iB)])
+        .operands_in(vec![Operand::new("x", iBxN), Operand::new("y", iBxN)])
+        .operands_out(vec![Operand::new("a", iBxN)])
         .can_trap()
         .side_effects_idempotent(),
     );
@@ -2321,11 +2333,12 @@ pub(crate) fn define(
         Unsigned integer remainder.
 
         This operation traps if the divisor is zero.
+        For vector types, remainder is performed lane-by-lane.
         "#,
             &formats.binary,
         )
-        .operands_in(vec![Operand::new("x", iB), Operand::new("y", iB)])
-        .operands_out(vec![Operand::new("a", iB)])
+        .operands_in(vec![Operand::new("x", iBxN), Operand::new("y", iBxN)])
+        .operands_out(vec![Operand::new("a", iBxN)])
         .can_trap()
         .side_effects_idempotent(),
     );
@@ -2337,11 +2350,12 @@ pub(crate) fn define(
         Signed integer remainder. The result has the sign of the dividend.
 
         This operation traps if the divisor is zero.
+        For vector types, remainder is performed lane-by-lane.
         "#,
             &formats.binary,
         )
-        .operands_in(vec![Operand::new("x", iB), Operand::new("y", iB)])
-        .operands_out(vec![Operand::new("a", iB)])
+        .operands_in(vec![Operand::new("x", iBxN), Operand::new("y", iBxN)])
+        .operands_out(vec![Operand::new("a", iBxN)])
         .can_trap()
         .side_effects_idempotent(),
     );

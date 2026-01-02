@@ -218,6 +218,10 @@ pub enum Avx512AluOp {
     // =========================================
     // Broadcast Operations
     // =========================================
+    /// VPBROADCASTB - Broadcast 8-bit element to all lanes (AVX-512BW)
+    Vpbroadcastb,
+    /// VPBROADCASTW - Broadcast 16-bit element to all lanes (AVX-512BW)
+    Vpbroadcastw,
     /// VPBROADCASTD - Broadcast 32-bit element to all lanes
     Vpbroadcastd,
     /// VPBROADCASTQ - Broadcast 64-bit element to all lanes
@@ -870,6 +874,8 @@ impl Avx512AluOp {
             Avx512AluOp::Vpopcntq => 0x55,
 
             // Broadcast
+            Avx512AluOp::Vpbroadcastb => 0x78,
+            Avx512AluOp::Vpbroadcastw => 0x79,
             Avx512AluOp::Vpbroadcastd => 0x58,
             Avx512AluOp::Vpbroadcastq => 0x59,
 
@@ -1011,6 +1017,8 @@ impl Avx512AluOp {
             | Avx512AluOp::Vpabsq
             | Avx512AluOp::Vpopcntd
             | Avx512AluOp::Vpopcntq
+            | Avx512AluOp::Vpbroadcastb
+            | Avx512AluOp::Vpbroadcastw
             | Avx512AluOp::Vpbroadcastd
             | Avx512AluOp::Vpbroadcastq
             | Avx512AluOp::Vpblendmd
@@ -1157,6 +1165,8 @@ impl Avx512AluOp {
             Avx512AluOp::Vpabsq => "vpabsq",
             Avx512AluOp::Vpopcntd => "vpopcntd",
             Avx512AluOp::Vpopcntq => "vpopcntq",
+            Avx512AluOp::Vpbroadcastb => "vpbroadcastb",
+            Avx512AluOp::Vpbroadcastw => "vpbroadcastw",
             Avx512AluOp::Vpbroadcastd => "vpbroadcastd",
             Avx512AluOp::Vpbroadcastq => "vpbroadcastq",
             Avx512AluOp::Vpblendmd => "vpblendmd",
@@ -1216,6 +1226,8 @@ impl Avx512AluOp {
                 | Avx512AluOp::Vpabsq
                 | Avx512AluOp::Vpopcntd
                 | Avx512AluOp::Vpopcntq
+                | Avx512AluOp::Vpbroadcastb
+                | Avx512AluOp::Vpbroadcastw
                 | Avx512AluOp::Vpbroadcastd
                 | Avx512AluOp::Vpbroadcastq
                 | Avx512AluOp::Vpconflictd

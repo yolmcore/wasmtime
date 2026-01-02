@@ -473,6 +473,14 @@ pub fn list() -> Vec<Inst> {
         // Broadcast Operations
         // =========================================
 
+        // VPBROADCASTB - Broadcast 8-bit element (AVX-512BW)
+        // EVEX.512.66.0F38.W0 78 /r
+        inst("vpbroadcastb", fmt("Z_unary", [w(zmm1), r(xmm_m8)]), evex(L512, Tuple1Scalar)._66()._0f38().w0().op(0x78).r(), (_64b | compat) & avx512bw),
+
+        // VPBROADCASTW - Broadcast 16-bit element (AVX-512BW)
+        // EVEX.512.66.0F38.W0 79 /r
+        inst("vpbroadcastw", fmt("Z_unary", [w(zmm1), r(xmm_m16)]), evex(L512, Tuple1Scalar)._66()._0f38().w0().op(0x79).r(), (_64b | compat) & avx512bw),
+
         // VPBROADCASTD - Broadcast 32-bit element
         // EVEX.512.66.0F38.W0 58 /r
         inst("vpbroadcastd", fmt("Z_unary", [w(zmm1), r(xmm_m32)]), evex(L512, Tuple1Scalar)._66()._0f38().w0().op(0x58).r(), (_64b | compat) & avx512f),
