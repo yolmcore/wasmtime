@@ -8904,6 +8904,78 @@ fn test_i32x16_icmp_signed_boundary() {
     assert_eq!(result, I32x16::splat(-1));
 }
 
+/// Test that icmp followed by extractlane works for ALL lanes (including 4+)
+/// This specifically tests that VPMOVM2D correctly expands to full 512 bits
+#[test]
+fn test_i32x16_icmp_extractlane_all_lanes() {
+    let Some(isa) = isa_with_avx512() else {
+        println!("Skipping: AVX-512 not available");
+        return;
+    };
+
+    let mut jit_builder = JITBuilder::with_isa(isa, default_libcall_names());
+    let mut module = JITModule::new(jit_builder);
+
+    // Test function: takes two I32X16 ptrs, returns extracted lane 4 from icmp result
+    let mut sig = module.make_signature();
+    sig.params.push(AbiParam::new(I64)); // a_ptr
+    sig.params.push(AbiParam::new(I64)); // b_ptr
+    sig.returns.push(AbiParam::new(I32)); // extracted lane
+
+    let func_id = module
+        .declare_function("icmp_extract4", Linkage::Local, &sig)
+        .expect("declare");
+
+    let mut ctx = module.make_context();
+    ctx.func.signature = sig.clone();
+
+    let mut fnbuilder_ctx = FunctionBuilderContext::new();
+    {
+        let mut builder = FunctionBuilder::new(&mut ctx.func, &mut fnbuilder_ctx);
+        let entry_block = builder.create_block();
+        builder.append_block_params_for_function_params(entry_block);
+        builder.switch_to_block(entry_block);
+        builder.seal_block(entry_block);
+
+        let a_ptr = builder.block_params(entry_block)[0];
+        let b_ptr = builder.block_params(entry_block)[1];
+
+        // Load vectors
+        let a = builder.ins().load(I32X16, MemFlags::trusted(), a_ptr, 0);
+        let b = builder.ins().load(I32X16, MemFlags::trusted(), b_ptr, 0);
+
+        // Do icmp equal
+        let mask = builder.ins().icmp(IntCC::Equal, a, b);
+
+        // Extract lane 4 from the mask
+        let lane4 = builder.ins().extractlane(mask, 4u8);
+
+        builder.ins().return_(&[lane4]);
+    }
+
+    module
+        .define_function(func_id, &mut ctx)
+        .expect("define");
+    module.clear_context(&mut ctx);
+    module.finalize_definitions().expect("finalize");
+
+    let code = module.get_finalized_function(func_id);
+    let func: extern "C" fn(*const I32x16, *const I32x16) -> i32 = unsafe { mem::transmute(code) };
+
+    // Test case 1: lane 4 should match (both have 4 at position 4)
+    let a = I32x16::new([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
+    let b = I32x16::new([99, 99, 99, 99, 4, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99]);
+    let result = func(&a, &b);
+    assert_eq!(result, -1, "Lane 4 should match: a[4]=4 == b[4]=4");
+
+    // Test case 2: lane 4 should NOT match
+    let a = I32x16::new([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
+    let b = I32x16::new([99, 99, 99, 99, 5, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99, 99]);
+    let result = func(&a, &b);
+    assert_eq!(result, 0, "Lane 4 should NOT match: a[4]=4 != b[4]=5");
+
+}
+
 /// Test unsigned integer comparisons at boundaries
 #[test]
 fn test_i32x16_icmp_unsigned_boundary() {
@@ -9085,4 +9157,979 @@ fn test_i32x16_lane_patterns() {
         assert_eq!(result.0[i], 0);
     }
     assert_eq!(result.0[15], 300);
+}
+
+/// Test vconst with 512-bit I32X16 vector - verifies that all 16 lanes are correctly loaded
+/// This is a regression test for a bug where only the first 4 lanes were loaded (128-bit movdqu
+/// was used instead of 512-bit vmovdqu32)
+#[test]
+fn test_i32x16_vconst() {
+    let Some(mut compiler) = TestCompiler::new() else {
+        println!("Skipping: AVX-512 not available");
+        return;
+    };
+
+    // Create a 64-byte constant with unique values in each lane
+    // lane 0-3:   1, 2, 4, 8 (bits 0-3)
+    // lane 4-7:  16, 32, 64, 128 (bits 4-7)
+    // lane 8-11: 256, 512, 1024, 2048 (bits 8-11)
+    // lane 12-15: 4096, 8192, 16384, 32768 (bits 12-15)
+    let bit_masks: [u32; 16] = [
+        1, 2, 4, 8,           // lanes 0-3
+        16, 32, 64, 128,      // lanes 4-7
+        256, 512, 1024, 2048, // lanes 8-11
+        4096, 8192, 16384, 32768, // lanes 12-15
+    ];
+
+    // Convert to bytes (little-endian)
+    let const_bytes: Vec<u8> = bit_masks.iter().flat_map(|v| v.to_le_bytes()).collect();
+
+    let mut sig = compiler.module.make_signature();
+    let ptr_type = compiler.module.target_config().pointer_type();
+    sig.params.push(AbiParam::new(ptr_type)); // dst ptr
+    sig.call_conv = CallConv::SystemV;
+
+    let func_id = compiler
+        .module
+        .declare_function("i32x16_vconst", Linkage::Local, &sig)
+        .expect("Failed to declare function");
+
+    compiler.ctx.func =
+        Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), sig);
+
+    {
+        let mut builder = FunctionBuilder::new(&mut compiler.ctx.func, &mut compiler.func_ctx);
+        let block = builder.create_block();
+        builder.append_block_params_for_function_params(block);
+        builder.switch_to_block(block);
+
+        let params = builder.block_params(block).to_vec();
+        let dst_ptr = params[0];
+
+        // Create the constant
+        let const_data = ConstantData::from(&const_bytes[..]);
+        let const_handle = builder.func.dfg.constants.insert(const_data);
+
+        // Load the 512-bit constant using vconst
+        let vec_const = builder.ins().vconst(I32X16, const_handle);
+
+        // Store result
+        builder.ins().store(MemFlags::trusted(), vec_const, dst_ptr, 0);
+        builder.ins().return_(&[]);
+
+        builder.seal_all_blocks();
+        builder.finalize();
+    }
+
+    compiler.ctx.set_disasm(true);
+    compiler
+        .module
+        .define_function(func_id, &mut compiler.ctx)
+        .expect("Failed to define function");
+
+    if let Some(compiled) = compiler.ctx.compiled_code() {
+        if let Some(disasm) = &compiled.vcode {
+            println!("=== VCode for i32x16_vconst ===\n{}", disasm);
+        }
+    }
+
+    compiler.module.clear_context(&mut compiler.ctx);
+    compiler
+        .module
+        .finalize_definitions()
+        .expect("Failed to finalize");
+
+    let code = compiler.module.get_finalized_function(func_id);
+    type VconstFn = unsafe extern "C" fn(*mut I32x16);
+    let func: VconstFn = unsafe { mem::transmute(code) };
+
+    // Execute and verify all 16 lanes
+    let mut result = I32x16::splat(0);
+    unsafe { func(&mut result) };
+
+    println!("Result lanes: {:?}", result.0);
+
+    // Verify each lane has the expected bit mask value
+    for (i, expected) in bit_masks.iter().enumerate() {
+        assert_eq!(
+            result.0[i] as u32, *expected,
+            "Lane {} mismatch: expected {}, got {}",
+            i, expected, result.0[i]
+        );
+    }
+}
+
+/// Test vconst with 512-bit I64X8 vector - verifies that all 8 lanes are correctly loaded
+#[test]
+fn test_i64x8_vconst() {
+    let Some(mut compiler) = TestCompiler::new() else {
+        println!("Skipping: AVX-512 not available");
+        return;
+    };
+
+    // Create a 64-byte constant with unique values in each lane
+    let values: [u64; 8] = [
+        0x0001_0001_0001_0001, // lane 0
+        0x0002_0002_0002_0002, // lane 1
+        0x0004_0004_0004_0004, // lane 2
+        0x0008_0008_0008_0008, // lane 3
+        0x0010_0010_0010_0010, // lane 4 - This and following lanes would be 0 with the bug
+        0x0020_0020_0020_0020, // lane 5
+        0x0040_0040_0040_0040, // lane 6
+        0x0080_0080_0080_0080, // lane 7
+    ];
+
+    // Convert to bytes (little-endian)
+    let const_bytes: Vec<u8> = values.iter().flat_map(|v| v.to_le_bytes()).collect();
+
+    let mut sig = compiler.module.make_signature();
+    let ptr_type = compiler.module.target_config().pointer_type();
+    sig.params.push(AbiParam::new(ptr_type)); // dst ptr
+    sig.call_conv = CallConv::SystemV;
+
+    let func_id = compiler
+        .module
+        .declare_function("i64x8_vconst", Linkage::Local, &sig)
+        .expect("Failed to declare function");
+
+    compiler.ctx.func =
+        Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), sig);
+
+    {
+        let mut builder = FunctionBuilder::new(&mut compiler.ctx.func, &mut compiler.func_ctx);
+        let block = builder.create_block();
+        builder.append_block_params_for_function_params(block);
+        builder.switch_to_block(block);
+
+        let params = builder.block_params(block).to_vec();
+        let dst_ptr = params[0];
+
+        // Create the constant
+        let const_data = ConstantData::from(&const_bytes[..]);
+        let const_handle = builder.func.dfg.constants.insert(const_data);
+
+        // Load the 512-bit constant using vconst
+        let vec_const = builder.ins().vconst(I64X8, const_handle);
+
+        // Store result
+        builder.ins().store(MemFlags::trusted(), vec_const, dst_ptr, 0);
+        builder.ins().return_(&[]);
+
+        builder.seal_all_blocks();
+        builder.finalize();
+    }
+
+    compiler.ctx.set_disasm(true);
+    compiler
+        .module
+        .define_function(func_id, &mut compiler.ctx)
+        .expect("Failed to define function");
+
+    if let Some(compiled) = compiler.ctx.compiled_code() {
+        if let Some(disasm) = &compiled.vcode {
+            println!("=== VCode for i64x8_vconst ===\n{}", disasm);
+        }
+    }
+
+    compiler.module.clear_context(&mut compiler.ctx);
+    compiler
+        .module
+        .finalize_definitions()
+        .expect("Failed to finalize");
+
+    let code = compiler.module.get_finalized_function(func_id);
+    type VconstFn = unsafe extern "C" fn(*mut I64x8);
+    let func: VconstFn = unsafe { mem::transmute(code) };
+
+    // Execute and verify all 8 lanes
+    let mut result = I64x8::splat(0);
+    unsafe { func(&mut result) };
+
+    println!("Result lanes: {:?}", result.0);
+
+    // Verify each lane has the expected value
+    for (i, expected) in values.iter().enumerate() {
+        assert_eq!(
+            result.0[i] as u64, *expected,
+            "Lane {} mismatch: expected 0x{:016x}, got 0x{:016x}",
+            i, expected, result.0[i] as u64
+        );
+    }
+}
+
+// =============================================================================
+// Tests: vhigh_bits on I32X16 - Bug Reproducer
+// =============================================================================
+//
+// This test verifies that vhigh_bits correctly extracts all 16 sign bits
+// from a 512-bit I32X16 vector. A bug was found where only the lower 128 bits
+// (lanes 0-3) were being processed correctly.
+
+#[test]
+fn test_i32x16_vhigh_bits_all_lanes() {
+    let Some(mut compiler) = TestCompiler::new() else {
+        println!("Skipping: AVX-512 not available");
+        return;
+    };
+
+    // Test: Extract sign bits from I32X16 where specific lanes are -1 (sign bit set)
+    // We'll set lanes 0, 4, 8, 12 to -1, others to 0
+    // Expected mask: 0b0001000100010001 = 0x1111 = 4369
+
+    let mut sig = compiler.module.make_signature();
+    let ptr_type = compiler.module.target_config().pointer_type();
+    sig.params.push(AbiParam::new(ptr_type)); // input ptr
+    sig.returns.push(AbiParam::new(I32)); // mask bits
+    sig.call_conv = CallConv::SystemV;
+
+    let func_id = compiler
+        .module
+        .declare_function("i32x16_vhigh_bits", Linkage::Local, &sig)
+        .unwrap();
+
+    compiler.ctx.func =
+        Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), sig);
+
+    {
+        let mut builder = FunctionBuilder::new(&mut compiler.ctx.func, &mut compiler.func_ctx);
+        let block = builder.create_block();
+        builder.append_block_params_for_function_params(block);
+        builder.switch_to_block(block);
+
+        let params = builder.block_params(block).to_vec();
+        let input_ptr = params[0];
+
+        // Load I32X16 from memory
+        let vec = builder
+            .ins()
+            .load(I32X16, MemFlags::trusted(), input_ptr, 0);
+
+        // Extract high bits using vhigh_bits
+        let mask_bits = builder.ins().vhigh_bits(I32, vec);
+
+        builder.ins().return_(&[mask_bits]);
+
+        builder.seal_all_blocks();
+        builder.finalize();
+    }
+
+    compiler.ctx.set_disasm(true);
+    compiler
+        .module
+        .define_function(func_id, &mut compiler.ctx)
+        .expect("Failed to define function");
+
+    if let Some(compiled) = compiler.ctx.compiled_code() {
+        if let Some(disasm) = &compiled.vcode {
+            println!("=== VCode for i32x16_vhigh_bits ===\n{}", disasm);
+        }
+    }
+
+    compiler.module.clear_context(&mut compiler.ctx);
+    compiler.module.finalize_definitions().unwrap();
+
+    let code = compiler.module.get_finalized_function(func_id);
+    type VHighBitsFn = unsafe extern "C" fn(*const I32x16) -> i32;
+    let func: VHighBitsFn = unsafe { mem::transmute(code) };
+
+    // Test case 1: lanes 0, 4, 8, 12 are -1 (sign bit set)
+    let input1 = I32x16::new([
+        -1, 0, 0, 0, // lanes 0-3
+        -1, 0, 0, 0, // lanes 4-7
+        -1, 0, 0, 0, // lanes 8-11
+        -1, 0, 0, 0, // lanes 12-15
+    ]);
+    let result1 = unsafe { func(&input1) };
+    let expected1 = 0b0001_0001_0001_0001i32; // 0x1111 = 4369
+    println!(
+        "Test 1: lanes 0,4,8,12 set. Expected: 0x{:04x}, Got: 0x{:04x}",
+        expected1, result1
+    );
+    assert_eq!(
+        result1, expected1,
+        "vhigh_bits failed for lanes 0,4,8,12: expected 0x{:04x}, got 0x{:04x}",
+        expected1, result1
+    );
+
+    // Test case 2: All lanes -1
+    let input2 = I32x16::splat(-1);
+    let result2 = unsafe { func(&input2) };
+    let expected2 = 0xFFFFi32;
+    println!(
+        "Test 2: all lanes set. Expected: 0x{:04x}, Got: 0x{:04x}",
+        expected2, result2
+    );
+    assert_eq!(
+        result2, expected2,
+        "vhigh_bits failed for all lanes: expected 0x{:04x}, got 0x{:04x}",
+        expected2, result2
+    );
+
+    // Test case 3: lanes 0-9 set (10 valid rows pattern)
+    let input3 = I32x16::new([
+        -1, -1, -1, -1, // lanes 0-3
+        -1, -1, -1, -1, // lanes 4-7
+        -1, -1, 0, 0, // lanes 8-11 (only 8,9 set)
+        0, 0, 0, 0, // lanes 12-15
+    ]);
+    let result3 = unsafe { func(&input3) };
+    let expected3 = 0b0000_0011_1111_1111i32; // 0x03FF = 1023
+    println!(
+        "Test 3: lanes 0-9 set. Expected: 0x{:04x}, Got: 0x{:04x}",
+        expected3, result3
+    );
+    assert_eq!(
+        result3, expected3,
+        "vhigh_bits failed for lanes 0-9: expected 0x{:04x}, got 0x{:04x}",
+        expected3, result3
+    );
+
+    // Test case 4: Only lanes 4-9 set (middle lanes only)
+    let input4 = I32x16::new([
+        0, 0, 0, 0, // lanes 0-3
+        -1, -1, -1, -1, // lanes 4-7
+        -1, -1, 0, 0, // lanes 8-11 (only 8,9 set)
+        0, 0, 0, 0, // lanes 12-15
+    ]);
+    let result4 = unsafe { func(&input4) };
+    let expected4 = 0b0000_0011_1111_0000i32; // 0x03F0 = 1008
+    println!(
+        "Test 4: lanes 4-9 set. Expected: 0x{:04x}, Got: 0x{:04x}",
+        expected4, result4
+    );
+    assert_eq!(
+        result4, expected4,
+        "vhigh_bits failed for lanes 4-9: expected 0x{:04x}, got 0x{:04x}",
+        expected4, result4
+    );
+}
+
+// =============================================================================
+// Tests: I32X16 Store and Load Round-Trip
+// =============================================================================
+//
+// This test verifies that storing an I32X16 and loading it back preserves
+// all 16 lanes correctly. A bug was found where store/load only handled 128 bits.
+
+#[test]
+fn test_i32x16_store_load_roundtrip() {
+    let Some(mut compiler) = TestCompiler::new() else {
+        println!("Skipping: AVX-512 not available");
+        return;
+    };
+
+    // Function: load I32X16, store to stack, reload and return
+    let mut sig = compiler.module.make_signature();
+    let ptr_type = compiler.module.target_config().pointer_type();
+    sig.params.push(AbiParam::new(ptr_type)); // input ptr
+    sig.params.push(AbiParam::new(ptr_type)); // output ptr
+    sig.call_conv = CallConv::SystemV;
+
+    let func_id = compiler
+        .module
+        .declare_function("i32x16_roundtrip", Linkage::Local, &sig)
+        .unwrap();
+
+    compiler.ctx.func =
+        Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), sig);
+
+    {
+        let mut builder = FunctionBuilder::new(&mut compiler.ctx.func, &mut compiler.func_ctx);
+        let block = builder.create_block();
+        builder.append_block_params_for_function_params(block);
+        builder.switch_to_block(block);
+
+        let params = builder.block_params(block).to_vec();
+        let input_ptr = params[0];
+        let output_ptr = params[1];
+
+        // Load I32X16 from input
+        let vec = builder
+            .ins()
+            .load(I32X16, MemFlags::trusted(), input_ptr, 0);
+
+        // Create a stack slot and store/reload (this is what platform-vec does)
+        let stack_slot = builder.create_sized_stack_slot(cranelift_codegen::ir::StackSlotData::new(
+            cranelift_codegen::ir::StackSlotKind::ExplicitSlot, 64, 6,
+        ));
+        let stack_ptr = builder.ins().stack_addr(I64, stack_slot, 0);
+
+        // Store the I32X16 to stack
+        builder.ins().store(MemFlags::trusted(), vec, stack_ptr, 0);
+
+        // Load it back as I32X16
+        let reloaded = builder.ins().load(I32X16, MemFlags::trusted(), stack_ptr, 0);
+
+        // Store to output
+        builder.ins().store(MemFlags::trusted(), reloaded, output_ptr, 0);
+        builder.ins().return_(&[]);
+
+        builder.seal_all_blocks();
+        builder.finalize();
+    }
+
+    compiler.ctx.set_disasm(true);
+    compiler
+        .module
+        .define_function(func_id, &mut compiler.ctx)
+        .expect("Failed to define function");
+
+    if let Some(compiled) = compiler.ctx.compiled_code() {
+        if let Some(disasm) = &compiled.vcode {
+            println!("=== VCode for i32x16_roundtrip ===\n{}", disasm);
+        }
+    }
+
+    compiler.module.clear_context(&mut compiler.ctx);
+    compiler.module.finalize_definitions().unwrap();
+
+    let code = compiler.module.get_finalized_function(func_id);
+    type RoundtripFn = unsafe extern "C" fn(*const I32x16, *mut I32x16);
+    let func: RoundtripFn = unsafe { mem::transmute(code) };
+
+    // Test with distinct values in each lane
+    let input = I32x16::new([
+        10, 11, 12, 13, // lanes 0-3
+        14, 15, 16, 17, // lanes 4-7
+        18, 19, 20, 21, // lanes 8-11
+        22, 23, 24, 25, // lanes 12-15
+    ]);
+    let mut output = I32x16::splat(0);
+
+    unsafe { func(&input, &mut output) };
+
+    println!("Input:  {:?}", input.0);
+    println!("Output: {:?}", output.0);
+
+    for i in 0..16 {
+        assert_eq!(
+            input.0[i], output.0[i],
+            "Lane {} mismatch: expected {}, got {}",
+            i, input.0[i], output.0[i]
+        );
+    }
+}
+
+// =============================================================================
+// Tests: I32X16 Complete Pipeline - Load, Splat, Compare, vhigh_bits
+// =============================================================================
+//
+// This test mimics the exact sequence of operations in platform-vec's
+// vectorized predicate evaluation to reproduce the bug.
+
+#[test]
+fn test_i32x16_load_splat_icmp_vhigh_bits_pipeline() {
+    let Some(mut compiler) = TestCompiler::new() else {
+        println!("Skipping: AVX-512 not available");
+        return;
+    };
+
+    // Function: load column, splat constant, icmp, vhigh_bits
+    let mut sig = compiler.module.make_signature();
+    let ptr_type = compiler.module.target_config().pointer_type();
+    sig.params.push(AbiParam::new(ptr_type)); // column data ptr
+    sig.params.push(AbiParam::new(I32));      // constant to compare against
+    sig.returns.push(AbiParam::new(I32));     // mask bits
+    sig.call_conv = CallConv::SystemV;
+
+    let func_id = compiler
+        .module
+        .declare_function("i32x16_pipeline", Linkage::Local, &sig)
+        .unwrap();
+
+    compiler.ctx.func =
+        Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), sig);
+
+    {
+        let mut builder = FunctionBuilder::new(&mut compiler.ctx.func, &mut compiler.func_ctx);
+        let block = builder.create_block();
+        builder.append_block_params_for_function_params(block);
+        builder.switch_to_block(block);
+
+        let params = builder.block_params(block).to_vec();
+        let column_ptr = params[0];
+        let compare_val = params[1];
+
+        // Step 1: Load column as I32X16
+        let col_vec = builder
+            .ins()
+            .load(I32X16, MemFlags::trusted(), column_ptr, 0);
+
+        // Step 2: Spill/reload column (workaround from platform-vec)
+        let col_slot = builder.create_sized_stack_slot(cranelift_codegen::ir::StackSlotData::new(
+            cranelift_codegen::ir::StackSlotKind::ExplicitSlot, 64, 6,
+        ));
+        let col_slot_ptr = builder.ins().stack_addr(I64, col_slot, 0);
+        builder.ins().store(MemFlags::trusted(), col_vec, col_slot_ptr, 0);
+        let col_reloaded = builder.ins().load(I32X16, MemFlags::trusted(), col_slot_ptr, 0);
+
+        // Step 3: Splat constant to I32X16
+        let const_vec = builder.ins().splat(I32X16, compare_val);
+
+        // Step 4: Spill/reload splat (workaround from platform-vec)
+        let splat_slot = builder.create_sized_stack_slot(cranelift_codegen::ir::StackSlotData::new(
+            cranelift_codegen::ir::StackSlotKind::ExplicitSlot, 64, 6,
+        ));
+        let splat_slot_ptr = builder.ins().stack_addr(I64, splat_slot, 0);
+        builder.ins().store(MemFlags::trusted(), const_vec, splat_slot_ptr, 0);
+        let const_reloaded = builder.ins().load(I32X16, MemFlags::trusted(), splat_slot_ptr, 0);
+
+        // Step 5: Compare using chunked I32X4 (workaround from platform-vec)
+        let l_slot = builder.create_sized_stack_slot(cranelift_codegen::ir::StackSlotData::new(
+            cranelift_codegen::ir::StackSlotKind::ExplicitSlot, 64, 6,
+        ));
+        let r_slot = builder.create_sized_stack_slot(cranelift_codegen::ir::StackSlotData::new(
+            cranelift_codegen::ir::StackSlotKind::ExplicitSlot, 64, 6,
+        ));
+        let result_slot = builder.create_sized_stack_slot(cranelift_codegen::ir::StackSlotData::new(
+            cranelift_codegen::ir::StackSlotKind::ExplicitSlot, 64, 6,
+        ));
+
+        let l_ptr = builder.ins().stack_addr(I64, l_slot, 0);
+        let r_ptr = builder.ins().stack_addr(I64, r_slot, 0);
+        let result_ptr = builder.ins().stack_addr(I64, result_slot, 0);
+
+        builder.ins().store(MemFlags::trusted(), col_reloaded, l_ptr, 0);
+        builder.ins().store(MemFlags::trusted(), const_reloaded, r_ptr, 0);
+
+        // Compare in 4 chunks of I32X4
+        for chunk in 0..4i32 {
+            let offset = chunk * 16;
+            let l_chunk = builder.ins().load(I32X4, MemFlags::trusted(), l_ptr, offset);
+            let r_chunk = builder.ins().load(I32X4, MemFlags::trusted(), r_ptr, offset);
+            let cmp_chunk = builder.ins().icmp(IntCC::Equal, l_chunk, r_chunk);
+            builder.ins().store(MemFlags::trusted(), cmp_chunk, result_ptr, offset);
+        }
+
+        // Load result as I32X16
+        let mask = builder.ins().load(I32X16, MemFlags::trusted(), result_ptr, 0);
+
+        // Step 6: Extract high bits
+        let mask_bits = builder.ins().vhigh_bits(I32, mask);
+
+        builder.ins().return_(&[mask_bits]);
+
+        builder.seal_all_blocks();
+        builder.finalize();
+    }
+
+    compiler.ctx.set_disasm(true);
+    compiler
+        .module
+        .define_function(func_id, &mut compiler.ctx)
+        .expect("Failed to define function");
+
+    if let Some(compiled) = compiler.ctx.compiled_code() {
+        if let Some(disasm) = &compiled.vcode {
+            println!("=== VCode for i32x16_pipeline ===\n{}", disasm);
+        }
+    }
+
+    compiler.module.clear_context(&mut compiler.ctx);
+    compiler.module.finalize_definitions().unwrap();
+
+    let code = compiler.module.get_finalized_function(func_id);
+    type PipelineFn = unsafe extern "C" fn(*const I32x16, i32) -> i32;
+    let func: PipelineFn = unsafe { mem::transmute(code) };
+
+    // Test: column has [0,1,2,3,4,5,6,7,8,9,0,0,0,0,0,0], compare against 4
+    let column = I32x16::new([
+        0, 1, 2, 3, // lanes 0-3
+        4, 5, 6, 7, // lanes 4-7
+        8, 9, 0, 0, // lanes 8-11 (padding is 0)
+        0, 0, 0, 0, // lanes 12-15 (padding)
+    ]);
+
+    // Compare against 4: only lane 4 should match
+    let result = unsafe { func(&column, 4) };
+    let expected = 0b0000_0000_0001_0000i32; // 0x0010 = 16 (only bit 4 set)
+    println!(
+        "Compare == 4: Expected: 0x{:04x} ({}), Got: 0x{:04x} ({})",
+        expected, expected, result, result
+    );
+    assert_eq!(
+        result, expected,
+        "Pipeline compare == 4 failed: expected 0x{:04x}, got 0x{:04x}",
+        expected, result
+    );
+
+    // Compare against 0: lanes 0, 10-15 should match
+    let result0 = unsafe { func(&column, 0) };
+    let expected0 = 0b1111_1100_0000_0001i32; // 0xFC01 (bits 0 and 10-15 set)
+    println!(
+        "Compare == 0: Expected: 0x{:04x} ({}), Got: 0x{:04x} ({})",
+        expected0 as u32, expected0, result0 as u32, result0
+    );
+    assert_eq!(
+        result0, expected0,
+        "Pipeline compare == 0 failed: expected 0x{:04x}, got 0x{:04x}",
+        expected0 as u32, result0 as u32
+    );
+}
+
+// =============================================================================
+// Tests: I32X16 band with Control Flow
+// =============================================================================
+//
+// This test mimics the control flow in platform-vec's visibility mask loading
+// with branching to test if control flow affects I32X16 operations.
+
+#[test]
+fn test_i32x16_band_with_control_flow() {
+    let Some(mut compiler) = TestCompiler::new() else {
+        println!("Skipping: AVX-512 not available");
+        return;
+    };
+
+    // Function: conditional load, band, vhigh_bits
+    let mut sig = compiler.module.make_signature();
+    let ptr_type = compiler.module.target_config().pointer_type();
+    sig.params.push(AbiParam::new(ptr_type)); // mask1 ptr
+    sig.params.push(AbiParam::new(ptr_type)); // mask2 ptr (or null)
+    sig.returns.push(AbiParam::new(I32)); // result bits
+    sig.call_conv = CallConv::SystemV;
+
+    let func_id = compiler
+        .module
+        .declare_function("i32x16_band_cf", Linkage::Local, &sig)
+        .unwrap();
+
+    compiler.ctx.func =
+        Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), sig);
+
+    {
+        let mut builder = FunctionBuilder::new(&mut compiler.ctx.func, &mut compiler.func_ctx);
+        let entry_block = builder.create_block();
+        builder.append_block_params_for_function_params(entry_block);
+        builder.switch_to_block(entry_block);
+
+        let params = builder.block_params(entry_block).to_vec();
+        let mask1_ptr = params[0];
+        let mask2_ptr = params[1];
+
+        // Load mask1
+        let mask1 = builder
+            .ins()
+            .load(I32X16, MemFlags::trusted(), mask1_ptr, 0);
+
+        // Check if mask2_ptr is null
+        let zero_ptr = builder.ins().iconst(I64, 0);
+        let is_null = builder.ins().icmp(IntCC::Equal, mask2_ptr, zero_ptr);
+
+        // Create result stack slot
+        let result_slot = builder.create_sized_stack_slot(cranelift_codegen::ir::StackSlotData::new(
+            cranelift_codegen::ir::StackSlotKind::ExplicitSlot, 64, 6,
+        ));
+        let result_ptr = builder.ins().stack_addr(I64, result_slot, 0);
+
+        // Branching logic
+        let null_block = builder.create_block();
+        let not_null_block = builder.create_block();
+        let merge_block = builder.create_block();
+
+        builder.ins().brif(is_null, null_block, &[], not_null_block, &[]);
+
+        // Null case: use all ones
+        builder.switch_to_block(null_block);
+        builder.seal_block(null_block);
+        let all_ones = {
+            let neg_one = builder.ins().iconst(I32, -1);
+            builder.ins().splat(I32X16, neg_one)
+        };
+        builder.ins().store(MemFlags::trusted(), all_ones, result_ptr, 0);
+        builder.ins().jump(merge_block, &[]);
+
+        // Not null case: load mask2
+        builder.switch_to_block(not_null_block);
+        builder.seal_block(not_null_block);
+        let mask2 = builder
+            .ins()
+            .load(I32X16, MemFlags::trusted(), mask2_ptr, 0);
+        builder.ins().store(MemFlags::trusted(), mask2, result_ptr, 0);
+        builder.ins().jump(merge_block, &[]);
+
+        // Merge and band
+        builder.switch_to_block(merge_block);
+        builder.seal_block(merge_block);
+
+        let loaded_mask2 = builder.ins().load(I32X16, MemFlags::trusted(), result_ptr, 0);
+        let banded = builder.ins().band(mask1, loaded_mask2);
+        let bits = builder.ins().vhigh_bits(I32, banded);
+
+        builder.ins().return_(&[bits]);
+
+        builder.seal_all_blocks();
+        builder.finalize();
+    }
+
+    compiler.ctx.set_disasm(true);
+    compiler
+        .module
+        .define_function(func_id, &mut compiler.ctx)
+        .expect("Failed to define function");
+
+    if let Some(compiled) = compiler.ctx.compiled_code() {
+        if let Some(disasm) = &compiled.vcode {
+            println!("=== VCode for i32x16_band_cf ===\n{}", disasm);
+        }
+    }
+
+    compiler.module.clear_context(&mut compiler.ctx);
+    compiler.module.finalize_definitions().unwrap();
+
+    let code = compiler.module.get_finalized_function(func_id);
+    type BandCfFn = unsafe extern "C" fn(*const I32x16, *const I32x16) -> i32;
+    let func: BandCfFn = unsafe { mem::transmute(code) };
+
+    // Test 1: mask1 = 1023 (bits 0-9), mask2 = all ones, mask2_ptr not null
+    let mask1 = I32x16::new([
+        -1, -1, -1, -1, // lanes 0-3
+        -1, -1, -1, -1, // lanes 4-7
+        -1, -1, 0, 0, // lanes 8-11 (only 8,9 set)
+        0, 0, 0, 0, // lanes 12-15
+    ]);
+    let mask2 = I32x16::splat(-1); // all ones = 65535
+
+    let result = unsafe { func(&mask1, &mask2) };
+    let expected = 0b0000_0011_1111_1111i32; // 0x03FF = 1023
+    println!(
+        "Test 1 (not null): Expected: 0x{:04x}, Got: 0x{:04x}",
+        expected, result
+    );
+    assert_eq!(
+        result, expected,
+        "band_cf test 1 failed: expected 0x{:04x}, got 0x{:04x}",
+        expected, result
+    );
+
+    // Test 2: mask1 = 1023, mask2_ptr is null (should use all ones)
+    let result_null = unsafe { func(&mask1, std::ptr::null()) };
+    println!(
+        "Test 2 (null): Expected: 0x{:04x}, Got: 0x{:04x}",
+        expected, result_null
+    );
+    assert_eq!(
+        result_null, expected,
+        "band_cf test 2 (null) failed: expected 0x{:04x}, got 0x{:04x}",
+        expected, result_null
+    );
+}
+
+// =============================================================================
+// Tests: EVEX Register Extension Encoding (Registers 16-31)
+// =============================================================================
+//
+// This test specifically verifies that VPBROADCASTD and VPBROADCASTQ correctly
+// encode registers 16-31 using the EVEX.X bit. Previously there was a bug where
+// the X bit was always set to 1 (inverted 0) for register operands, which caused
+// registers 16-31 to be misencoded.
+//
+// The fix ensures that both EVEX.B (bit 3) and EVEX.X (bit 4) are correctly
+// computed from the source register encoding.
+
+#[test]
+fn test_vpbroadcastd_evex_register_encoding() {
+    let Some(mut compiler) = TestCompiler::new() else {
+        println!("Skipping: AVX-512 not available");
+        return;
+    };
+
+    // This test compiles a function that uses multiple splat operations to
+    // force register allocation to use high registers (16-31).
+    // If the EVEX encoding is wrong, this will produce incorrect results or crash.
+    
+    let mut sig = compiler.module.make_signature();
+    sig.params.push(AbiParam::new(I32)); // input value
+    let ptr_type = compiler.module.target_config().pointer_type();
+    sig.params.push(AbiParam::new(ptr_type)); // dst ptr
+    sig.call_conv = CallConv::SystemV;
+
+    let func_id = compiler
+        .module
+        .declare_function("vpbroadcastd_high_regs", Linkage::Local, &sig)
+        .unwrap();
+
+    compiler.ctx.func =
+        Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), sig);
+
+    {
+        let mut builder = FunctionBuilder::new(&mut compiler.ctx.func, &mut compiler.func_ctx);
+        let entry_block = builder.create_block();
+        builder.append_block_params_for_function_params(entry_block);
+        builder.switch_to_block(entry_block);
+
+        let params = builder.block_params(entry_block).to_vec();
+        let input = params[0];
+        let dst_ptr = params[1];
+
+        // Create many splat operations to pressure register allocation
+        // This should force use of high registers (zmm16-zmm31)
+        let splat1 = builder.ins().splat(I32X16, input);
+        let c1 = builder.ins().iconst(I32, 1);
+        let splat2 = builder.ins().splat(I32X16, c1);
+        let c2 = builder.ins().iconst(I32, 2);
+        let splat3 = builder.ins().splat(I32X16, c2);
+        let c3 = builder.ins().iconst(I32, 3);
+        let splat4 = builder.ins().splat(I32X16, c3);
+        let c4 = builder.ins().iconst(I32, 4);
+        let splat5 = builder.ins().splat(I32X16, c4);
+        let c5 = builder.ins().iconst(I32, 5);
+        let splat6 = builder.ins().splat(I32X16, c5);
+        let c6 = builder.ins().iconst(I32, 6);
+        let splat7 = builder.ins().splat(I32X16, c6);
+        let c7 = builder.ins().iconst(I32, 7);
+        let splat8 = builder.ins().splat(I32X16, c7);
+
+        // Use all the splats to prevent dead code elimination
+        let sum1 = builder.ins().iadd(splat1, splat2);
+        let sum2 = builder.ins().iadd(splat3, splat4);
+        let sum3 = builder.ins().iadd(splat5, splat6);
+        let sum4 = builder.ins().iadd(splat7, splat8);
+        let sum5 = builder.ins().iadd(sum1, sum2);
+        let sum6 = builder.ins().iadd(sum3, sum4);
+        let result = builder.ins().iadd(sum5, sum6);
+
+        // Store the result
+        builder.ins().store(MemFlags::trusted(), result, dst_ptr, 0);
+        builder.ins().return_(&[]);
+
+        builder.seal_all_blocks();
+        builder.finalize();
+    }
+
+    compiler.ctx.set_disasm(true);
+    compiler
+        .module
+        .define_function(func_id, &mut compiler.ctx)
+        .expect("Failed to define function");
+
+    if let Some(compiled) = compiler.ctx.compiled_code() {
+        if let Some(disasm) = &compiled.vcode {
+            println!("=== VCode for vpbroadcastd_high_regs ===\n{}", disasm);
+        }
+    }
+
+    compiler.module.clear_context(&mut compiler.ctx);
+    compiler.module.finalize_definitions().unwrap();
+
+    let code = compiler.module.get_finalized_function(func_id);
+    type HighRegFn = unsafe extern "C" fn(i32, *mut I32x16);
+    let func: HighRegFn = unsafe { mem::transmute(code) };
+
+    // Run the test
+    let mut result = I32x16::splat(0);
+    let input = 100;
+    unsafe { func(input, &mut result) };
+
+    // Expected: input + 1 + 2 + 3 + 4 + 5 + 6 + 7 = input + 28
+    let expected_value = input + 28;
+    let expected = I32x16::splat(expected_value);
+    
+    println!("Input: {}, Expected value per lane: {}", input, expected_value);
+    println!("Result: {:?}", result.0);
+    
+    assert_eq!(result, expected, 
+        "VPBROADCASTD with high registers failed: expected splat({}), got {:?}",
+        expected_value, result.0);
+}
+
+#[test]
+fn test_vpbroadcastq_evex_register_encoding() {
+    let Some(mut compiler) = TestCompiler::new() else {
+        println!("Skipping: AVX-512 not available");
+        return;
+    };
+
+    // Similar test for VPBROADCASTQ (I64X8)
+    let mut sig = compiler.module.make_signature();
+    sig.params.push(AbiParam::new(I64)); // input value
+    let ptr_type = compiler.module.target_config().pointer_type();
+    sig.params.push(AbiParam::new(ptr_type)); // dst ptr
+    sig.call_conv = CallConv::SystemV;
+
+    let func_id = compiler
+        .module
+        .declare_function("vpbroadcastq_high_regs", Linkage::Local, &sig)
+        .unwrap();
+
+    compiler.ctx.func =
+        Function::with_name_signature(UserFuncName::user(0, func_id.as_u32()), sig);
+
+    {
+        let mut builder = FunctionBuilder::new(&mut compiler.ctx.func, &mut compiler.func_ctx);
+        let entry_block = builder.create_block();
+        builder.append_block_params_for_function_params(entry_block);
+        builder.switch_to_block(entry_block);
+
+        let params = builder.block_params(entry_block).to_vec();
+        let input = params[0];
+        let dst_ptr = params[1];
+
+        // Create many splat operations to pressure register allocation
+        let splat1 = builder.ins().splat(I64X8, input);
+        let c1 = builder.ins().iconst(I64, 1);
+        let splat2 = builder.ins().splat(I64X8, c1);
+        let c2 = builder.ins().iconst(I64, 2);
+        let splat3 = builder.ins().splat(I64X8, c2);
+        let c3 = builder.ins().iconst(I64, 3);
+        let splat4 = builder.ins().splat(I64X8, c3);
+        let c4 = builder.ins().iconst(I64, 4);
+        let splat5 = builder.ins().splat(I64X8, c4);
+        let c5 = builder.ins().iconst(I64, 5);
+        let splat6 = builder.ins().splat(I64X8, c5);
+        let c6 = builder.ins().iconst(I64, 6);
+        let splat7 = builder.ins().splat(I64X8, c6);
+        let c7 = builder.ins().iconst(I64, 7);
+        let splat8 = builder.ins().splat(I64X8, c7);
+
+        // Use all the splats
+        let sum1 = builder.ins().iadd(splat1, splat2);
+        let sum2 = builder.ins().iadd(splat3, splat4);
+        let sum3 = builder.ins().iadd(splat5, splat6);
+        let sum4 = builder.ins().iadd(splat7, splat8);
+        let sum5 = builder.ins().iadd(sum1, sum2);
+        let sum6 = builder.ins().iadd(sum3, sum4);
+        let result = builder.ins().iadd(sum5, sum6);
+
+        builder.ins().store(MemFlags::trusted(), result, dst_ptr, 0);
+        builder.ins().return_(&[]);
+
+        builder.seal_all_blocks();
+        builder.finalize();
+    }
+
+    compiler.ctx.set_disasm(true);
+    compiler
+        .module
+        .define_function(func_id, &mut compiler.ctx)
+        .expect("Failed to define function");
+
+    if let Some(compiled) = compiler.ctx.compiled_code() {
+        if let Some(disasm) = &compiled.vcode {
+            println!("=== VCode for vpbroadcastq_high_regs ===\n{}", disasm);
+        }
+    }
+
+    compiler.module.clear_context(&mut compiler.ctx);
+    compiler.module.finalize_definitions().unwrap();
+
+    let code = compiler.module.get_finalized_function(func_id);
+    type HighRegFn = unsafe extern "C" fn(i64, *mut I64x8);
+    let func: HighRegFn = unsafe { mem::transmute(code) };
+
+    // Run the test
+    let mut result = I64x8::splat(0);
+    let input: i64 = 1000;
+    unsafe { func(input, &mut result) };
+
+    // Expected: input + 1 + 2 + 3 + 4 + 5 + 6 + 7 = input + 28
+    let expected_value = input + 28;
+    let expected = I64x8::splat(expected_value);
+    
+    println!("Input: {}, Expected value per lane: {}", input, expected_value);
+    println!("Result: {:?}", result.0);
+    
+    assert_eq!(result, expected, 
+        "VPBROADCASTQ with high registers failed: expected splat({}), got {:?}",
+        expected_value, result.0);
 }

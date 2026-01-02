@@ -301,7 +301,9 @@ impl<R: AsReg, M: AsReg> GprMem<R, M> {
     /// Same as `XmmMem::encode_bx_regs`, but for `GprMem`.
     pub(crate) fn encode_bx_regs(&self) -> (Option<u8>, Option<u8>) {
         match self {
-            GprMem::Gpr(reg) => (Some(reg.enc()), None),
+            // For EVEX encoding without SIB, both B and X extend the r/m field.
+            // Return the full encoding so EVEX can extract bits 3 and 4.
+            GprMem::Gpr(reg) => (Some(reg.enc()), Some(reg.enc())),
             GprMem::Mem(amode) => amode.encode_bx_regs(),
         }
     }
@@ -384,14 +386,19 @@ impl<R: AsReg, M: AsReg> XmmMem<R, M> {
     }
 
     /// Return the registers for encoding the `b` and `x` bits (e.g., in a VEX
-    /// prefix).
+    /// or EVEX prefix).
     ///
-    /// During encoding, the `b` bit is set by the topmost bit (the fourth bit)
-    /// of either the `reg` register or, if this is a memory address, the `base`
-    /// register. The `x` bit is set by the `index` register, when used.
+    /// For EVEX encoding without a SIB byte, both B and X extend the ModR/M.r/m
+    /// field to 5 bits:
+    /// - B extends bit 3 of the register encoding
+    /// - X extends bit 4 of the register encoding
+    ///
+    /// For memory operands, B extends the base register and X extends the index.
     pub(crate) fn encode_bx_regs(&self) -> (Option<u8>, Option<u8>) {
         match self {
-            XmmMem::Xmm(reg) => (Some(reg.enc()), None),
+            // For EVEX encoding without SIB, both B and X extend the r/m field.
+            // Return the full encoding so EVEX can extract bits 3 and 4.
+            XmmMem::Xmm(reg) => (Some(reg.enc()), Some(reg.enc())),
             XmmMem::Mem(amode) => amode.encode_bx_regs(),
         }
     }

@@ -53,14 +53,18 @@ impl<R: AsReg> Xmm<R> {
     }
 
     /// Return the registers for encoding the `b` and `x` bits (e.g., in a VEX
-    /// prefix).
+    /// or EVEX prefix).
     ///
-    /// This is primarily used for `*Mem` variants (see
-    /// `XmmMem::encode_bx_regs`), but when used on a single `Xmm` register,
-    /// only the `b` bit is set by the topmost bit (the fourth bit) of this
-    /// register. We expect this register to be in the `rm` slot.
+    /// For EVEX encoding without a SIB byte, both B and X extend the ModR/M.r/m
+    /// field to 5 bits:
+    /// - B extends bit 3 of the register encoding
+    /// - X extends bit 4 of the register encoding
+    ///
+    /// This allows encoding of registers 0-31 (xmm0-xmm31, zmm0-zmm31).
     pub(crate) fn encode_bx_regs(&self) -> (Option<u8>, Option<u8>) {
-        (Some(self.enc()), None)
+        // Return the full encoding for both B and X so that EVEX can properly
+        // extend the r/m field to 5 bits for registers 16-31.
+        (Some(self.enc()), Some(self.enc()))
     }
 }
 
