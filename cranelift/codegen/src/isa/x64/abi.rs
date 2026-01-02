@@ -876,6 +876,32 @@ impl ABIMachineSpec for X64ABIMachineSpec {
         }
     }
 
+    fn canonical_spill_type(rc: RegClass, isa_flags: &Self::F) -> Type {
+        match rc {
+            RegClass::Float => {
+                // For AVX-512, use 512-bit type to preserve entire ZMM register.
+                // Otherwise, use 128-bit type for XMM registers.
+                if isa_flags.has_avx512f() {
+                    types::I32X16
+                } else {
+                    types::I8X16
+                }
+            }
+            RegClass::Int => types::I64,
+            RegClass::Vector => types::I64,
+        }
+    }
+
+    fn default_vector_bytes(isa_flags: &Self::F) -> u32 {
+        // For AVX-512, ZMM registers are 64 bytes (512 bits)
+        // For AVX/SSE, XMM registers are 16 bytes (128 bits)
+        if isa_flags.has_avx512f() {
+            64
+        } else {
+            16
+        }
+    }
+
     fn get_machine_env(flags: &settings::Flags, _call_conv: isa::CallConv) -> &MachineEnv {
         // We have 4 possible machine environments based on flag combinations:
         // - enable_pinned_reg: excludes r15 from allocation

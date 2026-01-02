@@ -334,6 +334,10 @@ impl Inst {
                     _ if (ty.is_float() || ty.is_vector()) && ty.bits() == 128 => {
                         asm::inst::movdqu_a::new(to_reg, from_addr).into()
                     }
+                    // AVX-512: 512-bit vector load
+                    _ if ty.is_vector() && ty.bits() == 512 => {
+                        asm::inst::vmovdqu32_zl::new(to_reg, from_addr).into()
+                    }
                     _ => unimplemented!("unable to load type: {}", ty),
                 };
                 Inst::External { inst }
@@ -379,6 +383,10 @@ impl Inst {
                     types::F64X2 => asm::inst::movupd_b::new(to_addr, from_reg).into(),
                     _ if (ty.is_float() || ty.is_vector()) && ty.bits() == 128 => {
                         asm::inst::movdqu_b::new(to_addr, from_reg).into()
+                    }
+                    // AVX-512: 512-bit vector store
+                    _ if ty.is_vector() && ty.bits() == 512 => {
+                        asm::inst::vmovdqu32_zs::new(to_addr, from_reg).into()
                     }
                     _ => unimplemented!("unable to store type: {}", ty),
                 }
