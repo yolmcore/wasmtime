@@ -24,6 +24,7 @@ use crate::settings::Flags;
 use crate::{CodegenError, CodegenResult, trace};
 use alloc::vec::Vec;
 use cranelift_control::ControlPlane;
+use regalloc2::RegClass;
 use rustc_hash::{FxHashMap, FxHashSet};
 use smallvec::{SmallVec, smallvec};
 use std::fmt::Debug;
@@ -1668,6 +1669,11 @@ impl<'func, I: VCodeInst> Lower<'func, I> {
     /// Get a new temp.
     pub fn alloc_tmp(&mut self, ty: Type) -> ValueRegs<Writable<Reg>> {
         writable_value_regs(self.vregs.alloc_with_deferred_error(ty))
+    }
+
+    /// Get a new temp with an explicit register class.
+    pub fn alloc_tmp_regclass(&mut self, rc: RegClass, ty: Type) -> Writable<Reg> {
+        Writable::from_reg(self.vregs.alloc_regclass_with_deferred_error(rc, ty))
     }
 
     /// Get the current root instruction that we are lowering.

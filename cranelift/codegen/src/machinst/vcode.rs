@@ -1068,7 +1068,7 @@ impl<I: VCodeInst> VCode<I> {
                                 let from_rreg = Reg::from(from);
                                 let to_rreg = Writable::from_reg(Reg::from(to));
                                 debug_assert_eq!(from.class(), to.class());
-                                let ty = I::canonical_type_for_rc(from.class());
+                                let ty = self.abi.canonical_type_for_rc(from.class());
                                 let mv = I::gen_move(to_rreg, from_rreg, ty);
                                 do_emit(&mv, &mut disasm, &mut buffer, &mut state);
                             }
@@ -1796,6 +1796,22 @@ impl<I: VCodeInst> VRegAllocator<I> {
         Ok(regs)
     }
 
+    /// Allocate a fresh Reg with an explicit register class.
+    pub fn alloc_regclass(&mut self, rc: RegClass, ty: Type) -> CodegenResult<Reg> {
+        if self.deferred_error.is_some() {
+            return Err(CodegenError::CodeTooLarge);
+        }
+        let v = self.vreg_types.len();
+        if v + 1 >= VReg::MAX {
+            return Err(CodegenError::CodeTooLarge);
+        }
+
+        let reg = Reg::from_virtual_reg(VReg::new(v, rc));
+        self.vreg_types.push(ty);
+        self.facts.resize(self.vreg_types.len(), None);
+        Ok(reg)
+    }
+
     /// Allocate a fresh ValueRegs, deferring any out-of-vregs
     /// errors. This is useful in places where we cannot bubble a
     /// `CodegenResult` upward easily, and which are known to be
@@ -1807,6 +1823,17 @@ impl<I: VCodeInst> VRegAllocator<I> {
             Err(e) => {
                 self.deferred_error = Some(e);
                 self.bogus_for_deferred_error(ty)
+            }
+        }
+    }
+
+    /// Allocate a fresh Reg with an explicit register class, deferring errors.
+    pub fn alloc_regclass_with_deferred_error(&mut self, rc: RegClass, ty: Type) -> Reg {
+        match self.alloc_regclass(rc, ty) {
+            Ok(reg) => reg,
+            Err(e) => {
+                self.deferred_error = Some(e);
+                Reg::from_virtual_reg(VReg::new(0, rc))
             }
         }
     }

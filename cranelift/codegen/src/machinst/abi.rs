@@ -2399,6 +2399,11 @@ impl<M: ABIMachineSpec> Callee<M> {
         M::get_number_of_spillslots_for_value(rc, max, &self.isa_flags)
     }
 
+    /// Get the canonical type for reg-to-reg moves, using ISA flags when needed.
+    pub fn canonical_type_for_rc(&self, rc: RegClass) -> Type {
+        M::canonical_spill_type(rc, &self.isa_flags)
+    }
+
     /// Get the spill slot offset relative to the fixed allocation area start.
     pub fn get_spillslot_offset(&self, slot: SpillSlot) -> i64 {
         self.frame_layout().spillslot_offset(slot)

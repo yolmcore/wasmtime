@@ -1528,6 +1528,9 @@ impl MachInst for Inst {
                     _ if (ty.is_float() || ty.is_vector()) && ty.bits() <= 128 => {
                         asm::inst::movdqa_a::new(dst_reg, src_reg).into()
                     }
+                    _ if ty.is_vector() && ty.bits() == 512 => {
+                        asm::inst::vmovdqu32_zl::new(dst_reg, src_reg).into()
+                    }
                     _ => unimplemented!("unable to move type: {}", ty),
                 }
             }

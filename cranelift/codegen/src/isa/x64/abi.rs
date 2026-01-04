@@ -1254,7 +1254,12 @@ const fn windows_clobbers() -> PRegSet {
         .with(regs::fpr_preg(XMM3))
         .with(regs::fpr_preg(XMM4))
         .with(regs::fpr_preg(XMM5))
-    // K-registers not included - they require AVX-512 for spill/fill
+        .with(regs::k_preg(2))
+        .with(regs::k_preg(3))
+        .with(regs::k_preg(4))
+        .with(regs::k_preg(5))
+        .with(regs::k_preg(6))
+        .with(regs::k_preg(7))
 }
 
 const fn sysv_clobbers() -> PRegSet {
@@ -1287,7 +1292,12 @@ const fn sysv_clobbers() -> PRegSet {
         .with(regs::fpr_preg(XMM13))
         .with(regs::fpr_preg(XMM14))
         .with(regs::fpr_preg(XMM15))
-    // K-registers not included - they require AVX-512 for spill/fill
+        .with(regs::k_preg(2))
+        .with(regs::k_preg(3))
+        .with(regs::k_preg(4))
+        .with(regs::k_preg(5))
+        .with(regs::k_preg(6))
+        .with(regs::k_preg(7))
 }
 
 /// For calling conventions that clobber all registers.
@@ -1326,10 +1336,12 @@ const fn all_clobbers() -> PRegSet {
         .with(regs::fpr_preg(XMM13))
         .with(regs::fpr_preg(XMM14))
         .with(regs::fpr_preg(XMM15))
-    // K-registers (k0-k7) are not included here because:
-    // 1. They require AVX-512 for spill/fill operations
-    // 2. They are managed explicitly by AVX-512 instructions
-    // 3. Including them would break non-AVX-512 targets using preserve_all
+        .with(regs::k_preg(2))
+        .with(regs::k_preg(3))
+        .with(regs::k_preg(4))
+        .with(regs::k_preg(5))
+        .with(regs::k_preg(6))
+        .with(regs::k_preg(7))
 }
 
 fn create_reg_env_systemv(enable_pinned_reg: bool, enable_simd32: bool) -> MachineEnv {
@@ -1372,6 +1384,15 @@ fn create_reg_env_systemv(enable_pinned_reg: bool, enable_simd32: bool) -> Machi
         ]);
     }
 
+    let kmask_regs = vec![
+        preg(regs::k2()),
+        preg(regs::k3()),
+        preg(regs::k4()),
+        preg(regs::k5()),
+        preg(regs::k6()),
+        preg(regs::k7()),
+    ];
+
     let mut env = MachineEnv {
         preferred_regs_by_class: [
             // Preferred GPRs: caller-saved in the SysV ABI.
@@ -1398,11 +1419,8 @@ fn create_reg_env_systemv(enable_pinned_reg: bool, enable_simd32: bool) -> Machi
                 preg(regs::xmm6()),
                 preg(regs::xmm7()),
             ],
-            // K-registers (k0-k7) are used internally for AVX-512 operations but
-            // are not exposed as allocatable registers. They are managed explicitly
-            // by AVX-512 instructions (gather/scatter, masked ops) rather than
-            // through general register allocation.
-            vec![],
+            // K-registers: k1 is reserved; allocate k2-k7 when AVX-512 is enabled.
+            kmask_regs,
         ],
         non_preferred_regs_by_class: [
             // Non-preferred GPRs: callee-saved in the SysV ABI.
@@ -1414,7 +1432,7 @@ fn create_reg_env_systemv(enable_pinned_reg: bool, enable_simd32: bool) -> Machi
             ],
             // Non-preferred XMMs: xmm8-15 (and xmm16-31 with AVX-512)
             non_preferred_xmms,
-            // The Vector Regclass is unused
+            // No non-preferred k-registers.
             vec![],
         ],
         fixed_stack_slots: vec![],

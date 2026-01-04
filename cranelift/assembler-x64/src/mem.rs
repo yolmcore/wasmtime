@@ -301,9 +301,12 @@ impl<R: AsReg, M: AsReg> GprMem<R, M> {
     /// Same as `XmmMem::encode_bx_regs`, but for `GprMem`.
     pub(crate) fn encode_bx_regs(&self) -> (Option<u8>, Option<u8>) {
         match self {
-            // For EVEX encoding without SIB, both B and X extend the r/m field.
-            // Return the full encoding so EVEX can extract bits 3 and 4.
-            GprMem::Gpr(reg) => (Some(reg.enc()), Some(reg.enc())),
+            // For EVEX encoding without SIB, B extends r/m bit 3 and X extends
+            // r/m bit 4. Encode bit 4 into the "bit 3" position by shifting.
+            GprMem::Gpr(reg) => {
+                let enc = reg.enc();
+                (Some(enc), Some(enc >> 1))
+            }
             GprMem::Mem(amode) => amode.encode_bx_regs(),
         }
     }
@@ -396,9 +399,12 @@ impl<R: AsReg, M: AsReg> XmmMem<R, M> {
     /// For memory operands, B extends the base register and X extends the index.
     pub(crate) fn encode_bx_regs(&self) -> (Option<u8>, Option<u8>) {
         match self {
-            // For EVEX encoding without SIB, both B and X extend the r/m field.
-            // Return the full encoding so EVEX can extract bits 3 and 4.
-            XmmMem::Xmm(reg) => (Some(reg.enc()), Some(reg.enc())),
+            // For EVEX encoding without SIB, B extends r/m bit 3 and X extends
+            // r/m bit 4. Encode bit 4 into the "bit 3" position by shifting.
+            XmmMem::Xmm(reg) => {
+                let enc = reg.enc();
+                (Some(enc), Some(enc >> 1))
+            }
             XmmMem::Mem(amode) => amode.encode_bx_regs(),
         }
     }

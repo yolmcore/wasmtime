@@ -200,13 +200,9 @@ pub(crate) const fn xmm31() -> Reg {
 }
 
 // K-registers are AVX-512 mask registers.
-// They use indices 32-39 to distinguish them from XMM/ZMM registers (0-31)
-// in the Vector class, since regalloc2 doesn't have a separate Mask class.
-// These are physical registers and should be marked as non-allocatable.
-// PReg::MAX is 63, so we use 32+ for k-registers (k0=32, k1=33, etc.)
+// These are physical registers with hardware encodings 0-7 (k0-k7).
 pub(crate) const fn k_preg(enc: u8) -> PReg {
-    // Use index 32+ for k-registers to avoid conflict with XMM/ZMM registers (0-31)
-    PReg::new(32 + enc as usize, RegClass::Vector)
+    PReg::new(enc as usize, RegClass::Vector)
 }
 
 const fn k_reg(enc: u8) -> Reg {
@@ -263,9 +259,7 @@ pub fn pretty_print_reg(reg: Reg, size: u8) -> String {
                 gpr::enc::to_string(enc, size).to_string()
             }
             RegClass::Float => xmm::enc::to_string(enc).to_string(),
-            // K-registers have hw_enc 32-39 (k0=32, k1=33, etc.)
-            // Display as k0-k7 by subtracting 32
-            RegClass::Vector => format!("k{}", enc - 32),
+            RegClass::Vector => format!("k{enc}"),
         }
     } else {
         let mut name = format!("%{reg:?}");

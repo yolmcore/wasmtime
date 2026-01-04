@@ -17,6 +17,7 @@ use crate::machinst::*;
 use crate::result::CodegenResult;
 use crate::settings::Flags;
 use std::boxed::Box;
+use regalloc2::RegClass;
 use target_lexicon::Triple;
 
 /// Identifier for a particular input of an instruction.
@@ -42,13 +43,8 @@ impl Lower<'_, Inst> {
 
     #[inline]
     pub fn temp_writable_kmask(&mut self) -> WritableMask {
-        // K-mask registers (k0-k7) are physical registers in the Vector class.
-        // They are not virtualized by regalloc2, so we use fixed registers.
-        // k1 is used as a scratch register for temporaries.
-        // (k0 is special - it means "no masking" in AVX-512)
-        use crate::machinst::isle::WritableReg;
-        let k1 = super::inst::regs::k1();
-        WritableMask::from_writable_reg(WritableReg::from_reg(k1)).unwrap()
+        let reg = self.alloc_tmp_regclass(RegClass::Vector, types::I64);
+        WritableMask::from_writable_reg(reg).unwrap()
     }
 }
 

@@ -62,9 +62,10 @@ impl<R: AsReg> Xmm<R> {
     ///
     /// This allows encoding of registers 0-31 (xmm0-xmm31, zmm0-zmm31).
     pub(crate) fn encode_bx_regs(&self) -> (Option<u8>, Option<u8>) {
-        // Return the full encoding for both B and X so that EVEX can properly
-        // extend the r/m field to 5 bits for registers 16-31.
-        (Some(self.enc()), Some(self.enc()))
+        // For register operands (mod=11), EVEX repurposes X to extend the r/m
+        // field with bit 4. Encode bit 4 into the "bit 3" position by shifting.
+        let enc = self.enc();
+        (Some(enc), Some(enc >> 1))
     }
 }
 

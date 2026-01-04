@@ -20,9 +20,8 @@
 //
 // ## K-Register Encoding
 //
-// K-registers (k0-k7) are encoded differently than general/vector registers:
-// - PReg indices: 32-39 (k0=32, k1=33, ... k7=39)
-// - EVEX aaa field: 0-7 (requires subtracting 32 from PReg index)
+// K-registers (k0-k7) use hardware encodings 0-7.
+// - EVEX aaa field: 0-7
 // - k0 is special: it means "no masking" (all lanes active)
 //
 // ## MergeMode
@@ -52,18 +51,12 @@ use crate::machinst::{MachBuffer, Reg, Writable};
 // K-Register Encoding Helper
 // =============================================================================
 
-/// Convert a k-register's PReg index to the EVEX mask encoding (0-7).
-/// K-registers have PReg indices 32-39 (k0=32, k1=33, etc.),
-/// but the EVEX aaa field expects 0-7.
+/// Convert a k-register to the EVEX/VEX mask encoding (0-7).
 #[inline]
 fn kreg_enc(reg: Reg) -> u8 {
     let enc = reg.to_real_reg().unwrap().hw_enc();
-    // K-registers have PReg indices 32-39, subtract 32 to get 0-7
-    debug_assert!(
-        enc >= 32 && enc < 40,
-        "expected k-register, got PReg index {enc}"
-    );
-    enc - 32
+    debug_assert!(enc < 8, "expected k-register, got PReg index {enc}");
+    enc
 }
 
 // =============================================================================
@@ -570,7 +563,7 @@ pub fn emit_mask_logic(
     // - KXNORW: VEX.L1.0F.W0 46 /r (pp=00)
     // - KXORW:  VEX.L1.0F.W0 47 /r (pp=00)
 
-    // K-registers use PReg indices 32-39, need to convert to 0-7 for VEX encoding
+    // K-registers use encodings 0-7 for VEX encoding
     let dst_enc = kreg_enc(dst.to_reg());
     let src1_enc = kreg_enc(src1);
 
@@ -627,13 +620,12 @@ pub fn emit_mask_logic(
 /// - to_gpr=false: KMOVQ k, r64 (move from GPR to k)
 /// For k↔k moves, use emit_kmov_kk instead.
 pub fn emit_kmov(dst: Writable<Reg>, src: Reg, to_gpr: bool, sink: &mut MachBuffer<Inst>) {
-    let dst_enc = dst.to_reg().to_real_reg().unwrap().hw_enc();
-    let src_enc = src.to_real_reg().unwrap().hw_enc();
-
     if to_gpr {
+        let dst_enc = dst.to_reg().to_real_reg().unwrap().hw_enc();
+        let src_enc = kreg_enc(src);
         // KMOVQ r64, k: VEX.L0.F2.0F.W1 93 /r
         let r = if dst_enc >= 8 { 0 } else { 1 };
-        let b = if src_enc >= 8 { 0 } else { 1 };
+        let b = 1;
         let rxb = (r << 7) | 0x40 | (b << 5) | 0x01; // X=1, mmmmm=01
         let vex2 = 0x80 | 0x78 | 0x03; // W=1, vvvv=1111, L=0, pp=11 (F2)
 
@@ -644,8 +636,10 @@ pub fn emit_kmov(dst: Writable<Reg>, src: Reg, to_gpr: bool, sink: &mut MachBuff
         let modrm = 0xC0 | ((dst_enc & 0x07) << 3) | (src_enc & 0x07);
         sink.put1(modrm);
     } else {
+        let dst_enc = kreg_enc(dst.to_reg());
+        let src_enc = src.to_real_reg().unwrap().hw_enc();
         // KMOVQ k, r64: VEX.L0.F2.0F.W1 92 /r
-        let r = if dst_enc >= 8 { 0 } else { 1 };
+        let r = 1;
         let b = if src_enc >= 8 { 0 } else { 1 };
         let rxb = (r << 7) | 0x40 | (b << 5) | 0x01;
         let vex2 = 0x80 | 0x78 | 0x03; // W=1, vvvv=1111, L=0, pp=11 (F2)
@@ -662,8 +656,8 @@ pub fn emit_kmov(dst: Writable<Reg>, src: Reg, to_gpr: bool, sink: &mut MachBuff
 /// Emit KMOVQ k, k (k-register to k-register move).
 pub fn emit_kmov_kk(dst: Writable<Reg>, src: Reg, sink: &mut MachBuffer<Inst>) {
     // KMOVQ k1, k2: VEX.L0.0F.W1 90 /r (mod=11 for reg-reg)
-    let dst_enc = dst.to_reg().to_real_reg().unwrap().hw_enc();
-    let src_enc = src.to_real_reg().unwrap().hw_enc();
+    let dst_enc = kreg_enc(dst.to_reg());
+    let src_enc = kreg_enc(src);
 
     // 3-byte VEX for W=1
     sink.put1(0xC4);
@@ -703,27 +697,57 @@ pub fn emit_kortest(src1: Reg, src2: Reg, sink: &mut MachBuffer<Inst>) {
 /// Uses the two-tier strategy: prefer GPR, fall back to stack.
 pub fn emit_kmov_store(src: Reg, addr: &Amode, sink: &mut MachBuffer<Inst>) {
     // KMOVQ m64, k: VEX.L0.0F.W1 91 /r
-    let src_enc = src.to_real_reg().unwrap().hw_enc();
+    let src_enc = kreg_enc(src);
+
+    let (base_enc, index_enc) = extract_mem_reg_encodings(addr);
+    let r_inv = if (src_enc & 0x08) == 0 { 0x80 } else { 0 };
+    let x_inv = match index_enc {
+        Some(enc) => {
+            if (enc & 0x08) == 0 {
+                0x40
+            } else {
+                0
+            }
+        }
+        None => 0x40,
+    };
+    let b_inv = if (base_enc & 0x08) == 0 { 0x20 } else { 0 };
+    let vex_byte1 = r_inv | x_inv | b_inv | 0x01; // mmmmm = 01 (0F)
 
     // 3-byte VEX for memory operand
     sink.put1(0xC4);
-    sink.put1(0xE1); // RXB=111, mmmmm=01
+    sink.put1(vex_byte1);
     sink.put1(0xF8); // W=1, vvvv=1111, L=0, pp=00
     sink.put1(0x91);
-    emit_modrm_sib_disp(sink, src_enc, addr);
+    emit_modrm_sib_disp_no_evex(sink, src_enc, addr);
 }
 
 /// Emit KMOVQ to fill a k-register from memory.
 pub fn emit_kmov_load(dst: Writable<Reg>, addr: &Amode, sink: &mut MachBuffer<Inst>) {
     // KMOVQ k, m64: VEX.L0.0F.W1 90 /r
-    let dst_enc = dst.to_reg().to_real_reg().unwrap().hw_enc();
+    let dst_enc = kreg_enc(dst.to_reg());
+
+    let (base_enc, index_enc) = extract_mem_reg_encodings(addr);
+    let r_inv = if (dst_enc & 0x08) == 0 { 0x80 } else { 0 };
+    let x_inv = match index_enc {
+        Some(enc) => {
+            if (enc & 0x08) == 0 {
+                0x40
+            } else {
+                0
+            }
+        }
+        None => 0x40,
+    };
+    let b_inv = if (base_enc & 0x08) == 0 { 0x20 } else { 0 };
+    let vex_byte1 = r_inv | x_inv | b_inv | 0x01; // mmmmm = 01 (0F)
 
     // 3-byte VEX for memory operand
     sink.put1(0xC4);
-    sink.put1(0xE1); // RXB=111, mmmmm=01
+    sink.put1(vex_byte1);
     sink.put1(0xF8); // W=1, vvvv=1111, L=0, pp=00
     sink.put1(0x90);
-    emit_modrm_sib_disp(sink, dst_enc, addr);
+    emit_modrm_sib_disp_no_evex(sink, dst_enc, addr);
 }
 
 // =============================================================================
@@ -955,14 +979,9 @@ pub fn emit_expand_reg(
 /// This instruction extracts the sign bit (bit 31) of each 32-bit element
 /// in the source vector and places them into the destination mask register.
 /// Extract k-register hardware encoding from PReg hw_enc.
-/// K-registers use indices 32-39 to distinguish from XMM registers (0-31),
-/// so we subtract 32 to get the actual hardware encoding (0-7).
 fn k_enc(hw_enc: u8) -> u8 {
-    debug_assert!(
-        hw_enc >= 32 && hw_enc < 40,
-        "invalid k-register hw_enc: {hw_enc}"
-    );
-    hw_enc - 32
+    debug_assert!(hw_enc < 8, "invalid k-register hw_enc: {hw_enc}");
+    hw_enc
 }
 
 pub fn emit_vmovmsk32(dst: Writable<Reg>, src: Reg, sink: &mut MachBuffer<Inst>) {
@@ -979,7 +998,7 @@ pub fn emit_vmovmsk32(dst: Writable<Reg>, src: Reg, sink: &mut MachBuffer<Inst>)
 
     let dst_hw = dst.to_reg().to_real_reg().unwrap().hw_enc();
     let src_enc = src.to_real_reg().unwrap().hw_enc();
-    // dst is a k-register (indices 128+), extract actual encoding
+    // dst is a k-register
     let dst_enc = k_enc(dst_hw);
 
     evex.emit(dst_enc, 0, src_enc, false, sink);
@@ -1007,7 +1026,7 @@ pub fn emit_movm2d(dst: Writable<Xmm>, src: Reg, sink: &mut MachBuffer<Inst>) {
 
     let dst_enc = dst.to_reg().to_reg().to_real_reg().unwrap().hw_enc();
     let src_hw = src.to_real_reg().unwrap().hw_enc();
-    // src is a k-register (indices 128+), extract actual encoding
+    // src is a k-register
     let src_enc = k_enc(src_hw);
 
     evex.emit(dst_enc, 0, src_enc, false, sink);
@@ -1035,7 +1054,7 @@ pub fn emit_movm2q(dst: Writable<Xmm>, src: Reg, sink: &mut MachBuffer<Inst>) {
 
     let dst_enc = dst.to_reg().to_reg().to_real_reg().unwrap().hw_enc();
     let src_hw = src.to_real_reg().unwrap().hw_enc();
-    // src is a k-register (indices 128+), extract actual encoding
+    // src is a k-register
     let src_enc = k_enc(src_hw);
 
     evex.emit(dst_enc, 0, src_enc, false, sink);
@@ -1063,7 +1082,7 @@ pub fn emit_vmovmsk64(dst: Writable<Reg>, src: Reg, sink: &mut MachBuffer<Inst>)
 
     let dst_hw = dst.to_reg().to_real_reg().unwrap().hw_enc();
     let src_enc = src.to_real_reg().unwrap().hw_enc();
-    // dst is a k-register (indices 128+), extract actual encoding
+    // dst is a k-register
     let dst_enc = k_enc(dst_hw);
 
     evex.emit(dst_enc, 0, src_enc, false, sink);
@@ -1091,7 +1110,7 @@ pub fn emit_vmovmsk8(dst: Writable<Reg>, src: Reg, sink: &mut MachBuffer<Inst>) 
 
     let dst_hw = dst.to_reg().to_real_reg().unwrap().hw_enc();
     let src_enc = src.to_real_reg().unwrap().hw_enc();
-    // dst is a k-register (indices 128+), extract actual encoding
+    // dst is a k-register
     let dst_enc = k_enc(dst_hw);
 
     evex.emit(dst_enc, 0, src_enc, false, sink);
@@ -1119,7 +1138,7 @@ pub fn emit_vmovmsk16(dst: Writable<Reg>, src: Reg, sink: &mut MachBuffer<Inst>)
 
     let dst_hw = dst.to_reg().to_real_reg().unwrap().hw_enc();
     let src_enc = src.to_real_reg().unwrap().hw_enc();
-    // dst is a k-register (indices 128+), extract actual encoding
+    // dst is a k-register
     let dst_enc = k_enc(dst_hw);
 
     evex.emit(dst_enc, 0, src_enc, false, sink);
@@ -1147,7 +1166,7 @@ pub fn emit_movm2b(dst: Writable<Xmm>, src: Reg, sink: &mut MachBuffer<Inst>) {
 
     let dst_enc = dst.to_reg().to_reg().to_real_reg().unwrap().hw_enc();
     let src_hw = src.to_real_reg().unwrap().hw_enc();
-    // src is a k-register (indices 128+), extract actual encoding
+    // src is a k-register
     let src_enc = k_enc(src_hw);
 
     evex.emit(dst_enc, 0, src_enc, false, sink);
@@ -1175,7 +1194,7 @@ pub fn emit_movm2w(dst: Writable<Xmm>, src: Reg, sink: &mut MachBuffer<Inst>) {
 
     let dst_enc = dst.to_reg().to_reg().to_real_reg().unwrap().hw_enc();
     let src_hw = src.to_real_reg().unwrap().hw_enc();
-    // src is a k-register (indices 128+), extract actual encoding
+    // src is a k-register
     let src_enc = k_enc(src_hw);
 
     evex.emit(dst_enc, 0, src_enc, false, sink);
@@ -2071,6 +2090,69 @@ fn emit_modrm_sib_disp(sink: &mut MachBuffer<Inst>, reg: u8, addr: &Amode) {
                     sink.put1(sib);
                     sink.put4(*simm32 as u32);
                 }
+            }
+        }
+        Amode::RipRelative { .. } => {
+            let modrm = 0x05 | ((reg & 0x07) << 3);
+            sink.put1(modrm);
+            sink.put4(0);
+        }
+    }
+}
+
+fn emit_modrm_sib_disp_no_evex(sink: &mut MachBuffer<Inst>, reg: u8, addr: &Amode) {
+    match addr {
+        Amode::ImmReg { simm32, base, .. } => {
+            let base_enc = base.to_real_reg().unwrap().hw_enc();
+            let needs_sib = (base_enc & 0x07) == 4;
+
+            if *simm32 == 0 && (base_enc & 0x07) != 5 {
+                let modrm = 0x00 | ((reg & 0x07) << 3) | (base_enc & 0x07);
+                sink.put1(modrm);
+                if needs_sib {
+                    sink.put1(0x24);
+                }
+            } else if *simm32 >= -128 && *simm32 <= 127 {
+                let modrm = 0x40 | ((reg & 0x07) << 3) | (base_enc & 0x07);
+                sink.put1(modrm);
+                if needs_sib {
+                    sink.put1(0x24);
+                }
+                sink.put1(*simm32 as u8);
+            } else {
+                let modrm = 0x80 | ((reg & 0x07) << 3) | (base_enc & 0x07);
+                sink.put1(modrm);
+                if needs_sib {
+                    sink.put1(0x24);
+                }
+                sink.put4(*simm32 as u32);
+            }
+        }
+        Amode::ImmRegRegShift {
+            simm32,
+            base,
+            index,
+            shift,
+            ..
+        } => {
+            let base_enc = base.to_reg().to_real_reg().unwrap().hw_enc();
+            let index_enc = index.to_reg().to_real_reg().unwrap().hw_enc();
+            let sib = (*shift << 6) | ((index_enc & 0x07) << 3) | (base_enc & 0x07);
+
+            if *simm32 == 0 && (base_enc & 0x07) != 5 {
+                let modrm = 0x04 | ((reg & 0x07) << 3);
+                sink.put1(modrm);
+                sink.put1(sib);
+            } else if *simm32 >= -128 && *simm32 <= 127 {
+                let modrm = 0x44 | ((reg & 0x07) << 3);
+                sink.put1(modrm);
+                sink.put1(sib);
+                sink.put1(*simm32 as u8);
+            } else {
+                let modrm = 0x84 | ((reg & 0x07) << 3);
+                sink.put1(modrm);
+                sink.put1(sib);
+                sink.put4(*simm32 as u32);
             }
         }
         Amode::RipRelative { .. } => {

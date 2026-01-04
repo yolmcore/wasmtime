@@ -160,6 +160,16 @@
       (if-let true (has_avx512f))
       (x64_512_vpandq x y))
 
+;; I16X32 -> VPANDD (bitwise)
+(rule 17 (lower (has_type (multi_lane 16 32) (band x y)))
+      (if-let true (has_avx512f))
+      (x64_512_vpandd x y))
+
+;; I8X64 -> VPANDD (bitwise)
+(rule 17 (lower (has_type (multi_lane 8 64) (band x y)))
+      (if-let true (has_avx512f))
+      (x64_512_vpandd x y))
+
 ;; I32X16 -> VPANDD
 (rule 17 (lower (has_type (multi_lane 32 16) (band x y)))
       (if-let true (has_avx512f))
@@ -173,6 +183,16 @@
 (rule 17 (lower (has_type (multi_lane 64 8) (bor x y)))
       (if-let true (has_avx512f))
       (x64_512_vporq x y))
+
+;; I16X32 -> VPORD (bitwise)
+(rule 17 (lower (has_type (multi_lane 16 32) (bor x y)))
+      (if-let true (has_avx512f))
+      (x64_512_vpord x y))
+
+;; I8X64 -> VPORD (bitwise)
+(rule 17 (lower (has_type (multi_lane 8 64) (bor x y)))
+      (if-let true (has_avx512f))
+      (x64_512_vpord x y))
 
 ;; I32X16 -> VPORD
 (rule 17 (lower (has_type (multi_lane 32 16) (bor x y)))
@@ -188,6 +208,16 @@
       (if-let true (has_avx512f))
       (x64_512_vpxorq x y))
 
+;; I16X32 -> VPXORD (bitwise)
+(rule 17 (lower (has_type (multi_lane 16 32) (bxor x y)))
+      (if-let true (has_avx512f))
+      (x64_512_vpxord x y))
+
+;; I8X64 -> VPXORD (bitwise)
+(rule 17 (lower (has_type (multi_lane 8 64) (bxor x y)))
+      (if-let true (has_avx512f))
+      (x64_512_vpxord x y))
+
 ;; I32X16 -> VPXORD
 (rule 17 (lower (has_type (multi_lane 32 16) (bxor x y)))
       (if-let true (has_avx512f))
@@ -201,6 +231,16 @@
 (rule 17 (lower (has_type (multi_lane 64 8) (bnot x)))
       (if-let true (has_avx512f))
       (x64_512_vpxorq x (x64_512_all_ones_64)))
+
+;; I16X32 -> VPXORD with all-ones
+(rule 17 (lower (has_type (multi_lane 16 32) (bnot x)))
+      (if-let true (has_avx512f))
+      (x64_512_vpxord x (x64_512_all_ones_32)))
+
+;; I8X64 -> VPXORD with all-ones
+(rule 17 (lower (has_type (multi_lane 8 64) (bnot x)))
+      (if-let true (has_avx512f))
+      (x64_512_vpxord x (x64_512_all_ones_32)))
 
 ;; I32X16 -> VPXORD with all-ones
 (rule 17 (lower (has_type (multi_lane 32 16) (bnot x)))
@@ -2067,6 +2107,26 @@
 ;; VPANDND/Q computes (~src1) & src2
 ;; Note: x86 VPANDNQ(a, b) = (~a) & b, so we need to pass (y, x) to get (~y) & x
 ;; =============================================================================
+
+;; I16X32: band(x, bnot(y)) -> VPANDND(y, x) = (~y) & x
+(rule 18 (lower (has_type (multi_lane 16 32) (band x (bnot y))))
+      (if-let true (has_avx512f))
+      (x64_512_vpandnd (put_in_xmm y) (put_in_xmm_mem x)))
+
+;; I16X32: band(bnot(y), x) -> VPANDND(y, x) = (~y) & x
+(rule 26 (lower (has_type (multi_lane 16 32) (band (bnot y) x)))
+      (if-let true (has_avx512f))
+      (x64_512_vpandnd (put_in_xmm y) (put_in_xmm_mem x)))
+
+;; I8X64: band(x, bnot(y)) -> VPANDND(y, x) = (~y) & x
+(rule 18 (lower (has_type (multi_lane 8 64) (band x (bnot y))))
+      (if-let true (has_avx512f))
+      (x64_512_vpandnd (put_in_xmm y) (put_in_xmm_mem x)))
+
+;; I8X64: band(bnot(y), x) -> VPANDND(y, x) = (~y) & x
+(rule 26 (lower (has_type (multi_lane 8 64) (band (bnot y) x)))
+      (if-let true (has_avx512f))
+      (x64_512_vpandnd (put_in_xmm y) (put_in_xmm_mem x)))
 
 ;; I32X16: band(x, bnot(y)) -> VPANDND(y, x) = (~y) & x
 (rule 18 (lower (has_type (multi_lane 32 16) (band x (bnot y))))
